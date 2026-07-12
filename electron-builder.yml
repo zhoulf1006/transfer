@@ -1,0 +1,34 @@
+appId: com.loong.transfer
+productName: Transfer
+
+directories:
+  output: release/${version}
+  buildResources: build
+
+# electron-vite 输出到 out/;fastify 等 dependencies 由 builder 从 node_modules 收集
+files:
+  - out
+  - package.json
+asarUnpack:
+  - '**/node_modules/fastify/**'
+
+# 局域网直连需要网络权限;无签名(测试用,朋友端会有一次性安全提示)
+win:
+  target:
+    - target: portable        # 免安装 exe,双击即运行 —— 最适合发到 Windows 测试
+      arch: [x64]
+  # icon: build/icon.ico       # 未提供图标时用 Electron 默认图标
+
+mac:
+  category: public.app-category.utilities
+  target:
+    - target: dmg
+      arch: [arm64]           # 本机 M 芯片;需 Intel 再加 x64
+  # icon: build/icon.icns
+
+# portable 产物文件名
+portable:
+  artifactName: ${productName}-${version}-portable.exe
+
+dmg:
+  artifactName: ${productName}-${version}.dmg

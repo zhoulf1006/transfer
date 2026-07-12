@@ -1,0 +1,45 @@
+name: Build Windows Portable
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # pnpm 必须在 setup-node 之前:setup-node 的 cache: 'pnpm' 步骤
+      # 会调用 pnpm 探测 store 路径,此时 pnpm 必须已在 PATH 中。
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        # 不填 version:自动读取 package.json 的 packageManager 字段 (pnpm@9.12.3)
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (electron-vite) and package Windows portable
+        run: pnpm run dist:win
+        env:
+          # 未签名构建:无证书时 electron-builder 自动跳过签名。
+          # CSC_IDENTITY_AUTO_DISCOVERY 仅 macOS 生效,Windows 上无副作用,
+          # 保留仅为显式表达"不签名"意图。
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload portable exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: Transfer-windows-portable
+          path: release/**/*.exe
+          if-no-files-found: error
+          retention-days: 7

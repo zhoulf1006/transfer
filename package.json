@@ -1,0 +1,35 @@
+{
+  "name": "transfer",
+  "version": "0.0.1",
+  "description": "跨平台局域网工具:文件传送 + 截屏 + 笔记(MVP:文件传送)",
+  "main": "./out/main/index.js",
+  "type": "module",
+  "packageManager": "pnpm@9.12.3",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dist:mac": "electron-vite build && electron-builder --mac",
+    "dist:win": "electron-vite build && electron-builder --win"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.0",
+    "electron-builder": "^26.0.0",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "fastify": "^5.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
