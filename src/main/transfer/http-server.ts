@@ -33,6 +33,8 @@ export interface HttpServerDeps {
   }) => void
   /** 文件落盘失败回调(③-C):对应消息转 failed */
   onFileFailed?: (fileId: string, reason: 'enospc' | 'sha256') => void
+  /** 接收进度回调(§12.3):fileId + 已接收/总字节 */
+  onFileProgress?: (fileId: string, received: number, total: number) => void
   /** 收到自动接收文件请求时(供入库 recv accepted 消息);需在落盘前拿到 alias */
   onAutoAccept?: (files: PrepareUploadRequest['files'], from: DeviceInfo) => void
   onSessionCancelled?: () => void
@@ -153,11 +155,14 @@ export function createHttpServer(deps: HttpServerDeps): FastifyInstance {
     }
 
     try {
+      const total = Number(req.headers['content-length']) || decision.fileMeta.size || 0
       const res = await receiveFileToDir(
         req.raw,
         decision.fileMeta.fileName,
         deps.receiveDir(),
-        decision.fileMeta.sha256
+        decision.fileMeta.sha256,
+        (received, tot) => deps.onFileProgress?.(fileId, received, tot),
+        total
       )
       // S3:落盘期间会话可能已被 cancel。markReceived 校验 sessionId,
       // 会话已不在则 done=false 且不触发 onFileDone(避免 cancel 后误报完成)。

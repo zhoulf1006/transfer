@@ -32,7 +32,10 @@ export async function receiveFileToDir(
   stream: Readable,
   rawFileName: string,
   receiveDir: string,
-  expectedSha256?: string
+  expectedSha256?: string,
+  /** 接收进度回调(§12.3);total 从 Content-Length 头,未知则传 0 */
+  onProgress?: (received: number, total: number) => void,
+  total = 0
 ): Promise<ReceiveResult> {
   const safeName = sanitizeFileName(rawFileName)
   // 原子占位去重(S2 修复):用 O_EXCL(wx)独占创建最终文件名,消除 existsSync 的 TOCTOU。
@@ -48,6 +51,7 @@ export async function receiveFileToDir(
   stream.on('data', (chunk: Buffer) => {
     hash.update(chunk)
     size += chunk.length
+    onProgress?.(size, total) // §12.3:与 hash 消费同一 chunk,零额外成本
   })
 
   try {

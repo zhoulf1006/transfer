@@ -3,7 +3,7 @@
 // 弹框决策通过注入的 askUser 回调完成 —— 主进程用 Electron dialog 实现,
 // 从而核心逻辑不直接依赖 Electron。
 
-import { accessSync, constants } from 'node:fs'
+import { accessSync, constants, statSync } from 'node:fs'
 import type { FastifyInstance } from 'fastify'
 import type { DeviceInfo, RemoteDevice } from '@shared/types'
 import { DEFAULT_PORT } from '@shared/protocol'
@@ -22,6 +22,8 @@ export interface AppCoreEvents {
   onDevicesUpdated: (devices: RemoteDevice[]) => void
   /** 单条消息新增/状态变化,推给 UI */
   onMessageUpserted: (msg: Message) => void
+  /** 传输进度(不落库,§12.3),推给 UI */
+  onProgress?: (p: { messageId: string; sent: number; total: number; direction: 'send' | 'recv' }) => void
 }
 
 export interface AppCoreOpts {
@@ -76,7 +78,15 @@ export class AppCore {
       },
       resolvePeer: (fp) => this.resolvePeer(fp),
       isReceiveDirWritable: () => this.isReceiveDirWritable(),
-      onMessageUpserted: (msg) => opts.events.onMessageUpserted(msg)
+      fileSize: (path) => {
+        try {
+          return statSync(path).size
+        } catch {
+          return null
+        }
+      },
+      onMessageUpserted: (msg) => opts.events.onMessageUpserted(msg),
+      onProgress: (p) => opts.events.onProgress?.(p)
     })
 
     this.discovery = new MulticastDiscovery({
@@ -141,7 +151,9 @@ export class AppCore {
         onAutoAccept: (files, from) => this.chat.handleAutoAccept(files, from),
         onRegister: (info, address) => this.handleDevice(info, address),
         onFileDone: (i) => this.chat.handleFileDone(i.fileId, i.path),
-        onFileFailed: (fileId, reason) => this.chat.handleFileFailed(fileId, reason)
+        onFileFailed: (fileId, reason) => this.chat.handleFileFailed(fileId, reason),
+        onFileProgress: (fileId, received, total) =>
+          this.chat.handleReceiveProgress(fileId, received, total)
       })
       // HTTP 端口回退(DESIGN §7):53317 被占(如本机已有 LocalSend / 残留实例)时,
       // 向上试 53318、53319…。多播端口固定不变,announce.port 用实际 HTTP 端口(selfInfo 自动反映)。
@@ -150,11 +162,11 @@ export class AppCore {
       // 发现
       await this.discovery.start()
 
-      // 定期 announce(心跳)、过期清理、会话超时推进
+      // 定期 announce(心跳)、过期清理(online→offline→删)、会话超时推进
       this.pruneTimer = setInterval(() => {
         this.discovery.announce(true)
-        const removed = this.registry.prune()
-        if (removed.length) this.opts.events.onDevicesUpdated(this.registry.list())
+        const { changed } = this.registry.prune()
+        if (changed) this.opts.events.onDevicesUpdated(this.registry.list())
       }, 5_000)
       this.sweepTimer = setInterval(() => this.sessions.sweep(), 5_000)
     } catch (err) {

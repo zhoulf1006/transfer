@@ -34,8 +34,17 @@ export interface UiMessage {
 export const EVT = {
   devicesUpdated: 'devices:updated',
   /** 单条消息新增/状态变化(带完整 UiMessage) */
-  messageUpserted: 'message:upserted'
+  messageUpserted: 'message:upserted',
+  /** 传输进度(不落库,§12.3) */
+  progress: 'transfer:progress'
 } as const
+
+export interface ProgressPayload {
+  messageId: string
+  sent: number
+  total: number
+  direction: 'send' | 'recv'
+}
 
 // ── 渲染 → 主 调用 channel ──
 export const CMD = {
@@ -48,6 +57,7 @@ export const CMD = {
   sendFiles: 'message:sendFiles',
   respond: 'message:respond',
   listMessages: 'message:list',
+  listReceivedFiles: 'message:listReceivedFiles',
   openFile: 'message:openFile',
   getAutoAccept: 'settings:getAutoAccept',
   setAutoAccept: 'settings:setAutoAccept'

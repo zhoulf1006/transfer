@@ -15,7 +15,7 @@ export interface ChatSender {
   sendFiles: (
     target: SendTarget,
     files: { id: string; path: string }[],
-    onProgress?: (fileId: string) => void
+    onProgress?: (fileId: string, sent: number, total: number) => void
   ) => Promise<SendResult>
   sendText: (target: SendTarget, text: string) => Promise<SendTextResult>
 }
@@ -28,8 +28,12 @@ export interface ChatServiceDeps {
   resolvePeer: (fingerprint: string) => { target: SendTarget; alias: string } | null
   /** 接收目录是否可写(自动接收前预检,①-A) */
   isReceiveDirWritable: () => boolean
+  /** 取本地文件字节数(发送消息入库时填 fileSize);不存在返回 null */
+  fileSize?: (path: string) => number | null
   /** 单条消息新增/更新时通知 UI */
   onMessageUpserted: (msg: Message) => void
+  /** 传输进度通知 UI(不落库,§12.3):messageId + 已传/总字节 + 方向 */
+  onProgress?: (p: { messageId: string; sent: number; total: number; direction: 'send' | 'recv' }) => void
   /** 注入时钟(测试) */
   now?: () => number
   /** 确认超时(默认 T_ACCEPT_MS);测试可缩短 */
@@ -50,8 +54,12 @@ export class ChatService {
   private readonly d: ChatServiceDeps
   private readonly acceptTimeoutMs: number
   private readonly setTimer: (fn: () => void, ms: number) => { clear: () => void }
+  /** 进度节流用的时钟(注入可测,默认 Date.now) */
+  private readonly nowMs: () => number
   /** transferId → 挂起 resolver(DESIGN §11.2.2) */
   private readonly pending = new Map<string, PendingResolver>()
+  /** 进度节流:messageId → 上次推送时间戳,避免刷爆 IPC(§12.6) */
+  private readonly lastProgressAt = new Map<string, number>()
   /**
    * fileId → recv 消息 id(③-A 修复):精确关联"落盘完成/失败"到入库消息,
    * 避免同名/并发文件靠 fileName 匹配导致 filePath 张冠李戴。落盘 done/failed 后删。
@@ -63,6 +71,7 @@ export class ChatService {
   constructor(deps: ChatServiceDeps) {
     this.d = deps
     this.acceptTimeoutMs = deps.acceptTimeoutMs ?? T_ACCEPT_MS
+    this.nowMs = deps.now ?? Date.now
     this.setTimer =
       deps.setTimer ??
       ((fn, ms) => {
@@ -79,7 +88,13 @@ export class ChatService {
     }
   }
 
+  /** 终态集合:进入这些状态后传输已结束,清理节流状态防泄漏(2-C) */
+  private static readonly TERMINAL = new Set(['done', 'failed', 'rejected', 'expired'])
+
   private upsert(msg: Message): void {
+    // 消息进入终态 → 清理进度节流条目(覆盖发送失败/拒绝/超时、接收 total=0 等所有路径,
+    // 这些路径不会有 sent>=total 的完成帧来触发 emitProgress 里的清理)
+    if (ChatService.TERMINAL.has(msg.status)) this.lastProgressAt.delete(msg.id)
     this.d.onMessageUpserted(msg)
   }
 
@@ -221,8 +236,36 @@ export class ChatService {
     const msgId = this.recvFileMsg.get(fileId)
     if (!msgId) return
     this.recvFileMsg.delete(fileId)
+    this.lastProgressAt.delete(msgId)
     const m = this.d.store.updateStatus(msgId, 'failed', { errorReason: reason })
     if (m) this.upsert(m)
+  }
+
+  /** 接收进度(http-server onFileProgress):按 fileId 找 recv 消息 id,节流推 UI(§12.3)。 */
+  handleReceiveProgress(fileId: string, received: number, total: number): void {
+    const msgId = this.recvFileMsg.get(fileId)
+    if (!msgId) return
+    this.emitProgress(msgId, received, total, 'recv')
+  }
+
+  /**
+   * 进度推送(不落库,§12.3/§12.6)。节流:每 100ms 最多推一次;100% 强制推(终态不丢)。
+   */
+  private emitProgress(
+    messageId: string,
+    sent: number,
+    total: number,
+    direction: 'send' | 'recv'
+  ): void {
+    if (!this.d.onProgress) return
+    const done = total > 0 && sent >= total
+    const now = this.nowMs()
+    const last = this.lastProgressAt.get(messageId)
+    // 节流:仅当已有过一次推送、且距上次 <100ms 才丢弃(首帧永远推;100% 强制推)
+    if (!done && last !== undefined && now - last < 100) return
+    this.lastProgressAt.set(messageId, now)
+    this.d.onProgress({ messageId, sent, total, direction })
+    if (done) this.lastProgressAt.delete(messageId) // 终态后清理节流状态
   }
 
   /** App 退出:所有挂起 reject(403)+ pending 消息标 expired */
@@ -273,7 +316,7 @@ export class ChatService {
           peerAlias: peer?.alias ?? peerFp.slice(0, 8),
           content: null,
           fileName: name,
-          fileSize: null,
+          fileSize: this.d.fileSize?.(path) ?? null,
           filePath: path,
           status: 'pending',
           errorReason: null,
@@ -285,7 +328,10 @@ export class ChatService {
         return msgs.map((m) => this.fail(m.id, 'network'))
       }
       const files = filePaths.map((path, i) => ({ id: msgs[i].id, path }))
-      const res = await this.d.sender.sendFiles(peer.target, files)
+      // 发送进度:fileId === 发送方 msgId,直接推 UI(§12.3)
+      const res = await this.d.sender.sendFiles(peer.target, files, (fileId, sent, total) =>
+        this.emitProgress(fileId, sent, total, 'send')
+      )
       const status =
         res.kind === 'done'
           ? 'done'

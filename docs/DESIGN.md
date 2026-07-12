@@ -526,3 +526,72 @@ settings.ts            # 自动接收开关+阈值(持久化,复用 identity.jso
 4. 关 App 重开 → 历史消息仍在(SQLite 持久化),pending 的变 expired。
 5. 文本消息只走 prepare-upload(不产生 upload 请求),接收方返回 204。
 6. 点文件气泡"打开" → 系统打开该文件。
+
+---
+
+## 12. UI 增强(在线离线 / 拖拽 / 下载列表 / 进度)
+
+> 第三阶段。4 个 UI 增强需求。事实层已实测坐实(见 §12.1)。
+
+### 12.0 决策(已与用户确认)
+
+| 需求 | 决策 |
+|------|------|
+| 1 在线/离线 | 离线设备**灰色置底保留一段时间**(在线组 + 离线组,QQ 式);不立即从列表删 |
+| 2 拖拽发送 | 拖文件到聊天区发送(`webUtils.getPathForFile`) |
+| 3 下载列表 | 独立面板列**已接收**文件(名/大小/接收时间/发送人/打开) |
+| 4 进度 | 每个传输中文件气泡显示**百分比进度条**(真实字节进度) |
+
+### 12.1 事实层(实测坐实)
+
+- **拖拽拿路径**:`File.path` 在 Electron 32 移除 → `webUtils.getPathForFile(file)`。**必须在 preload 调用**(contextBridge 暴露),且只能传**原始** `e.dataTransfer.files` 的 File(重建/克隆/过 IPC 传 File 会丢磁盘背书→返回空串)。`dragover` 必须 `preventDefault()` 否则 drop 不触发。preload 当场把 File[]→string[],只过 string[]。
+- **上传进度**(undici/fetch 无内置):`fs.createReadStream(path)` → `Readable.toWeb()` → `TransformStream`(透传 chunk + 累加 byteLength) → 当 fetch body,**`duplex:'half'` 必填** + 手动带 `Content-Length`。计数发生在传输层拉取 chunk 时(backpressure 驱动)= 真实已发送字节。**已实测**:2MB 往返,32 个渐进进度点、字节/hash 一致。
+- **接收进度**:`receive-file.ts` 已有的 `stream.on('data')`(算 hash)里顺手累加 `chunk.length` 即可,total 从 `Content-Length` 头取。
+
+### 12.2 需求1:设备在线/离线
+
+- `device-registry`:过期(TTL 15s 未刷新)**不删**,而是标 `offline`;`offline` 后再保留 `offlineKeepMs`(默认 5min)才真正删。加 `status: 'online'|'offline'` 到 `RemoteDevice`(必填)。
+- `prune()` 改为两段并返回 `{ changed, removed }`:online 超 TTL → offline(`changed=true`);offline 后总 idle 超 `TTL+offlineKeepMs` → 真删(`removed` 含 fp)。app-core 按 `changed` 决定是否推 `devices:updated`。
+- `upsert`:离线设备重新听到 → 转 online 且返回 `true`(可见变化),触发 UI 刷新。
+- UI:设备列表分**在线组**(绿点)+ **离线组**(灰点、灰置底、"离线"标)。点离线设备可打开历史会话但发送会 failed(network)。
+
+### 12.3 需求4:真实进度(改动传输层)
+
+- **发送方**:`http-client.sendFiles` 的 upload 从"`readFile` 整块 body"改为"`createReadStream` + `Readable.toWeb` + `TransformStream` 计数 + `duplex:'half'` + `Content-Length`"。每块回调 `onProgress(fileId, sent, total)`。
+- **接收方**:`receive-file` 的 `stream.on('data')` 累加 received,回调 `onProgress(received, total)`(total 从 header)。http-server 透传到 ChatService。
+- **进度不落库**(§11.3 已定):走 IPC `transfer:progress { messageId, sent, total }` 实时推 UI,DB 只存最终 status。ChatService 维护 fileId→messageId 已有(`recvFileMsg`),发送方 fileId=msgId 直接用。
+- **节流**(实现):`emitProgress` 按 messageId 每 **100ms** 最多推一次;**首帧永远推**(用 `has()` 判空,区分"从未推"与"t=0 推")、**100%(`sent>=total`)强制推**(终态不丢完成帧)。
+- **节流状态清理**(2-C 修复,防泄漏):节流用的 `lastProgressAt` Map,在**任意消息进入终态**(done/failed/rejected/expired)时于 `upsert` 处统一 `delete`。覆盖发送失败/拒绝/超时、接收 `total=0` 降级等**没有 100% 完成帧**的所有路径。`ChatService.upsert` 是唯一收口点。
+- **UI**:传输中(status `pending`/`accepted` 且有 progress)的文件气泡显示进度条;终态清理由 `onMessageUpserted` 里对终态 status 主动 `setProgress` 删除(前端亦不依赖 100% 帧)。
+- **失败自愈**(实测):文件不存在(ENOENT)、Content-Length 与实际字节不符(文件传输中被改)→ 流 reject/undici error → `Promise.all` catch → 消息标 failed;**无静默数据损坏、不卡死**(已 probe 验证)。
+
+### 12.4 需求2:拖拽
+
+- preload:`getDroppedPaths(files: File[]): string[]` = `files.map(webUtils.getPathForFile).filter(非空串)`。
+- **关键坑(实测坐实)**:`File.path` 在 Electron 32 已移除;`webUtils.getPathForFile` **必须在 preload 对原始 `e.dataTransfer.files` 的 File 调用**——重建/克隆/过 IPC 传 File 会丢磁盘背书 → 返回空串。故 preload 当场把 File[]→string[],只过 string[]。`dragover` **必须 `preventDefault()`** 否则 drop 不触发。
+- renderer:Chat 聊天流区 `onDragOver`(preventDefault + 高亮)+ `onDragLeave`(`currentTarget===target` 才取消高亮,避免子元素间移动误清)+ `onDrop`(`Array.from(dataTransfer.files)` → `getDroppedPaths` → `sendFiles`)。
+
+### 12.5 需求3:下载列表
+
+- 新 IPC `message:listReceivedFiles { limit, before }` → 查 `direction='recv' AND type='file' AND status='done'`(即已落盘的接收文件),按 created_at **降序**(最新在前);`limit ≤ LIST_MAX_LIMIT`。
+- 复用 message 表(已有 fileName/fileSize/createdAt/peerAlias/filePath),无需新表。store 加 `listReceivedFiles` 方法。
+- UI:独立面板(sidebar "📥 已接收文件" 入口),列表项显示 文件名 / 大小 / 接收时间(MM-DD HH:mm)/ 发送人(peerAlias) / "打开"按钮(复用 openFile)。
+- **刷新精度(3-B 修复)**:面板只在收到 **recv+file+done** 的 `onMessageUpserted` 时重拉,避免任意消息 upsert(如文本收发、状态流转)刷爆 IPC+SQLite+重渲染。
+
+### 12.6 边界/失败(新增)
+
+| 场景 | 处理 |
+|------|------|
+| 拖入非文件(文本/URL) | `getPathForFile` 返回空串 → 过滤掉空串,无有效文件则忽略 |
+| 拖入文件夹 | MVP 不支持文件夹(getPathForFile 返回目录路径,fs 读会失败)→ 发送时标 failed;后续可递归 |
+| 进度 total 未知(无 Content-Length) | UI 无百分比(降级);节流状态靠终态 upsert 清理(不依赖 100% 帧,见 §12.3 的 2-C) |
+| 离线设备发送 | 离线设备仍在列表(灰置底),但 `resolvePeer` 只匹配在线连接信息;点击离线设备发送 → 找不到活跃连接 → failed(network) |
+| 进度 IPC 高频 | 节流每 100ms;首帧永远推、100% 强制推;**终态(done/failed/rejected/expired)统一清节流状态**(2-C) |
+| 下载列表文件已被用户删除 | 打开时 openPath 失败,UI 提示(MVP 可不处理,openPath 静默失败) |
+
+### 12.7 验收
+
+1. 设备离线后变灰置底,`OFFLINE_KEEP_MS` 后消失;重新上线回到在线组。
+2. 拖文件到聊天区 → 发送(等价于点📎选文件)。
+3. 传输中文件气泡显示递增百分比进度条,done 后隐藏。
+4. 下载列表面板列出所有已接收文件(名/大小/时间/发送人),点"打开"能打开。

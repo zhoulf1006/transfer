@@ -284,3 +284,116 @@ describe('ChatService', () => {
     expect(store.get('old')?.status).toBe('expired')
   })
 })
+
+// ── 传输进度(§12.3):节流 + 终态强推 + 方向 ────────────────────
+describe('ChatService 进度', () => {
+  let store: MessageStore
+  let settings: SettingsStore
+  let dirs: string[]
+  let clock: number
+  let progress: { messageId: string; sent: number; total: number; direction: 'send' | 'recv' }[]
+  let sendProgressDriver: ((cb: (fileId: string, sent: number, total: number) => void, fileId: string) => void) | null
+  let chat: ChatService
+
+  beforeEach(() => {
+    store = new MessageStore(':memory:')
+    const sdir = mkdtempSync(join(tmpdir(), 'csp-'))
+    dirs = [sdir]
+    settings = new SettingsStore(sdir)
+    clock = 0
+    progress = []
+    sendProgressDriver = null
+    chat = new ChatService({
+      store,
+      settings,
+      sender: {
+        // sender 在 upload 期间用 fileId(=msgId)驱动进度回调
+        sendFiles: async (_t, files, onProgress) => {
+          if (sendProgressDriver && onProgress) {
+            for (const f of files) sendProgressDriver(onProgress, f.id)
+          }
+          return { kind: 'done', sessionId: 's', sent: files.map((f) => f.id) }
+        },
+        sendText: async () => ({ kind: 'done' })
+      },
+      resolvePeer: () => ({ target: { address: '1.1.1.1', port: 1, protocol: 'http' } as SendTarget, alias: 'P' }),
+      isReceiveDirWritable: () => true,
+      fileSize: () => 1000,
+      onMessageUpserted: () => {},
+      onProgress: (p) => progress.push(p),
+      now: () => clock
+    })
+  })
+
+  afterEach(() => {
+    store.close()
+    for (const d of dirs) rmSync(d, { recursive: true, force: true })
+  })
+
+  test('接收进度:按 fileId 精确关联 recv 消息,方向为 recv', () => {
+    // 自动接收路径入库 accepted + 建 fileId→msgId 映射
+    chat.handleAutoAccept(fileReq('P', { fA: { fileName: 'a.bin', size: 1000 } }).files, peer('P'))
+    chat.handleReceiveProgress('fA', 500, 1000)
+    expect(progress).toEqual([{ messageId: expect.any(String), sent: 500, total: 1000, direction: 'recv' }])
+    // 未知 fileId 静默忽略
+    chat.handleReceiveProgress('unknown', 1, 2)
+    expect(progress).toHaveLength(1)
+  })
+
+  test('节流:100ms 内多次进度只推首次;时间推进后再推', () => {
+    chat.handleAutoAccept(fileReq('P', { fA: { size: 1000 } }).files, peer('P'))
+    clock = 0
+    chat.handleReceiveProgress('fA', 100, 1000) // 推
+    chat.handleReceiveProgress('fA', 200, 1000) // 节流丢弃(同 tick)
+    clock = 50
+    chat.handleReceiveProgress('fA', 300, 1000) // 距上次 50ms<100 → 丢弃
+    clock = 150
+    chat.handleReceiveProgress('fA', 400, 1000) // 距上次 150ms≥100 → 推
+    expect(progress.map((p) => p.sent)).toEqual([100, 400])
+  })
+
+  test('终态 100% 强制推(即使在节流窗口内),不丢完成帧', () => {
+    chat.handleAutoAccept(fileReq('P', { fA: { size: 1000 } }).files, peer('P'))
+    clock = 0
+    chat.handleReceiveProgress('fA', 100, 1000) // 推(t=0)
+    clock = 10 // 节流窗口内
+    chat.handleReceiveProgress('fA', 1000, 1000) // 100% → 强制推
+    expect(progress.map((p) => p.sent)).toEqual([100, 1000])
+  })
+
+  test('发送进度:fileId===msgId,方向为 send;fileSize 入库', async () => {
+    sendProgressDriver = (cb, fileId) => {
+      clock = 0
+      cb(fileId, 500, 1000)
+      clock = 200
+      cb(fileId, 1000, 1000) // 完成
+    }
+    const [m] = await chat.sendFiles('P', ['/tmp/x.bin'])
+    expect(m.fileSize).toBe(1000) // fileSize 入库
+    const sendEvents = progress.filter((p) => p.direction === 'send')
+    expect(sendEvents.map((p) => p.sent)).toEqual([500, 1000])
+    // messageId 与该发送消息一致
+    expect(new Set(sendEvents.map((p) => p.messageId))).toEqual(new Set([m.id]))
+  })
+
+  // 2-C 回归:传输失败后(无 100% 帧),节流状态随终态 upsert 清理,不残留污染后续帧。
+  // 用 recv 路径:同一 fileId→msgId,失败后重新映射同 msgId,验证首帧不被旧节流窗口吞掉。
+  test('失败终态清理节流状态(2-C):同一消息后续首帧不被旧节流残留吞掉', () => {
+    // 接收一个文件:入库 accepted + fileId→msgId 映射
+    chat.handleAutoAccept(fileReq('P', { fX: { size: 1000 } }).files, peer('P'))
+    const msgId = store.list()[0].id
+    clock = 0
+    chat.handleReceiveProgress('fX', 300, 1000) // 推 30%(写入 lastProgressAt[msgId]=0)
+    expect(progress.map((p) => p.sent)).toEqual([300])
+    // 落盘失败 → handleFileFailed → updateStatus(failed) → upsert(failed) → 清 lastProgressAt[msgId]
+    chat.handleFileFailed('fX', 'enospc')
+    expect(store.get(msgId)?.status).toBe('failed')
+    // 重新给同一 msgId 建映射(模拟重发/复用),在**同一 clock=0** 再推一帧。
+    // 若节流状态没清:now-last=0<100 → 被丢弃;已清:视为首帧 → 立即推。
+    ;(chat as unknown as { recvFileMsg: Map<string, string> }).recvFileMsg.set('fY', msgId)
+    progress.length = 0
+    clock = 0 // 同一时刻,故意撞节流窗口
+    chat.handleReceiveProgress('fY', 100, 1000)
+    expect(progress.map((p) => p.sent)).toEqual([100]) // 首帧推出,证明旧节流状态已清
+  })
+})

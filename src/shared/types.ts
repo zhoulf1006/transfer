@@ -59,4 +59,6 @@ export interface RemoteDevice {
   protocol: 'http' | 'https'
   /** 最近一次听到该设备的时间戳(ms),用于过期 */
   lastSeen: number
+  /** 在线/离线(§12.2):TTL 内为 online,超 TTL 转 offline 灰置底保留,超 keep 才真删 */
+  status: 'online' | 'offline'
 }

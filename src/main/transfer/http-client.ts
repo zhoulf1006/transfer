@@ -5,7 +5,8 @@
 
 import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
-import { statSync } from 'node:fs'
+import { statSync, createReadStream } from 'node:fs'
+import { Readable } from 'node:stream'
 import { createHash } from 'node:crypto'
 import { EP, T_SENDER_MS, T_UPLOAD_MS } from '@shared/protocol'
 import type { DeviceInfo, FileMeta, PrepareUploadResponse } from '@shared/types'
@@ -60,7 +61,7 @@ export async function sendFiles(
   target: SendTarget,
   selfInfo: DeviceInfo,
   files: SendFile[],
-  onProgress?: (fileId: string) => void
+  onProgress?: (fileId: string, sent: number, total: number) => void
 ): Promise<SendResult> {
   let prepareRes: Response
   try {
@@ -87,20 +88,37 @@ export async function sendFiles(
   const uploads = Object.entries(tokens).map(async ([fileId, token]) => {
     const file = byId.get(fileId)
     if (!file) return
-    const body = await readFile(file.path)
+    const total = statSync(file.path).size
     const url =
       `${baseUrl(target)}${EP.upload}` +
       `?sessionId=${encodeURIComponent(sessionId)}` +
       `&fileId=${encodeURIComponent(fileId)}` +
       `&token=${encodeURIComponent(token)}`
+
+    // 流式上传 + 字节计数(§12.3,已实测):createReadStream → Web ReadableStream
+    // → TransformStream 透传+累加 → duplex:'half' + Content-Length。计数受 backpressure
+    // 驱动,= 真实已发送字节。
+    let sent = 0
+    const web = Readable.toWeb(createReadStream(file.path)) as ReadableStream<Uint8Array>
+    const counted = web.pipeThrough(
+      new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, ctrl) {
+          ctrl.enqueue(chunk)
+          sent += chunk.byteLength
+          onProgress?.(fileId, sent, total)
+        }
+      })
+    )
+
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/octet-stream' },
-      body,
+      headers: { 'content-type': 'application/octet-stream', 'content-length': String(total) },
+      body: counted,
+      duplex: 'half', // 流式 body 必填(undici)
       signal: AbortSignal.timeout(T_UPLOAD_MS) // S4:防接收方挂起导致永挂
-    })
+    } as RequestInit & { duplex: 'half' })
     if (!res.ok) throw new Error(`upload ${fileId} status ${res.status}`)
-    onProgress?.(fileId)
+    onProgress?.(fileId, total, total) // 补终态 100%
   })
 
   try {

@@ -8,6 +8,8 @@ export interface DeviceRegistryOpts {
   now: () => number
   /** 超过该时长未再听到则视为离线(默认 15s) */
   ttlMs?: number
+  /** 转离线后再保留该时长才真正删除(§12.2,默认 5min);之前灰置底保留 */
+  offlineKeepMs?: number
 }
 
 export class DeviceRegistry {
@@ -15,25 +17,28 @@ export class DeviceRegistry {
   private devices = new Map<string, RemoteDevice>()
   private readonly now: () => number
   private readonly ttlMs: number
+  private readonly offlineKeepMs: number
 
   constructor(opts: DeviceRegistryOpts) {
     this.now = opts.now
     this.ttlMs = opts.ttlMs ?? 15_000
+    this.offlineKeepMs = opts.offlineKeepMs ?? 5 * 60_000
   }
 
   /**
-   * 记录/刷新一个设备。返回是否发生了可见变化(新增,或既有设备信息有更新),
-   * 便于调用方决定是否推 devices:updated。单纯刷新 lastSeen 不算变化。
+   * 记录/刷新一个设备。返回是否发生了可见变化(新增、信息更新、或从离线转回在线),
+   * 便于调用方决定是否推 devices:updated。单纯刷新在线 lastSeen 不算变化。
    */
   upsert(info: DeviceInfo, address: string, port: number, protocol: 'http' | 'https'): boolean {
     const existing = this.devices.get(info.fingerprint)
     const now = this.now()
-    const next: RemoteDevice = { info, address, port, protocol, lastSeen: now }
+    const next: RemoteDevice = { info, address, port, protocol, lastSeen: now, status: 'online' }
     this.devices.set(info.fingerprint, next)
 
     if (!existing) return true
-    // 判断除 lastSeen 外是否有实质变化
+    // 从离线转回在线是可见变化;否则看信息有无实质变化(lastSeen 刷新不算)
     return (
+      existing.status === 'offline' ||
       existing.address !== address ||
       existing.port !== port ||
       existing.protocol !== protocol ||
@@ -41,17 +46,26 @@ export class DeviceRegistry {
     )
   }
 
-  /** 移除过期设备。返回被移除的 fingerprint 列表(可能触发 devices:updated)。 */
-  prune(): string[] {
+  /**
+   * 两段过期(§12.2):online 超 TTL → offline(灰置底保留);offline 超 keep → 真删。
+   * 返回是否发生可见变化(有设备转离线或被删),供调用方决定推 devices:updated。
+   */
+  prune(): { changed: boolean; removed: string[] } {
     const now = this.now()
     const removed: string[] = []
+    let changed = false
     for (const [fp, dev] of this.devices) {
-      if (now - dev.lastSeen >= this.ttlMs) {
+      const idle = now - dev.lastSeen
+      if (dev.status === 'online' && idle >= this.ttlMs) {
+        dev.status = 'offline' // 转离线,保留在列表(灰置底)
+        changed = true
+      } else if (dev.status === 'offline' && idle >= this.ttlMs + this.offlineKeepMs) {
         this.devices.delete(fp)
         removed.push(fp)
+        changed = true
       }
     }
-    return removed
+    return { changed, removed }
   }
 
   list(): RemoteDevice[] {

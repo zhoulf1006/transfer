@@ -227,6 +227,27 @@ export class MessageStore {
     return rows.map(rowToMessage)
   }
 
+  /**
+   * 已接收文件列表(§12.5,下载列表):recv + file + done,按接收时间降序(最新在前)。
+   * 复用 created_at 索引;limit 上限 LIST_MAX_LIMIT。
+   */
+  listReceivedFiles(opts?: { limit?: number; before?: number }): Message[] {
+    const limit = Math.min(opts?.limit ?? LIST_MAX_LIMIT, LIST_MAX_LIMIT)
+    const where = `direction = 'recv' AND type = 'file' AND status = 'done'`
+    const rows = (
+      opts?.before !== undefined
+        ? this.db
+            .prepare(
+              `SELECT * FROM messages WHERE ${where} AND created_at < ? ORDER BY created_at DESC LIMIT ?`
+            )
+            .all(opts.before, limit)
+        : this.db
+            .prepare(`SELECT * FROM messages WHERE ${where} ORDER BY created_at DESC LIMIT ?`)
+            .all(limit)
+    ) as unknown as Row[]
+    return rows.map(rowToMessage)
+  }
+
   close(): void {
     this.db.close()
   }

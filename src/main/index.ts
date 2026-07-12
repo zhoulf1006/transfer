@@ -81,6 +81,9 @@ function registerIpc(): void {
   ipcMain.handle(CMD.listMessages, (_e, args?: ListMessagesArgs) => {
     return core?.chat.list(args) ?? []
   })
+  ipcMain.handle(CMD.listReceivedFiles, (_e, args?: ListMessagesArgs) => {
+    return store?.listReceivedFiles(args) ?? []
+  })
   ipcMain.handle(CMD.openFile, (_e, messageId: string) => {
     // ④-B:按 id 精确取(store.get),不受 list 分页上限限制
     const msg = store?.get(messageId)
@@ -109,7 +112,8 @@ app.whenReady().then(async () => {
     settings,
     events: {
       onDevicesUpdated: (devices) => send(EVT.devicesUpdated, devices),
-      onMessageUpserted: (msg) => send(EVT.messageUpserted, msg)
+      onMessageUpserted: (msg) => send(EVT.messageUpserted, msg),
+      onProgress: (p) => send(EVT.progress, p)
     }
   })
 

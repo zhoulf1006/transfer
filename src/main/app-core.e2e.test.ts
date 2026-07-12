@@ -32,6 +32,8 @@ interface Inst {
   messages: () => Message[]
   /** onMessageUpserted 收到的状态序列(按消息 id 分组),验证流转 */
   statusSeq: (msgId: string) => string[]
+  /** 收到的进度事件(方向 + sent),验证真实字节进度 */
+  progress: (direction: 'send' | 'recv') => number[]
 }
 
 describe('AppCore 端到端(聊天)', () => {
@@ -59,6 +61,7 @@ describe('AppCore 端到端(聊天)', () => {
     if (autoAccept) settings.setAutoAccept({ enabled: true, maxBytes: 1024 * 1024 * 1024 })
     let latest: RemoteDevice[] = []
     const seq = new Map<string, string[]>()
+    const prog: { direction: 'send' | 'recv'; sent: number }[] = []
     const core = new AppCore({
       identity: { alias, fingerprint },
       platform: 'darwin',
@@ -74,7 +77,8 @@ describe('AppCore 端到端(聊天)', () => {
           const arr = seq.get(m.id) ?? []
           arr.push(m.status)
           seq.set(m.id, arr)
-        }
+        },
+        onProgress: (p) => prog.push({ direction: p.direction, sent: p.sent })
       }
     })
     cores.push(core)
@@ -84,7 +88,8 @@ describe('AppCore 端到端(聊天)', () => {
       recvDir,
       devices: () => latest,
       messages: () => store.list({ limit: 100 }),
-      statusSeq: (id) => seq.get(id) ?? []
+      statusSeq: (id) => seq.get(id) ?? [],
+      progress: (direction) => prog.filter((p) => p.direction === direction).map((p) => p.sent)
     }
   }
 
@@ -99,7 +104,9 @@ describe('AppCore 端到端(聊天)', () => {
       a.devices().find((d) => d.info.fingerprint === 'FP_B') ? true : undefined
     )
 
-    const content = randomBytes(4096)
+    // 256KB → 多个 64KB 读块,产生递增进度帧(4KB 只有单帧,验不出进度)
+    const total = 256 * 1024
+    const content = randomBytes(total)
     const srcDir = mkdtempSync(join(tmpdir(), 'core-src-'))
     dirs.push(srcDir)
     const srcPath = join(srcDir, 'payload.bin')
@@ -123,6 +130,17 @@ describe('AppCore 端到端(聊天)', () => {
     expect(b.statusSeq(bRecv!.id)).toEqual(['accepted', 'done'])
     // A 侧 sent 流转:pending→done
     expect(a.statusSeq(aSent!.id)).toEqual(['pending', 'done'])
+
+    // ── 真实字节进度(§12.3)──
+    const sendProg = a.progress('send')
+    const recvProg = b.progress('recv')
+    // 至少一帧,单调不减,末帧到达 total(终态强推)
+    expect(sendProg.length).toBeGreaterThan(0)
+    expect(recvProg.length).toBeGreaterThan(0)
+    expect(sendProg[sendProg.length - 1]).toBe(total)
+    expect(recvProg[recvProg.length - 1]).toBe(total)
+    for (let i = 1; i < sendProg.length; i++) expect(sendProg[i]).toBeGreaterThanOrEqual(sendProg[i - 1])
+    for (let i = 1; i < recvProg.length; i++) expect(recvProg[i]).toBeGreaterThanOrEqual(recvProg[i - 1])
   })
 
   test('文本消息端到端:A 发文本 → B 入流(done),不落文件', async () => {

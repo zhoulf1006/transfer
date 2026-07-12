@@ -130,4 +130,32 @@ describe('MessageStore', () => {
     expect(got.fileSize).toBe(2048)
     expect(got.content).toBeNull()
   })
+
+  describe('listReceivedFiles(下载列表,§12.5)', () => {
+    beforeEach(() => {
+      // 只 recv+file+done 才该出现;造各种干扰项
+      clock = 100
+      store.insert(baseMsg({ id: 'r1', type: 'file', direction: 'recv', status: 'done', fileName: 'a.png' }))
+      clock = 200
+      store.insert(baseMsg({ id: 'r2', type: 'file', direction: 'recv', status: 'done', fileName: 'b.png' }))
+      // 干扰:sent 文件、recv 文本、recv 文件但未 done
+      store.insert(baseMsg({ id: 's1', type: 'file', direction: 'sent', status: 'done' }))
+      store.insert(baseMsg({ id: 't1', type: 'text', direction: 'recv', status: 'done' }))
+      store.insert(baseMsg({ id: 'p1', type: 'file', direction: 'recv', status: 'accepted' }))
+      store.insert(baseMsg({ id: 'f1', type: 'file', direction: 'recv', status: 'failed' }))
+    })
+
+    test('只返回 recv+file+done,按接收时间降序(最新在前)', () => {
+      const got = store.listReceivedFiles()
+      expect(got.map((m) => m.id)).toEqual(['r2', 'r1']) // 降序
+    })
+
+    test('limit 生效', () => {
+      expect(store.listReceivedFiles({ limit: 1 }).map((m) => m.id)).toEqual(['r2'])
+    })
+
+    test('before 游标取更早的', () => {
+      expect(store.listReceivedFiles({ before: 200 }).map((m) => m.id)).toEqual(['r1'])
+    })
+  })
 })
