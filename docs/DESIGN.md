@@ -299,14 +299,14 @@ export const T_UPLOAD_MS = 5 * 60_000    // 单个 upload 超时(S4:防接收方
 | 重复 upload 同一已收 fileId | 幂等忽略,不重复落盘 |
 | 发送方中途 `POST cancel` | 停止接收、删除该会话 .part、清 session、通知本地 UI(H2)。**已 `rename` 落盘的文件删不掉**(S3 已知限制,留后续) |
 | upload 中途连接断开 | 会话空闲超时 `T_idle` 清理;部分文件写 `.part` 临时名,完成才 rename |
-| **磁盘写满 / 写入 ENOSPC**(H2) | 落盘失败 → `cleanup` 删 .part+占位、该文件 upload 返回 500、`onUploadFailed` 清会话、通知 UI;其他文件不受影响。**已实现** |
+| **磁盘写满 / 写入 ENOSPC**(H2) | 落盘失败 → `cleanup` 删 .part+占位、upload 返回 500、`onUploadFailed` 清会话;**聊天层(③-C)`onFileFailed(fileId, reason)` 把对应 recv 消息按 fileId 精确转 `failed`**(sha256 不符归 sha256,其余归 enospc),不留"已接收"假象。其他文件不受影响。**已实现** |
 | **接收目录不存在/无写权限**(H2) | 设计意图:prepare-upload 阶段预检目录可写。**⚠️ MVP 未实现**——接收目录固定为 Downloads(几乎总可写),且落盘失败有 500+cleanup 兜底。预检留待后续(接收目录可配后再做) |
 | 大文件内存 | pipe `request.raw` 流式落盘(不用 multipart、不整块读入内存) |
 | 文件名注入(../、绝对路径) | 接收时 sanitize fileName,只取 basename,落到指定接收目录内 |
 | 重名文件 | **`O_EXCL(wx)` 原子占位**去重(name (1).png…);**不可用 existsSync 判重**——并发同名会 TOCTOU 覆盖丢数据(S2) |
 | 发送方对端拒绝(403) | 客户端向用户报告"对方拒绝" |
 | macOS 首次多播 | 可能触发 Local Network 权限弹窗(需真机验证) |
-| 应用退出 | 关闭 dgram socket、HTTP server,清理所有会话与临时 .part 文件 |
+| 应用退出 | 关闭 dgram socket、HTTP server,清理所有会话与临时 .part 文件;**遍历挂起 resolver Map 全部 reject(→403)+ 清 timer,DB 里 pending 消息标 expired**(否则发送方等 30 天超时,§11.2.2);关闭 SQLite。**④-C:Electron 不 await `before-quit` 的 async 回调,故 `preventDefault()`+ 完成清理后手动 `app.quit()`,保证清理真执行** |
 
 **MVP 明确不做(但表态,不沉默):**
 - **token 重放**:同 token 二次 upload 已收 fileId → 幂等忽略(见上);跨会话 token 因 sessionId+IP 绑定而失效。不额外做一次性 token。
@@ -370,3 +370,159 @@ export const T_UPLOAD_MS = 5 * 60_000    // 单个 upload 超时(S4:防接收方
 6. 笔记(Markdown 本地文件 + 搜索)
 7. 打通:截屏 → 标注 → 一键发送到某设备 / 存入笔记
 8. PIN 保护(401 语义)、传输历史、断点续传
+
+---
+
+## 11. 聊天 UI(混合聊天流 + 本地历史 + 异步确认)
+
+> 第二阶段功能。把文件传送升级为"聊天窗口"式:文本+文件统一为消息气泡流,本地持久化历史,接收改为异步(不阻塞 prepare-upload)。
+
+### 11.0 决策(已与用户确认)
+
+| 维度 | 决策 |
+|------|------|
+| UI 形式 | 混合聊天流:文本 + 文件都是气泡,`deviceId===本机` 靠右、否则靠左 |
+| 文本传送 | fileType=text 的"文件",正文放 `preview` 字段,**只走 prepare-upload,不走 upload**(LocalSend 源码确认) |
+| 持久化 | **node:sqlite**(Electron 35 内置,Node 22.16,零原生依赖;Electron 33=Node20 无此模块,故升级到 35) |
+| 接收模型 | 可配置自动接收:开关 + 大小阈值。默认**关**(全部弹确认);开启后 `size ≤ 阈值` 自动收,消息类**永不自动接收**(LocalSend 同) |
+| 确认方式 | 流内确认:文件作为消息气泡带"接收/拒绝"按钮;不阻塞——见 §11.2 |
+| 文件落地 | 自动存下载目录,聊天里点开(shell.openPath) |
+
+### 11.1 事实层(真实源码坐实,来源见调研)
+
+LocalSend `github.com/localsend/localsend` main 分支源码确认:
+- **发送方超时 = 30 天**(`http_provider.dart`:`longLiving = Duration(days:30)`)。故意为容忍慢确认 → "聊天流内异步确认、用户过很久才点"**协议兼容**,无需真挂起,只要最终按状态码回应。
+- **prepare-upload 需确认时同步挂起**(`receive_controller.dart` L345 `await streamController.stream.first`),accept→200+token map,decline→403,空选/消息已读→204。
+- **文本消息**:`selected_sending_files_provider.dart` 造 `name=uuid.txt, fileType=text, size=utf8 长度`;`send_provider.dart` L85 `preview = utf8.decode(bytes)`(正文进 preview);接收方识别 `files.length==1 && fileType==text` → 取 preview 为正文,accept 时 `acceptFileRequest({})` 空 map → 返回 **204,不发起 upload**。
+- **quickSave 默认 false**,消息类永不 quickSave(`receive_controller.dart` L262 `quickSave && session.message==null`)。
+- **单会话 409**:一次只允许一个活跃 session,第二个 prepare-upload→409;真 LocalSend 发送方收 409 会放弃(`recipientBusy`)。排队等确认放应用层。
+
+### 11.2 传输模型改造:异步确认(替代原挂起弹框)
+
+原模型(§5.1):prepare-upload 挂起 Promise 等 dialog,30s 超时。**问题**:聊天流里用户可能几分钟才点,30s 太短。
+
+**新模型**:
+- prepare-upload 到达 → 建 PENDING 会话 → **发 IPC `transfer:incoming` 让聊天流插入一条"待确认"文件消息气泡** → **仍挂起 HTTP 响应**(Promise),但超时放宽到 `T_ACCEPT_MS`(5 分钟)。
+- **自动接收**:若开启且 `size ≤ 阈值` 且非消息类 → 不插确认气泡,直接 respond accept。
+- 用户在聊天流点"接收"→ IPC → resolve accept(200+token);点"拒绝"→ resolve reject(403);超时→ 403 + 气泡标记"已过期"。
+
+#### 11.2.1 三态 respond(P0-1/P0-2 修复,与现有 session.ts 冲突)
+
+现有 `session.ts:respond` 把"空接受集合"当 `rejected`(→403)。但协议有**三种**语义,必须区分:
+
+| 语义 | 响应 | session 处理 |
+|------|------|------|
+| 拒绝(`accept=false`) | 403 | clear 会话 |
+| **接受但无文件要传**(文本消息 / 接受但选 0 文件) | **204** | **立即 clear,不进 active** |
+| 接受且有文件要传 | 200 + token map | 进 active,等 upload |
+
+改造:`RespondResult` 增加 `{ kind: 'accepted-empty' }`。`respond` 逻辑:
+- `accept===false` → `rejected`(403)
+- `accept===true` 但 `valid.length===0`(文本/空选)→ `accepted-empty`(204),**立即 clear()**
+- `accept===true` 且 `valid.length>0` → `accepted`(200),进 active
+http-server:`if (result.kind==='accepted-empty') return reply.code(204).send()`。
+
+**文本会话生命周期(P0-2)**:文本消息 accept → `accepted-empty` → respond 内**立即 clear**,**不进 active、不建 pending 集合、不占单会话锁**。杜绝"空集合会话永挂到 idle 超时"。
+
+#### 11.2.2 挂起 resolver 表的生命周期(P0-3)
+
+resolve 来源从 dialog 改为 IPC `message:respond`,需一个 `Map<transferId, {resolve, timer}>`(主进程模块级):
+- **建**:`onPrepareAsk` 创建 resolver + `T_ACCEPT_MS` 定时器,存入 Map,发 `transfer:incoming` IPC。
+- **清**:resolve / reject / 超时**三条路径都删 key + clearTimeout**(防泄漏)。
+- **重复 respond**:key 已删 → **静默忽略**(no-op),不抛错(用户连点两次接收)。
+- **App 退出**:退出前遍历 Map **全部 reject(→403)+ 清 timer**,并把 DB 里对应 pending 消息标 expired(否则发送方等到 30 天超时)。补入 §7"应用退出"。
+
+#### 11.2.3 超时统一 + 单会话 409 的流内表达(P0-4)
+
+- **超时归属(实现坐实,②-A)**:pending 超时由 **ChatService 自管 timer**(`setTimer(T_ACCEPT_MS)`)负责——到点 `finishPending('expired')` → `resolve(false)` → http-server `respond(false)` → 会话 `clear()` + 消息标 expired。`SessionManager.sweep` 的 `dialogTimeoutMs` 默认也是 `T_ACCEPT_MS`,是**冗余的第二道兜底**(不接 ChatService,只兜底清会话);两者都存在无害(单会话下先触发者收尾,后者遇 `session===null` no-op)。**注意:实现未把 sweep 的返回值桥接到 ChatService**,闭环靠 ChatService 自管 timer 完成,不靠 sweep。
+- **单会话锁最长被占 5min**(单会话不变量 ⇒ 全局至多 1 个挂起连接,资源天然可控)。但撞 409 概率因此大增:A 发文件①未确认时发文件② → B 返回 409。
+- **发送方本地串行化(已实现,纯发送方本地,不动协议)**:同一 peer 的发送在 A 侧 `enqueue` **排队**(`prev.then(fn,fn)`,前一条成败都接着发)——避免自己发的第二条撞自己造成的 409。链尾 settle 后清理队列 key(④-A 防泄漏)。
+- 若仍撞 409(如对方被别的设备占用):sent 消息标 `failed(busy)`,气泡显示"对方正忙"。
+- **挂起 socket 中途断开**:复用 §5.1 的 `req.raw.socket.destroyed` 预检回收僵死连接。
+
+> **保留 §5.1 的挂起机制与全部不变量**(P1 断开检测、单会话 409、IP 绑定),只改:超时 30s→`T_ACCEPT_MS`;resolve 来源 dialog→IPC;新增 `accepted-empty` 三态。
+
+### 11.3 消息数据模型(SQLite 表 `messages`)
+
+```
+id           TEXT PRIMARY KEY   -- 本地生成
+type         TEXT               -- 'text' | 'file'
+direction    TEXT               -- 'sent' | 'recv'(本地记录,不靠现算——对端 fingerprint 可能变)
+peer_fp      TEXT               -- 对端 fingerprint
+peer_alias   TEXT               -- 对端显示名(冗余存"当时"的名字,历史不回填新 alias)
+content      TEXT               -- text: 正文;file: null
+file_name    TEXT               -- file: 文件名
+file_size    INTEGER            -- file: 字节
+file_path    TEXT               -- file: 落盘绝对路径(收到并接收后填)
+status       TEXT               -- 见下方流转表
+error_reason TEXT               -- failed 时的原因:'busy'|'enospc'|'sha256'|'network'|'no-file'...
+transfer_id  TEXT               -- 关联挂起会话(pending 时)
+created_at   INTEGER            -- ms 时间戳
+```
+索引:`CREATE INDEX idx_messages_created_at ON messages(created_at)`(避免全表扫描+排序)。
+
+**direction × status 流转表(P1,钉死每条路径)**:
+
+| direction/type | 流转 |
+|---|---|
+| sent / file | `pending`(发送前入库)→ prepare-upload 200 → upload 完成 `done` / 对方 403 `rejected` / 409 `failed(busy)` / 网络失败 `failed(network)` / 本地文件消失 `failed(no-file)` |
+| sent / text | `pending` → prepare-upload 204 → `done`(无 upload) |
+| recv / file(手动) | `pending`(收到待确认)→ 用户接受 `accepted` → 落盘成功 `done` / 失败 `failed(③-C)` / 拒绝 `rejected` / 超时 `expired` |
+| recv / file(自动接收) | 入库即 `accepted`(跳过 pending,不询问)→ 落盘成功 `done` / 失败 `failed`。目录不可写则退回手动(①-A) |
+| recv / text | **入库即 `done`,正文立即可见**(正文在 preview,无需等确认);向发送方回 204 让其收尾(可自动回,不阻塞正文显示) |
+
+- **direction/status 入库时机**:sent 消息**发送前**以 `pending` 入库(崩溃也有记录),再异步更新;recv 文本入库即 `done`。
+- **progress 不落库**(P1):进度高频,只走 IPC `transfer:progress` 实时推 UI,DB 只存最终 status。§11.7"进度条"指运行时 UI 状态。
+- **node:sqlite 同步阻塞(P0/事实)**:全同步 API 跑在主进程事件循环。控制:①`created_at` 索引;②`message:list` 硬上限 `limit ≤ 200` + 分页;③禁止无分页全量查询。单条 insert/update 微秒级可接受,**MVP 不上 worker 线程**(单进程同步写 ⇒ 无并发写竞争,是优点)。
+- **recv 文本"接收"语义澄清(P1,消除口径不一致)**:文本正文在 preview 里,入库即显示,**不需要用户点接收才可见**。"自动接收关"时对文本的唯一影响是:是否**自动回 204**(标记已读让发送方安心)——默认可自动回,文本不进"待确认"队列。**自动接收开关只约束文件,不约束文本正文的显示**。
+
+### 11.4 模块划分(新增)
+
+```
+src/main/
+  db/
+    messages.ts        # node:sqlite 封装:建表、insert/update/list(纯逻辑,注入 db 路径,可用 :memory: 测)
+  transfer/
+    text-message.ts    # 文本↔fileType=text/preview 的编解码(纯函数,可测)
+  (改)transfer/session.ts   # 超时常量 T_ACCEPT_MS;识别消息类
+  (改)transfer/http-server.ts # prepare-upload 识别文本/自动接收;异步确认
+  (改)index.ts         # IPC 扩展:发文本、接收/拒绝、拉历史、设置自动接收
+settings.ts            # 自动接收开关+阈值(持久化,复用 identity.json 或独立)
+```
+
+### 11.5 IPC 扩展
+
+主→渲染:`message:upserted`(某条消息状态变/新增,带完整 UiMessage;实现 channel 名,非 `messages:updated`)。另有 `devices:updated`。
+渲染→主:
+- `message:sendText { peerFp, text }` — 发文本
+- `message:sendFiles { peerFp, filePaths }` — 发文件(替代旧 transfer:send)
+- `message:respond { transferId, accept }` — 聊天流内接收/拒绝
+- `message:list { limit, before }` — 拉历史(分页)
+- `message:openFile { messageId }` — shell 打开已落盘文件
+- `settings:getAutoAccept` / `settings:setAutoAccept { enabled, maxBytes }`
+
+### 11.6 边界/失败(新增)
+
+| 场景 | 处理 |
+|------|------|
+| 发送方文本正文过大 | MVP 文本 > 32KB 时改当普通文件传(走 upload) |
+| **接收方 preview 超大**(恶意/异常发送方不遵守 32KB) | 接收方也对 preview 长度设上限(如 64KB),超限截断或拒绝,防 DB 塞巨串 + UI 卡死 |
+| 自动接收阈值边界 | `size ≤ maxBytes` 自动收;**只约束文件**,文本正文永远入流显示(见 §11.3 语义澄清) |
+| 收到消息类但 fileType=text 却多文件 | 不识别为消息,按普通文件处理 |
+| **接收下载目录不可写**(自动接收放大此洞) | **已实现(①-A)**:自动接收前 `isReceiveDirWritable()`(`accessSync(dir, W_OK)`)预检,不可写则 `shouldAutoAcceptFiles` 返 false → **退回用户确认**(不静默自动收失败)。手动接收路径落盘失败仍有 ③-C 兜底 |
+| **同一文件重复接收** | MVP **允许重复**(`O_EXCL` 各存各的 `name (1).png`),各一条气泡。不按 sha256 去重 |
+| 历史 DB 损坏 | 捕获,**坏文件改名备份** `messages.db.corrupt.<ts>` 再建新库(留恢复余地,不直接覆盖) |
+| pending 消息在 App 重启后 | transfer_id 失效,重启时把所有 pending 标为 expired(挂起会话已随进程消失) |
+| **运行中 recv 挂起超时** | **ChatService 自管 timer**(T_ACCEPT_MS)到点 → `finishPending('expired')` → reject resolver(→403)+ 消息标 `expired` + 发 `message:upserted`(②-A:不靠 sweep) |
+| 同一对端并发 prepare-upload | 保留单会话 409;**发送方本地串行化**排队(§11.2.3),撞 409 则标 `failed(busy)` 气泡显示"对方正忙" |
+| 发送方本地文件 upload 前被删/改 | **⚠️ MVP 未单独实现**:读文件失败在 http-client 归到 catch-all → `failed(network)`(不区分 no-file)。消息仍会标 failed,只是 error_reason 不精确。`no-file` 枚举保留待后续细化 |
+| 对端 alias 变化 | 历史气泡显示**当时**的 alias(冗余存,不回填);设备列表显示**最新** alias |
+
+### 11.7 验收标准(聊天 UI)
+
+1. A 发文本 → A 流里出现靠右气泡;B 流里出现靠左气泡(默认关自动接收时,B 需在流里"接收")。
+2. A 发文件 → B 流里出现文件气泡带"接收/拒绝";B 点接收 → 文件落盘 + 气泡变"可打开";点拒绝 → A 气泡标"被拒绝"。
+3. 开启自动接收(阈值 100MB)→ 发 5MB 文件 → B 不弹确认,直接落盘入流。
+4. 关 App 重开 → 历史消息仍在(SQLite 持久化),pending 的变 expired。
+5. 文本消息只走 prepare-upload(不产生 upload 请求),接收方返回 204。
+6. 点文件气泡"打开" → 系统打开该文件。

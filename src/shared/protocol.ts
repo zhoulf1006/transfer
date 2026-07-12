@@ -14,10 +14,17 @@ export const EP = {
   cancel: `${API_PREFIX}/cancel`
 } as const
 
-/** 超时契约(DESIGN §5.1):T_sender ≥ T_dialog + 余量 */
-export const T_DIALOG_MS = 30_000
-export const T_SENDER_MS = 45_000
+/** 超时契约(DESIGN §5.1/§11.2.3):T_sender ≥ 接收方确认窗口 + 余量。
+ *  异步确认下用户可能几分钟才点,故发送方 prepare-upload 超时放宽到 6min(> T_ACCEPT_MS 5min)。 */
+export const T_DIALOG_MS = 30_000 // 保留常量(旧弹框语义,现已被 T_ACCEPT_MS 取代)
+export const T_SENDER_MS = 6 * 60_000
 /** 传输空闲超时:任一 upload 有字节即 reset */
 export const T_IDLE_MS = 30_000
 /** 单个 upload 请求超时(S4:防接收方异常挂起时发送方永挂)。大文件留足余量 */
 export const T_UPLOAD_MS = 5 * 60_000
+/**
+ * 聊天流内确认超时(DESIGN §11.2.3):用户在聊天流里点接收/拒绝的等待窗口。
+ * 同时作为挂起 resolver 超时 + SessionManager pending 超时。比旧的 30s 弹框大得多,
+ * 因为聊天流里用户可能几分钟才处理(LocalSend 发送方超时 30 天,容忍慢确认)。
+ */
+export const T_ACCEPT_MS = 5 * 60_000

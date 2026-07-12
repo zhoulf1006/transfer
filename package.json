@@ -1,6 +1,6 @@
 {
   "name": "transfer",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "跨平台局域网工具:文件传送 + 截屏 + 笔记(MVP:文件传送)",
   "main": "./out/main/index.js",
   "type": "module",
@@ -10,8 +10,8 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "NODE_OPTIONS=\"--experimental-sqlite --no-warnings\" vitest run",
+    "test:watch": "NODE_OPTIONS=\"--experimental-sqlite --no-warnings\" vitest",
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:win": "electron-vite build && electron-builder --win"
   },
@@ -20,7 +20,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "electron": "^33.2.0",
+    "electron": "^35.7.5",
     "electron-builder": "^26.0.0",
     "electron-vite": "^2.3.0",
     "typescript": "^5.7.2",

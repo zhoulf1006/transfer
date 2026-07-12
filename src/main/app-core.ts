@@ -3,27 +3,35 @@
 // 弹框决策通过注入的 askUser 回调完成 —— 主进程用 Electron dialog 实现,
 // 从而核心逻辑不直接依赖 Electron。
 
+import { accessSync, constants } from 'node:fs'
 import type { FastifyInstance } from 'fastify'
-import type { DeviceInfo, PrepareUploadRequest, RemoteDevice } from '@shared/types'
-import { DEFAULT_PORT, T_DIALOG_MS } from '@shared/protocol'
-import { buildDeviceInfo, generateSessionId, type Identity } from '@shared/identity'
+import type { DeviceInfo, RemoteDevice } from '@shared/types'
+import { DEFAULT_PORT } from '@shared/protocol'
+import { buildDeviceInfo, type Identity } from '@shared/identity'
 import { MulticastDiscovery } from './discovery/multicast'
 import { DeviceRegistry } from './discovery/device-registry'
 import { SessionManager } from './transfer/session'
 import { createHttpServer } from './transfer/http-server'
-import { sendFiles, cancelSession, type SendFile } from './transfer/http-client'
+import { sendFiles, sendText, type SendTarget } from './transfer/http-client'
+import { ChatService } from './chat-service'
+import type { MessageStore } from './db/messages'
+import type { SettingsStore } from './settings'
+import type { Message } from './db/messages'
 
 export interface AppCoreEvents {
   onDevicesUpdated: (devices: RemoteDevice[]) => void
-  /** 询问用户是否接收;返回接受的 fileId 列表或 false(拒绝) */
-  askUser: (transferId: string, req: PrepareUploadRequest, fromIp: string) => Promise<string[] | false>
-  onIncomingFileDone?: (fileName: string, size: number) => void
+  /** 单条消息新增/状态变化,推给 UI */
+  onMessageUpserted: (msg: Message) => void
 }
 
 export interface AppCoreOpts {
   identity: Identity
   platform: NodeJS.Platform
   receiveDir: string
+  /** 消息持久化(注入,便于测试用 :memory:) */
+  store: MessageStore
+  /** 设置(自动接收) */
+  settings: SettingsStore
   /** HTTP 服务端口(对方连接用)。默认 DEFAULT_PORT。同机多实例须不同(DESIGN §7/M5) */
   httpPort?: number
   /** UDP 多播监听端口。固定 DEFAULT_PORT 才能互相发现;仅测试可覆盖(DESIGN §7/M5) */
@@ -47,6 +55,7 @@ export class AppCore {
   private readonly maxPortAttempts = 20
   /** UDP 多播端口(固定,同机多实例共享) */
   private readonly multicastPort: number
+  readonly chat: ChatService
 
   constructor(opts: AppCoreOpts) {
     this.opts = opts
@@ -55,6 +64,20 @@ export class AppCore {
     const now = () => Date.now()
     this.registry = new DeviceRegistry({ now })
     this.sessions = new SessionManager({ now })
+
+    // 聊天编排:持久化 + 发送/接收/确认 + 挂起 resolver 表
+    this.chat = new ChatService({
+      store: opts.store,
+      settings: opts.settings,
+      sender: {
+        sendFiles: (target, files, onProgress) =>
+          sendFiles(target, this.selfInfo(), files, onProgress),
+        sendText: (target, text) => sendText(target, this.selfInfo(), text)
+      },
+      resolvePeer: (fp) => this.resolvePeer(fp),
+      isReceiveDirWritable: () => this.isReceiveDirWritable(),
+      onMessageUpserted: (msg) => opts.events.onMessageUpserted(msg)
+    })
 
     this.discovery = new MulticastDiscovery({
       selfFingerprint: opts.identity.fingerprint,
@@ -75,6 +98,26 @@ export class AppCore {
     return buildDeviceInfo(this.opts.identity, this.opts.platform, this.httpPort)
   }
 
+  /** 接收目录是否可写(①-A:自动接收前预检) */
+  private isReceiveDirWritable(): boolean {
+    try {
+      accessSync(this.opts.receiveDir, constants.W_OK)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** fingerprint → 连接目标 + alias(离线返回 null) */
+  private resolvePeer(fingerprint: string): { target: SendTarget; alias: string } | null {
+    const dev = this.registry.list().find((d) => d.info.fingerprint === fingerprint)
+    if (!dev) return null
+    return {
+      target: { address: dev.address, port: dev.port, protocol: dev.protocol },
+      alias: dev.info.alias
+    }
+  }
+
   private handleDevice(info: DeviceInfo, address: string): void {
     const changed = this.registry.upsert(
       info,
@@ -92,9 +135,13 @@ export class AppCore {
         sessions: this.sessions,
         selfInfo: () => this.selfInfo(),
         receiveDir: () => this.opts.receiveDir,
-        onPrepareAsk: this.opts.events.askUser,
+        onPrepareAsk: (transferId, req, fromIp) => this.chat.askUser(transferId, req, fromIp),
+        onTextMessage: (text, from) => this.chat.handleIncomingText(text, from),
+        shouldAutoAcceptFiles: (files) => this.chat.shouldAutoAcceptFiles(files),
+        onAutoAccept: (files, from) => this.chat.handleAutoAccept(files, from),
         onRegister: (info, address) => this.handleDevice(info, address),
-        onFileDone: (i) => this.opts.events.onIncomingFileDone?.(i.fileName, i.size)
+        onFileDone: (i) => this.chat.handleFileDone(i.fileId, i.path),
+        onFileFailed: (fileId, reason) => this.chat.handleFileFailed(fileId, reason)
       })
       // HTTP 端口回退(DESIGN §7):53317 被占(如本机已有 LocalSend / 残留实例)时,
       // 向上试 53318、53319…。多播端口固定不变,announce.port 用实际 HTTP 端口(selfInfo 自动反映)。
@@ -109,7 +156,7 @@ export class AppCore {
         const removed = this.registry.prune()
         if (removed.length) this.opts.events.onDevicesUpdated(this.registry.list())
       }, 5_000)
-      this.sweepTimer = setInterval(() => this.sessions.sweep(), Math.min(T_DIALOG_MS, 5_000))
+      this.sweepTimer = setInterval(() => this.sessions.sweep(), 5_000)
     } catch (err) {
       await this.stop()
       throw err
@@ -149,41 +196,7 @@ export class AppCore {
     return this.registry.list()
   }
 
-  /** 用户对接收弹框的响应由主进程 askUser 的 Promise 内部处理,这里不再暴露 respond。 */
-
-  async sendTo(
-    fingerprint: string,
-    files: SendFile[],
-    onProgress?: (fileId: string) => void
-  ): Promise<{ ok: boolean; message?: string }> {
-    const dev = this.registry.list().find((d) => d.info.fingerprint === fingerprint)
-    if (!dev) return { ok: false, message: '设备不在线' }
-    const res = await sendFiles(
-      { address: dev.address, port: dev.port, protocol: dev.protocol },
-      this.selfInfo(),
-      files,
-      onProgress
-    )
-    switch (res.kind) {
-      case 'done':
-        return { ok: true }
-      case 'rejected':
-        return { ok: false, message: '对方拒绝了传输' }
-      case 'busy':
-        return { ok: false, message: '对方正忙(已有其他传输)' }
-      case 'error':
-        return { ok: false, message: res.message }
-    }
-  }
-
-  async cancelTo(fingerprint: string, sessionId: string): Promise<void> {
-    const dev = this.registry.list().find((d) => d.info.fingerprint === fingerprint)
-    if (dev) await cancelSession({ address: dev.address, port: dev.port, protocol: dev.protocol }, sessionId)
-  }
-
-  newTransferId(): string {
-    return generateSessionId()
-  }
+  // 发送/接收/确认由 this.chat(ChatService)承载,见 index.ts IPC 接线。
 
   async stop(): Promise<void> {
     // S6b:幂等 —— 置 null 防重复 stop 时二次 clearInterval / 二次 server.close(会 reject)
@@ -195,6 +208,7 @@ export class AppCore {
       clearInterval(this.sweepTimer)
       this.sweepTimer = null
     }
+    this.chat.shutdown() // 挂起 resolver 全部 reject + pending 标 expired(DESIGN §11.2.2)
     this.discovery.stop()
     if (this.server) {
       const server = this.server

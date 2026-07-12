@@ -4,7 +4,7 @@
 // 时间通过注入的 now() 获取,超时通过 sweep(now) 主动推进 —— 因此完全可单测。
 
 import type { FileMeta } from '@shared/types'
-import { T_DIALOG_MS, T_IDLE_MS } from '@shared/protocol'
+import { T_ACCEPT_MS, T_IDLE_MS } from '@shared/protocol'
 import { generateSessionId, generateToken } from '@shared/identity'
 
 export type SessionPhase = 'pending' | 'active'
@@ -40,12 +40,13 @@ export type PrepareDecision =
 
 // ── 用户响应结果 ──────────────────────────────────────────
 export type RespondResult =
-  | { kind: 'accepted'; sessionId: string; files: Record<string, string> }
+  | { kind: 'accepted'; sessionId: string; files: Record<string, string> } // 200 + token map
+  | { kind: 'accepted-empty' } // 204:接受但无文件要传(文本消息/接受但选0文件),会话已 clear
   | { kind: 'rejected' } // 403(全拒绝 / 无有效 transferId)
 
 // ── upload 校验结果 ───────────────────────────────────────
 export type UploadDecision =
-  | { kind: 'accept'; fileMeta: FileMeta; alreadyReceived: boolean }
+  | { kind: 'accept'; fileMeta: FileMeta; alreadyReceived: boolean; peerFp: string }
   | { kind: 'reject'; status: 403 | 409 }
 
 export interface SessionManagerOpts {
@@ -67,7 +68,7 @@ export class SessionManager {
 
   constructor(opts: SessionManagerOpts) {
     this.now = opts.now
-    this.dialogTimeoutMs = opts.dialogTimeoutMs ?? T_DIALOG_MS
+    this.dialogTimeoutMs = opts.dialogTimeoutMs ?? T_ACCEPT_MS
     this.idleTimeoutMs = opts.idleTimeoutMs ?? T_IDLE_MS
   }
 
@@ -109,7 +110,12 @@ export class SessionManager {
   }
 
   /**
-   * 用户对弹框的响应。acceptedFileIds 省略 = 接受全部;空数组 = 全拒绝。
+   * 用户对弹框的响应。三态(DESIGN §11.2.1):
+   * - accept=false → rejected(403),clear
+   * - accept=true 但无有效文件要传(文本消息 / 接受但选0文件)→ accepted-empty(204),clear,**不进 active**
+   * - accept=true 且有文件要传 → accepted(200),进 active 等 upload
+   *
+   * acceptedFileIds 省略 = 接受请求里的全部;空数组 + accept=true = 接受但无需传(文本用)。
    * transferId 必须匹配当前 pending 会话,否则视为过期 → rejected。
    */
   respond(transferId: string, accept: boolean, acceptedFileIds?: string[]): RespondResult {
@@ -118,13 +124,20 @@ export class SessionManager {
       return { kind: 'rejected' }
     }
 
+    // 拒绝
+    if (!accept) {
+      this.clear()
+      return { kind: 'rejected' }
+    }
+
     const ids = acceptedFileIds ?? Object.keys(s.requested)
     // 只接受确实存在于请求里的 fileId
     const valid = ids.filter((id) => id in s.requested)
 
-    if (!accept || valid.length === 0) {
-      this.clear()
-      return { kind: 'rejected' }
+    // 接受但无文件要传(文本消息:正文已在 preview,不走 upload;或接受了 0 个文件)
+    if (valid.length === 0) {
+      this.clear() // 立即结束,不进 active、不占单会话锁(P0-2)
+      return { kind: 'accepted-empty' }
     }
 
     const files: Record<string, string> = {}
@@ -162,7 +175,7 @@ export class SessionManager {
     s.lastActivity = this.now()
 
     const alreadyReceived = !s.pending.has(fileId)
-    return { kind: 'accept', fileMeta: s.requested[fileId], alreadyReceived }
+    return { kind: 'accept', fileMeta: s.requested[fileId], alreadyReceived, peerFp: s.fingerprint }
   }
 
   /**

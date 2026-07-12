@@ -9,6 +9,7 @@ import { statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { EP, T_SENDER_MS, T_UPLOAD_MS } from '@shared/protocol'
 import type { DeviceInfo, FileMeta, PrepareUploadResponse } from '@shared/types'
+import { encodeTextMessage } from './text-message'
 
 export interface SendTarget {
   address: string
@@ -109,6 +110,40 @@ export async function sendFiles(
   }
 
   return { kind: 'done', sessionId, sent: Object.keys(tokens) }
+}
+
+export type SendTextResult =
+  | { kind: 'done' } // 对方 204(文本已入流)或 200
+  | { kind: 'rejected' } // 403
+  | { kind: 'busy' } // 409
+  | { kind: 'error'; message: string }
+
+/**
+ * 发送文本消息(DESIGN §11.2):编码成 fileType=text + preview,走 prepare-upload。
+ * 对方识别为文本 → 直接入流 → 回 204(不走 upload)。
+ */
+export async function sendText(
+  target: SendTarget,
+  selfInfo: DeviceInfo,
+  text: string
+): Promise<SendTextResult> {
+  const { fileId, meta } = encodeTextMessage(text)
+  let res: Response
+  try {
+    res = await fetch(`${baseUrl(target)}${EP.prepareUpload}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ info: selfInfo, files: { [fileId]: meta } }),
+      signal: AbortSignal.timeout(T_SENDER_MS)
+    })
+  } catch (err) {
+    return { kind: 'error', message: `send text failed: ${(err as Error).message}` }
+  }
+  if (res.status === 403) return { kind: 'rejected' }
+  if (res.status === 409) return { kind: 'busy' }
+  // 204(文本已入流)或 200(对方当普通文件处理了)都算成功
+  if (res.status === 204 || res.status === 200) return { kind: 'done' }
+  return { kind: 'error', message: `send text status ${res.status}` }
 }
 
 /** 通知对方取消会话(DESIGN §5) */

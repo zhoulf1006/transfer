@@ -1,22 +1,37 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { CMD, EVT, type SendArgs, type IdentityInfo } from '@shared/ipc'
+import {
+  CMD,
+  EVT,
+  type SendTextArgs,
+  type SendFilesArgs,
+  type RespondArgs,
+  type ListMessagesArgs,
+  type AutoAcceptSettings,
+  type IdentityInfo,
+  type UiMessage
+} from '@shared/ipc'
 import type { RemoteDevice } from '@shared/types'
 
 const api = {
   getIdentity: (): Promise<IdentityInfo> => ipcRenderer.invoke(CMD.getIdentity),
   setAlias: (alias: string): Promise<void> => ipcRenderer.invoke(CMD.setAlias, alias),
-  getReceiveDir: (): Promise<string> => ipcRenderer.invoke(CMD.getReceiveDir),
   listDevices: (): Promise<RemoteDevice[]> => ipcRenderer.invoke(CMD.listDevices),
   pickFiles: (): Promise<string[]> => ipcRenderer.invoke(CMD.pickFiles),
-  send: (args: SendArgs): Promise<{ ok: boolean; message?: string }> =>
-    ipcRenderer.invoke(CMD.send, args),
+
+  // 聊天
+  sendText: (args: SendTextArgs): Promise<void> => ipcRenderer.invoke(CMD.sendText, args),
+  sendFiles: (args: SendFilesArgs): Promise<void> => ipcRenderer.invoke(CMD.sendFiles, args),
+  respond: (args: RespondArgs): Promise<void> => ipcRenderer.invoke(CMD.respond, args),
+  listMessages: (args?: ListMessagesArgs): Promise<UiMessage[]> =>
+    ipcRenderer.invoke(CMD.listMessages, args),
+  openFile: (messageId: string): Promise<void> => ipcRenderer.invoke(CMD.openFile, messageId),
+  getAutoAccept: (): Promise<AutoAcceptSettings> => ipcRenderer.invoke(CMD.getAutoAccept),
+  setAutoAccept: (s: Partial<AutoAcceptSettings>): Promise<AutoAcceptSettings> =>
+    ipcRenderer.invoke(CMD.setAutoAccept, s),
 
   // 事件订阅(返回取消函数)
   onDevicesUpdated: (cb: (devices: RemoteDevice[]) => void) => subscribe(EVT.devicesUpdated, cb),
-  onIncoming: (cb: (p: unknown) => void) => subscribe(EVT.transferIncoming, cb),
-  onProgress: (cb: (p: unknown) => void) => subscribe(EVT.transferProgress, cb),
-  onDone: (cb: (p: unknown) => void) => subscribe(EVT.transferDone, cb),
-  onError: (cb: (p: unknown) => void) => subscribe(EVT.transferError, cb)
+  onMessageUpserted: (cb: (msg: UiMessage) => void) => subscribe(EVT.messageUpserted, cb)
 }
 
 function subscribe(channel: string, cb: (payload: any) => void): () => void {

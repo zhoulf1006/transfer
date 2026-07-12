@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { randomBytes, createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { createHttpServer } from './http-server'
-import { sendFiles, cancelSession, type SendTarget } from './http-client'
+import { sendFiles, sendText, cancelSession, type SendTarget } from './http-client'
 import { SessionManager } from './session'
 import type { DeviceInfo, PrepareUploadRequest } from '@shared/types'
 
@@ -44,6 +44,9 @@ describe('文件收发(集成)', () => {
   let target: SendTarget
   let sessions: SessionManager
   let cancelledCount: number
+  let receivedTexts: string[]
+  let uploadCount: number
+  let autoAcceptImpl: (files: PrepareUploadRequest['files']) => boolean
   // 控制接收方"弹框"决策
   let askImpl: (req: PrepareUploadRequest) => Promise<string[] | false>
 
@@ -52,6 +55,8 @@ describe('文件收发(集成)', () => {
     sendDir = mkdtempSync(join(tmpdir(), 'transfer-send-'))
     sessions = new SessionManager({ now: () => Date.now() })
     cancelledCount = 0
+    receivedTexts = []
+    autoAcceptImpl = () => false // 默认不自动接收
     askImpl = async (req) => Object.keys(req.files) // 默认全接受
 
     server = createHttpServer({
@@ -59,7 +64,14 @@ describe('文件收发(集成)', () => {
       selfInfo: () => selfInfo('Receiver', 'FP_RECV'),
       receiveDir: () => recvDir,
       onPrepareAsk: (_id, req) => askImpl(req),
-      onSessionCancelled: () => cancelledCount++
+      onSessionCancelled: () => cancelledCount++,
+      onTextMessage: (text) => receivedTexts.push(text),
+      shouldAutoAcceptFiles: (files) => autoAcceptImpl(files)
+    })
+    // 计数 upload 路由调用(验证文本不产生 upload)
+    uploadCount = 0
+    server.addHook('onRequest', async (req) => {
+      if (req.url.includes('/upload?')) uploadCount++
     })
     const address = await server.listen({ host: HOST, port: 0 })
     const port = Number(new URL(address).port)
@@ -254,5 +266,56 @@ describe('文件收发(集成)', () => {
     const gotHashes = got.map((b) => sha256(b)).sort()
     const wantHashes = [sha256(contentA), sha256(contentB)].sort()
     expect(gotHashes).toEqual(wantHashes)
+  })
+
+  // ── 聊天 UI 传输层(§11.2)──────────────────────────────
+
+  test('文本消息:走 prepare-upload 直接入流,不产生 upload,对方回 204', async () => {
+    let askCalled = false
+    askImpl = async (req) => {
+      askCalled = true
+      return Object.keys(req.files)
+    }
+    const res = await sendText(target, selfInfo('Sender', 'FP_SEND'), '你好,这是一条消息')
+    expect(res.kind).toBe('done')
+    expect(receivedTexts).toEqual(['你好,这是一条消息'])
+    expect(askCalled).toBe(false) // 文本不询问用户
+    expect(sessions.current).toBeNull() // accepted-empty 后会话已清理
+    expect(uploadCount).toBe(0) // 真断言:文本不产生任何 upload 请求(§11.2)
+  })
+
+  test('文本消息:会话立即释放,不挡后续传输', async () => {
+    await sendText(target, selfInfo('S', 'FP'), 'msg1')
+    // 紧接着发文件应正常(单会话锁已释放)
+    const f = makeFile('after-text.bin', 1000)
+    const res = await sendFiles(target, selfInfo('S', 'FP'), [{ id: f.id, path: f.path }])
+    expect(res.kind).toBe('done')
+    expect(readFileSync(join(recvDir, 'after-text.bin')).equals(f.content)).toBe(true)
+  })
+
+  test('自动接收开启:文件不询问用户,直接落盘', async () => {
+    autoAcceptImpl = () => true // 全部自动接收
+    let askCalled = false
+    askImpl = async (req) => {
+      askCalled = true
+      return Object.keys(req.files)
+    }
+    const f = makeFile('auto.bin', 3000)
+    const res = await sendFiles(target, selfInfo('S', 'FP'), [{ id: f.id, path: f.path }])
+    expect(res.kind).toBe('done')
+    expect(askCalled).toBe(false) // 自动接收,未询问
+    expect(readFileSync(join(recvDir, 'auto.bin')).equals(f.content)).toBe(true)
+  })
+
+  test('自动接收关闭:文件仍走用户确认', async () => {
+    autoAcceptImpl = () => false
+    let askCalled = false
+    askImpl = async (req) => {
+      askCalled = true
+      return Object.keys(req.files)
+    }
+    const f = makeFile('manual.bin', 1000)
+    await sendFiles(target, selfInfo('S', 'FP'), [{ id: f.id, path: f.path }])
+    expect(askCalled).toBe(true) // 关闭时必须询问
   })
 })

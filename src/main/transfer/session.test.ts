@@ -99,11 +99,21 @@ describe('SessionManager', () => {
     expect(sm.current).toBeNull()
   })
 
-  test('接受空集合(全不选)等价拒绝', () => {
+  // 三态 respond(DESIGN §11.2.1)
+  test('接受但空集合(文本/选0文件)→ accepted-empty(204),立即清理不进 active', () => {
     const d = sm.onPrepareUpload({ remoteIp: '1.1.1.1', fingerprint: 'A', files: filesOf('f1') })
     if (d.kind !== 'ask') throw new Error('expected ask')
-    expect(sm.respond(d.transferId, true, []).kind).toBe('rejected')
-    expect(sm.current).toBeNull()
+    expect(sm.respond(d.transferId, true, []).kind).toBe('accepted-empty')
+    expect(sm.current).toBeNull() // 不进 active、不占单会话锁
+  })
+
+  test('accepted-empty 后单会话锁立即释放(下一个 prepare 不被 409)', () => {
+    const d1 = sm.onPrepareUpload({ remoteIp: '1.1.1.1', fingerprint: 'A', files: filesOf('f1') })
+    if (d1.kind !== 'ask') throw new Error('expected ask')
+    sm.respond(d1.transferId, true, []) // 文本 accept
+    // 立即来第二个会话,应 ask 而非 busy
+    const d2 = sm.onPrepareUpload({ remoteIp: '2.2.2.2', fingerprint: 'B', files: filesOf('f2') })
+    expect(d2.kind).toBe('ask')
   })
 
   test('错误/过期 transferId 响应 → rejected', () => {

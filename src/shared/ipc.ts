@@ -1,49 +1,71 @@
-// IPC 契约(main ↔ renderer,见 docs/DESIGN §8)
-// 所有传输相关消息带 transferId(本地,区别于协议 sessionId)。
+// IPC 契约(main ↔ renderer,见 docs/DESIGN §8、§11.5)
 
-import type { RemoteDevice, FileMeta } from './types'
+import type { RemoteDevice } from './types'
+
+// ── 消息(聊天流)UI 数据模型(与 main/db/messages 的 Message 对齐)──
+export type MessageType = 'text' | 'file'
+export type Direction = 'sent' | 'recv'
+export type MessageStatus =
+  | 'pending'
+  | 'accepted'
+  | 'rejected'
+  | 'sent'
+  | 'done'
+  | 'failed'
+  | 'expired'
+
+export interface UiMessage {
+  id: string
+  type: MessageType
+  direction: Direction
+  peerFp: string
+  peerAlias: string
+  content: string | null
+  fileName: string | null
+  fileSize: number | null
+  filePath: string | null
+  status: MessageStatus
+  errorReason: string | null
+  transferId: string | null
+  createdAt: number
+}
 
 // ── 主 → 渲染 事件 channel ──
 export const EVT = {
   devicesUpdated: 'devices:updated',
-  transferIncoming: 'transfer:incoming',
-  transferProgress: 'transfer:progress',
-  transferDone: 'transfer:done',
-  transferError: 'transfer:error'
+  /** 单条消息新增/状态变化(带完整 UiMessage) */
+  messageUpserted: 'message:upserted'
 } as const
 
 // ── 渲染 → 主 调用 channel ──
 export const CMD = {
-  respond: 'transfer:respond',
-  send: 'transfer:send',
-  cancel: 'transfer:cancel',
   getIdentity: 'device:getIdentity',
   setAlias: 'device:setAlias',
-  getReceiveDir: 'settings:getReceiveDir',
   listDevices: 'devices:list',
-  pickFiles: 'dialog:pickFiles'
+  pickFiles: 'dialog:pickFiles',
+  // 聊天
+  sendText: 'message:sendText',
+  sendFiles: 'message:sendFiles',
+  respond: 'message:respond',
+  listMessages: 'message:list',
+  openFile: 'message:openFile',
+  getAutoAccept: 'settings:getAutoAccept',
+  setAutoAccept: 'settings:setAutoAccept'
 } as const
 
-export interface IncomingPayload {
-  transferId: string
-  fromAlias: string
-  files: Pick<FileMeta, 'fileName' | 'size'>[]
+export interface IdentityInfo {
+  alias: string
+  fingerprint: string
 }
 
-export interface ProgressPayload {
-  transferId: string
-  direction: 'send' | 'recv'
-  fileName: string
+export interface SendTextArgs {
+  peerFp: string
+  text: string
 }
 
-export interface DonePayload {
-  transferId: string
-  direction: 'send' | 'recv'
-}
-
-export interface ErrorPayload {
-  transferId: string
-  message: string
+export interface SendFilesArgs {
+  peerFp: string
+  filePaths: string[]
 }
 
 export interface RespondArgs {
@@ -51,14 +73,14 @@ export interface RespondArgs {
   accept: boolean
 }
 
-export interface SendArgs {
-  fingerprint: string
-  filePaths: string[]
+export interface ListMessagesArgs {
+  limit?: number
+  before?: number
 }
 
-export interface IdentityInfo {
-  alias: string
-  fingerprint: string
+export interface AutoAcceptSettings {
+  enabled: boolean
+  maxBytes: number
 }
 
 export type { RemoteDevice }
