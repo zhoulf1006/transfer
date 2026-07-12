@@ -50,14 +50,16 @@ describe('MulticastDiscovery(集成)', () => {
       buildAnnouncement: announcementFactory('Device-A', 'FP_A'),
       onDevice: (info) => seenByA.push(info.fingerprint),
       port: TEST_PORT,
-      multicastAddr: TEST_ADDR
+      multicastAddr: TEST_ADDR,
+      interfaceAddr: '' // 测试强制 OS 默认接口,隔离本机代理网卡
     })
     const b = new MulticastDiscovery({
       selfFingerprint: 'FP_B',
       buildAnnouncement: announcementFactory('Device-B', 'FP_B'),
       onDevice: (info) => seenByB.push(info.fingerprint),
       port: TEST_PORT,
-      multicastAddr: TEST_ADDR
+      multicastAddr: TEST_ADDR,
+      interfaceAddr: '' // 测试强制 OS 默认接口,隔离本机代理网卡
     })
     running.push(a, b)
 
@@ -83,7 +85,8 @@ describe('MulticastDiscovery(集成)', () => {
       buildAnnouncement: announcementFactory('Me', 'FP_SELF'),
       onDevice: (info) => seen.push(info.fingerprint),
       port: TEST_PORT,
-      multicastAddr: TEST_ADDR
+      multicastAddr: TEST_ADDR,
+      interfaceAddr: '' // 测试强制 OS 默认接口,隔离本机代理网卡
     })
     running.push(a)
     await a.start() // a 自己 announce(true),loopback 会让 a 收到自己的包
@@ -118,7 +121,8 @@ describe('MulticastDiscovery(集成)', () => {
       buildAnnouncement: announcementFactory('Device-A', 'FP_A'),
       onDevice: (info) => seen.push(info.fingerprint),
       port: TEST_PORT,
-      multicastAddr: TEST_ADDR
+      multicastAddr: TEST_ADDR,
+      interfaceAddr: '' // 测试强制 OS 默认接口,隔离本机代理网卡
     })
     running.push(a)
     await a.start()

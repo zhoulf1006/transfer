@@ -28,6 +28,8 @@ export interface AppCoreOpts {
   httpPort?: number
   /** UDP 多播监听端口。固定 DEFAULT_PORT 才能互相发现;仅测试可覆盖(DESIGN §7/M5) */
   multicastPort?: number
+  /** 多播绑定接口:不传=自动选真实局域网接口;''=OS 默认(测试隔离用) */
+  interfaceAddr?: string
   events: AppCoreEvents
 }
 
@@ -63,7 +65,8 @@ export class AppCore {
         announce
       }),
       onDevice: (info, address) => this.handleDevice(info, address),
-      port: this.multicastPort
+      port: this.multicastPort,
+      interfaceAddr: opts.interfaceAddr
     })
   }
 

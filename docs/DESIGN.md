@@ -286,7 +286,7 @@ export const T_UPLOAD_MS = 5 * 60_000    // 单个 upload 超时(S4:防接收方
 | 多播不可用(路由器屏蔽多播) | 保留 `/register` HTTP fallback;MVP 至少保证多播路径,fallback 可迭代 |
 | 端口 53317 被占用(TCP) | **已实现**:`listenWithFallback` 捕获 EADDRINUSE,HTTP 端口向上回退 53317→53318→…(最多 20 次),`actualHttpPort` 记录实际端口;**UDP 多播仍固定监听 53317**(否则收不到别人广播),`announce.port`/`selfInfo.port` 取实际 HTTP 端口 —— 两者可不同(M5)。常见触发:本机已有真正的 LocalSend App(同用 53317)或残留 Transfer 实例。**已用 Fastify 实测坐实:listen 失败后同 server 实例可复用再 listen** |
 | `AppCore.start()` 中途失败 | try/catch 回滚已 listen 的 HTTP server + socket + 定时器(S6);`stop()` 幂等(置 null 防重复 close)|
-| 多网卡 | dgram 需处理接口选择;MVP 先默认接口,记录为已知限制 |
+| 多网卡 / 代理隧道(已修复) | **真实 bug**:有代理软件(Clash/Surge)时机器有隧道接口(utun 上 198.18.x / CGNAT 100.64.x),dgram `addMembership` 不指定接口时 OS 可能把多播加到隧道接口,导致局域网互相发现不了(用户实测:mac 有 utun4 198.18.0.1 抢走了多播)。**修复**:`pickAllLanInterfaces` 挑出所有真实局域网接口(排除隧道段),在**每个**接口上 `addMembership`,`announce` 也遍历每个接口发送(不赌单一接口,兼容 VM/WSL 网卡与真实 WiFi 撞私有网段)。任一接口失败退回 OS 默认。`pick-interface.ts` + 10 个单元测覆盖 |
 | 同机双实例收多播(②-b) | 接收 socket 必须 `reuseAddr:true` 否则第二实例 EADDRINUSE;开了之后两实例都收到,再靠 fingerprint 各自过滤自己 |
 | `.part` rename 跨盘(②-c) | `.part` **必须与最终文件同目录**(同盘),同目录内 rename(原子);不可放系统 temp 再跨盘 rename(EXDEV) |
 | 大文件超 Fastify bodyLimit(②-d) | upload 路由用 `addContentTypeParser(done())` + pipe `request.raw` 天然绕过 1MiB 默认;并显式设大 bodyLimit 兜底 |

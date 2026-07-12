@@ -48,6 +48,7 @@ describe('AppCore 端到端', () => {
       receiveDir: recvDir,
       // 同机双实例:多播端口相同(才能互相发现),HTTP 端口不同(才能共存)——DESIGN §7/M5
       multicastPort: 56000,
+      interfaceAddr: '', // 测试用 OS 默认接口,隔离本机代理网卡
       httpPort,
       events: {
         onDevicesUpdated: (d) => (latest = d),
