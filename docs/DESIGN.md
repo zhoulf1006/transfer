@@ -284,7 +284,7 @@ export const T_UPLOAD_MS = 5 * 60_000    // 单个 upload 超时(S4:防接收方
 |------|------|
 | 收到自己的多播广播 **或 /register** | 用 fingerprint 比对,等于本机则忽略(两条入口都做,H4) |
 | 多播不可用(路由器屏蔽多播) | 保留 `/register` HTTP fallback;MVP 至少保证多播路径,fallback 可迭代 |
-| 端口 53317 被占用(TCP) | 捕获 EADDRINUSE,HTTP 服务改用备用端口;**UDP 多播仍固定监听 53317**(否则收不到别人广播),`announce.port` 填实际 HTTP 端口 —— 两者可不同(M5)。**实现:`AppCore` 用独立字段 `multicastPort`(固定)+ `httpPort`(可变),`selfInfo.port`/`announce.port` 取 `httpPort`** |
+| 端口 53317 被占用(TCP) | **已实现**:`listenWithFallback` 捕获 EADDRINUSE,HTTP 端口向上回退 53317→53318→…(最多 20 次),`actualHttpPort` 记录实际端口;**UDP 多播仍固定监听 53317**(否则收不到别人广播),`announce.port`/`selfInfo.port` 取实际 HTTP 端口 —— 两者可不同(M5)。常见触发:本机已有真正的 LocalSend App(同用 53317)或残留 Transfer 实例。**已用 Fastify 实测坐实:listen 失败后同 server 实例可复用再 listen** |
 | `AppCore.start()` 中途失败 | try/catch 回滚已 listen 的 HTTP server + socket + 定时器(S6);`stop()` 幂等(置 null 防重复 close)|
 | 多网卡 | dgram 需处理接口选择;MVP 先默认接口,记录为已知限制 |
 | 同机双实例收多播(②-b) | 接收 socket 必须 `reuseAddr:true` 否则第二实例 EADDRINUSE;开了之后两实例都收到,再靠 fingerprint 各自过滤自己 |

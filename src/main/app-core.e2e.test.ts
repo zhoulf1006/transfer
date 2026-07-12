@@ -85,4 +85,27 @@ describe('AppCore 端到端', () => {
     const received = readFileSync(join(b.recvDir, 'payload.bin'))
     expect(received.equals(content)).toBe(true)
   })
+
+  // 端口回退:HTTP 端口被占(如本机已有 LocalSend)时,AppCore 应回退到下一个端口而非崩溃。
+  test('HTTP 端口被占用时自动回退到下一个端口', async () => {
+    const { createServer } = await import('node:net')
+    const busyPort = 57317
+    // 用一个裸 TCP server 占住 busyPort
+    const blocker = createServer()
+    await new Promise<void>((r) => blocker.listen(busyPort, '0.0.0.0', () => r()))
+
+    try {
+      const c = mkCore('C', 'FP_C', busyPort, async () => false)
+      await c.core.start()
+      // 应回退到 busyPort+1(57318),而非崩在 57317
+      expect(c.core.actualHttpPort).toBe(busyPort + 1)
+      // announce/selfInfo 的 port 应反映实际端口(对方才能连对)
+      const info = await fetch(
+        `http://127.0.0.1:${c.core.actualHttpPort}/api/localsend/v2/info`
+      ).then((r) => r.json())
+      expect(info.port).toBe(busyPort + 1)
+    } finally {
+      await new Promise<void>((r) => blocker.close(() => r()))
+    }
+  })
 })

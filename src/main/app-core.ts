@@ -39,8 +39,10 @@ export class AppCore {
   private pruneTimer: NodeJS.Timeout | null = null
   private sweepTimer: NodeJS.Timeout | null = null
   private readonly opts: AppCoreOpts
-  /** HTTP 服务端口(= announce.port,对方连接用) */
-  private readonly httpPort: number
+  /** HTTP 服务端口(= announce.port,对方连接用)。EADDRINUSE 时向上回退,故非 readonly */
+  private httpPort: number
+  /** 端口回退时的最大尝试次数(53317..53317+N) */
+  private readonly maxPortAttempts = 20
   /** UDP 多播端口(固定,同机多实例共享) */
   private readonly multicastPort: number
 
@@ -91,7 +93,9 @@ export class AppCore {
         onRegister: (info, address) => this.handleDevice(info, address),
         onFileDone: (i) => this.opts.events.onIncomingFileDone?.(i.fileName, i.size)
       })
-      await this.server.listen({ host: '0.0.0.0', port: this.httpPort })
+      // HTTP 端口回退(DESIGN §7):53317 被占(如本机已有 LocalSend / 残留实例)时,
+      // 向上试 53318、53319…。多播端口固定不变,announce.port 用实际 HTTP 端口(selfInfo 自动反映)。
+      await this.listenWithFallback(this.server)
 
       // 发现
       await this.discovery.start()
@@ -107,6 +111,35 @@ export class AppCore {
       await this.stop()
       throw err
     }
+  }
+
+  /**
+   * 监听 HTTP 端口,EADDRINUSE 时向上回退(53317 → 53318 → …)。
+   * 成功后 this.httpPort 更新为实际端口(announce/selfInfo 随之反映)。
+   */
+  private async listenWithFallback(server: FastifyInstance): Promise<void> {
+    const startPort = this.httpPort
+    for (let i = 0; i < this.maxPortAttempts; i++) {
+      const port = startPort + i
+      try {
+        await server.listen({ host: '0.0.0.0', port })
+        this.httpPort = port
+        return
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+          continue // 该端口被占,试下一个
+        }
+        throw err // 其他错误直接抛
+      }
+    }
+    throw new Error(
+      `HTTP 端口 ${startPort}..${startPort + this.maxPortAttempts - 1} 全部被占用`
+    )
+  }
+
+  /** 实际使用的 HTTP 端口(回退后可能非默认) */
+  get actualHttpPort(): number {
+    return this.httpPort
   }
 
   listDevices(): RemoteDevice[] {
