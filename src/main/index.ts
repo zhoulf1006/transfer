@@ -27,7 +27,10 @@ const portOverride = process.env['TRANSFER_PORT'] ? Number(process.env['TRANSFER
 // TRANSFER_USERDATA 测试实例用不同 userData=各自独立锁,不互相争,多实例测试不受影响。
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
-  app.quit()
+  // 第二实例:用 app.exit(0) 立即强杀,而非 app.quit()。
+  // quit() 在 ready 之前调用可能不干净、且会走 before-quit,可能卡住变僵尸进程;
+  // 第二实例什么都没初始化,直接 exit 最安全。
+  app.exit(0)
 }
 
 let core: AppCore | null = null
