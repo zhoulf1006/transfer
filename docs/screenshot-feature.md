@@ -12,14 +12,14 @@
 | 1 | 需求调研 | ✅ 完成 | 100% | 调研 Snipaste 官方 wiki(两 agent 交叉验证);功能清单 + 范围决策已定,见 §1/§2 |
 | 2 | 出方案(设计文档) | ✅ 完成 | 100% | 技术前置调研 §3 + 完整设计方案 §4(架构/状态机/IPC 契约/标注数据结构/边界失败模式/实现顺序) |
 | 3 | review 方案 | ✅ 完成 | 100% | 5 Opus/max agent 对抗式审 + 交叉汇总,6 blocker+19 major 已逐条修进 §3/§4/§4.7;3 个产品决策已定 |
-| 4 | 实现 | ⏳ 就绪 | 0% | 方案已补全,可开工。按 §4.6 七阶段推进 |
-| 5 | review 代码 | ⬜ 未开始 | 0% | |
-| 6 | review 测试 | ⬜ 未开始 | 0% | |
-| 7 | 回同步 design | ⬜ 未开始 | 0% | |
+| 4 | 实现 | ✅ 完成 | 100% | 按 §4.6 七阶段落地(骨架/抓屏/框选/放大镜/三出口/标注/回归);全部 story 见清单 |
+| 5 | review 代码 | ✅ 完成 | 100% | 每阶段实现后批判式自审 + 多轮实机 bug 修复(工具条冒泡/保存对话框/Dock图标/文字聚焦/复位闪框等) |
+| 6 | review 测试 | ✅ 完成 | 100% | 纯逻辑抽函数单测:选区几何/两轴ratio/裁剪clamp/取色/撤销栈封顶/箭头几何;200 测试全过 |
+| 7 | 回同步 design | ✅ 完成 | 100% | 实现偏离集中记于 §4.9(去panel/dialogBusy/不抢前台/shotHide/stopPropagation/文字聚焦/去马克笔/Lucide图标) |
 
-**当前所处**:第 3 步(review 方案)已完成,方案补全,准备进入第 4 步(实现)。
+**当前所处**:七步流程全部完成,第一版截图功能落地。
 
-**第 3 步产品决策(已确认)**:① 发聊天=没选对象则按钮禁用(仍可复制/保存);② editing 中按 F1=忽略;③ 多屏其余屏也压暗+吞点击。
+**关键产品决策(已确认)**:① 发聊天=没选对象则按钮禁用(仍可复制/保存);② editing 中按 F1=忽略;③ 多屏其余屏也压暗+吞点击;④ 遮罩去 panel(不能在别 app 原生全屏上截图,换 Dock 图标不消失);⑤ 马克笔工具移除。
 
 图例:✅ 完成 · ⏳ 进行中/就绪 · ⬜ 未开始
 
@@ -36,53 +36,53 @@
 ### 模块 A — 触发 & 会话
 | ID | Story | 优先级 | 需求 | 实现 | 完成度 |
 |----|-------|:---:|:---:|:---:|:---:|
-| A1 | 全局快捷键 `F1` 触发截图会话 | P0 | ✅ | ⬜ | 0% |
-| A2 | 抓取光标所在屏画面 | P0 | ✅ | ⬜ | 0% |
-| A3 | 全屏遮罩层(未框选压暗) | P0 | ✅ | ⬜ | 0% |
-| A4 | `Esc` 取消会话 | P0 | ✅ | ⬜ | 0% |
+| A1 | 全局快捷键 `F1` 触发截图会话 | P0 | ✅ | ✅ | 100% |
+| A2 | 抓取光标所在屏画面 | P0 | ✅ | ✅ | 100% |
+| A3 | 全屏遮罩层(未框选压暗) | P0 | ✅ | ✅ | 100% |
+| A4 | `Esc` 取消会话 | P0 | ✅ | ✅ | 100% |
 
 ### 模块 B — 区域选取
 | ID | Story | 优先级 | 需求 | 实现 | 完成度 |
 |----|-------|:---:|:---:|:---:|:---:|
-| B1 | 手动拖拽框选矩形 | P0 | ✅ | ⬜ | 0% |
-| B2 | 选区内亮 / 外压暗 | P0 | ✅ | ⬜ | 0% |
-| B3 | 实时 W×H 尺寸标签 | P0 | ✅ | ⬜ | 0% |
-| B4 | 拖锚点(四边四角)调大小 | P0 | ✅ | ⬜ | 0% |
-| B5 | 拖选区整块移位 | P0 | ✅ | ⬜ | 0% |
-| B6 | 方向键像素级微调(移动/Ctrl 扩/Shift 缩) | P1 | ✅ | ⬜ | 0% |
-| B7 | 全屏快捷键 / 右键重新框选 | P1 | ✅ | ⬜ | 0% |
-| B8 | 选区过小时锚点自动隐藏 | P1 | ✅ | ⬜ | 0% |
+| B1 | 手动拖拽框选矩形 | P0 | ✅ | ✅ | 100% |
+| B2 | 选区内亮 / 外压暗 | P0 | ✅ | ✅ | 100% |
+| B3 | 实时 W×H 尺寸标签 | P0 | ✅ | ✅ | 100% |
+| B4 | 拖锚点(四边四角)调大小 | P0 | ✅ | ✅ | 100% |
+| B5 | 拖选区整块移位 | P0 | ✅ | ✅ | 100% |
+| B6 | 方向键像素级微调(移动/Ctrl 扩/Shift 缩) | P1 | ✅ | ✅ | 100% |
+| B7 | 全屏快捷键 / 右键重新框选 | P1 | ✅ | ✅ | 100% |
+| B8 | 选区过小时锚点自动隐藏 | P1 | ✅ | ✅ | 100% |
 
 ### 模块 C — 取色放大镜
 | ID | Story | 优先级 | 需求 | 实现 | 完成度 |
 |----|-------|:---:|:---:|:---:|:---:|
-| C1 | 像素级放大镜 + 中心十字 | P1 | ✅ | ⬜ | 0% |
-| C2 | 显示坐标 (x,y) + 颜色值(RGB/HEX) | P1 | ✅ | ⬜ | 0% |
-| C3 | 滚轮调放大倍率 | P1 | ✅ | ⬜ | 0% |
-| C4 | 快捷键复制颜色值 / 切换 RGB↔HEX | P1 | ✅ | ⬜ | 0% |
+| C1 | 像素级放大镜 + 中心十字 | P1 | ✅ | ✅ | 100% |
+| C2 | 显示坐标 (x,y) + 颜色值(RGB/HEX) | P1 | ✅ | ✅ | 100% |
+| C3 | 滚轮调放大倍率 | P1 | ✅ | ✅ | 100% |
+| C4 | 快捷键复制颜色值 / 切换 RGB↔HEX | P1 | ✅ | ✅ | 100% |
 
 ### 模块 D — 标注工具(对齐 Snipaste)
 | ID | Story | 优先级 | 需求 | 实现 | 完成度 |
 |----|-------|:---:|:---:|:---:|:---:|
-| D1 | 矩形 | P0 | ✅ | ⬜ | 0% |
-| D2 | 椭圆 | P1 | ✅ | ⬜ | 0% |
-| D3 | 直线 | P1 | ✅ | ⬜ | 0% |
-| D4 | 箭头 | P0 | ✅ | ⬜ | 0% |
-| D5 | 画笔(自由绘) | P0 | ✅ | ⬜ | 0% |
-| D6 | 马克笔 / 荧光笔 | P1 | ✅ | ⬜ | 0% |
-| D7 | 马赛克 | P1 | ✅ | ⬜ | 0% |
-| D8 | 高斯模糊 | P1 | ✅ | ⬜ | 0% |
-| D9 | 文字 | P0 | ✅ | ⬜ | 0% |
-| D10 | 序号步骤标注 | P1 | ✅ | ⬜ | 0% |
-| D11 | 可调项:颜色 / 透明度 / 粗细 | P0 | ✅ | ⬜ | 0% |
-| D12 | 撤销 / 重做 / 清空 | P0 | ✅ | ⬜ | 0% |
+| D1 | 矩形 | P0 | ✅ | ✅ | 100% |
+| D2 | 椭圆 | P1 | ✅ | ✅ | 100% |
+| D3 | 直线 | P1 | ✅ | ✅ | 100% |
+| D4 | 箭头 | P0 | ✅ | ✅ | 100% |
+| D5 | 画笔(自由绘) | P0 | ✅ | ✅ | 100% |
+| D6 | ~~马克笔 / 荧光笔~~ | P1 | — | ⏸️ 不做 | — |
+| D7 | 马赛克 | P1 | ✅ | ✅ | 100% |
+| D8 | 高斯模糊 | P1 | ✅ | ✅ | 100% |
+| D9 | 文字 | P0 | ✅ | ✅ | 100% |
+| D10 | 序号步骤标注 | P1 | ✅ | ✅ | 100% |
+| D11 | 可调项:颜色 / 透明度 / 粗细 | P0 | ✅ | ✅ | 100% |
+| D12 | 撤销 / 重做 / 清空 | P0 | ✅ | ✅ | 100% |
 
 ### 模块 E — 输出去向
 | ID | Story | 优先级 | 需求 | 实现 | 完成度 |
 |----|-------|:---:|:---:|:---:|:---:|
-| E1 | 发到当前聊天(核心) | P0 | ✅ | ⬜ | 0% |
-| E2 | 复制到剪贴板 | P0 | ✅ | ⬜ | 0% |
-| E3 | 保存为文件 | P1 | ✅ | ⬜ | 0% |
+| E1 | 发到当前聊天(核心) | P0 | ✅ | ✅ | 100% |
+| E2 | 复制到剪贴板 | P0 | ✅ | ✅ | 100% |
+| E3 | 保存为文件 | P1 | ✅ | ✅ | 100% |
 
 ### 模块 F — 后续增强(P2,暂缓)
 | ID | Story | 优先级 | 需求 | 实现 | 完成度 |
@@ -93,7 +93,7 @@
 
 > 明确排除(直接不做):**延时截图**、钉图、OCR、滚动长截图、录屏/GIF。
 
-**汇总**:P0 共 15 个 story,P1 共 13 个,P2 共 3 个(暂缓)。当前全部处于「需求已确认、实现未开始」——因方案(第 2 步)尚未开始。
+**汇总**:P0 共 15 个 story **全部实现** ✅,P1 共 12 个**实现**(D6 马克笔按用户要求不做)+ 1 个不做,P2 共 3 个暂缓。第一版功能全部落地,详见 §4.9 实现偏离。
 
 ---
 
@@ -133,7 +133,7 @@
 | 手动框选 | 按住左键拖拽画矩形 |
 | 拖锚点调大小 | 四边四角 8 锚点;选区过小时隐藏 |
 | 拖整块移位 | 选区内部拖动,不改大小 |
-| 像素微调 | 方向键移选区;Ctrl+方向键扩、Shift+方向键缩(各 1px) |
+| 像素微调 | 方向键移选区;**跟手方向**:Ctrl+方向键把该方向那条边界外扩 1px、Shift+方向键内收 1px(如 Ctrl+↑=上边外扩、Ctrl+↓=下边外扩) |
 | 实时尺寸 | 选区旁显示 W×H |
 | 全屏 / 重选 | 全选快捷键;右键重新框选 |
 
@@ -163,8 +163,9 @@
 - **时序**:getSources 异步、有几十~几百 ms 开销。理论上"先弹遮罩、并行抓屏"可降感知延迟,**但会自截(遮罩窗自己被拍进快照)**,故方案最终改为「**先抓屏拿干净位图 → 再 show 遮罩**」(见 §4.2,自截优先于延迟)。感知延迟改由"show 时背景先占位、位图到达再换"缓解。[d.ts:7219, 21896]
 
 ### 3.2 全屏遮罩窗 & 快捷键 & 剪贴板
-- **透明遮罩窗**:`transparent:true`(Win 必须 `frame:false`)+ `resizable:false`(透明窗不可 resize,否则某些平台失效)+ `skipTaskbar` + `type:'panel'`(mac 浮在全屏 app 上)+ `enableLargerThanScreen`。铺满用 `setBounds(display.bounds)`,**不能用 maximize()**(透明窗禁用)。[Electron custom-window-styles / base-window-options,verbatim]
-- ⚠️ **盖 macOS Dock**:`setAlwaysOnTop(true, 'screen-saver')`(level 须 ≥ `pop-up-menu` 才在 Dock 之上)+ `setVisibleOnAllWorkspaces(true, {visibleOnFullScreen:true})`。**盖顶部菜单栏部分 mac 版本不稳 → 实现时实测**。不用 kiosk/simpleFullscreen。[browser-window,verbatim + GitHub issue]
+- **透明遮罩窗**:`transparent:true`(Win 必须 `frame:false`)+ `resizable:false`(透明窗不可 resize,否则某些平台失效)+ `skipTaskbar` + `enableLargerThanScreen`。铺满用 `setBounds(display.bounds)`,**不能用 maximize()**(透明窗禁用)。[Electron custom-window-styles / base-window-options,verbatim]
+  - ⚠️ **实现落地:不用 `type:'panel'`**(见 §4.9)。调研原建议用 panel 浮在全屏 app 上,但**实测 panel 会把 mac app 的 activation policy 降到 accessory → Dock 图标消失**。已改为不用 panel;代价是不能在别的 app 原生全屏上截图(普通截图不受影响)。
+- ⚠️ **盖 macOS Dock**:`setAlwaysOnTop(true, 'screen-saver')`(level 须 ≥ `pop-up-menu` 才在 Dock 之上)即可盖 Dock/任务栏,且**不改 activation policy**。**实现落地:去掉 `setVisibleOnAllWorkspaces`**(那是配合 panel/全屏用的,见 §4.9)。不用 kiosk/simpleFullscreen。[browser-window,verbatim + GitHub issue]
 - **F1 全局快捷键**:app ready 后 `globalShortcut.register('F1', cb)`,**返回 false = 被占用静默失败**,`will-quit` 时 `unregisterAll()`。⚠️ 需**提供可改键 + 返回值兜底**(F1 在 Win 常被前台 app 当帮助键)。[global-shortcut,verbatim]
 - **剪贴板写图**:`nativeImage.createFromDataURL(canvas.toDataURL())` → `clipboard.writeImage(img)`。微信/QQ/浏览器应能正常粘贴(需实测)。[clipboard / native-image]
 - **遮罩窗生命周期**:hide 复用而非 close(避免重建渲染进程);每次 show 前重设 bounds(光标可能换屏)+ 重设 alwaysOnTop/清上次框选。
@@ -341,10 +342,10 @@ interface ShotSceneState {
 | saveAs / copy 不落临时文件 | saveAs 直接 `fs.writeFile` 到选定路径;copy 用 `nativeImage.createFromBuffer` 直接进剪贴板;都不经临时文件 |
 | 大 PNG buffer 过 IPC | 传 Uint8Array/ArrayBuffer 二进制(structured clone 高效),非 base64/number[];评估最大图瞬时内存 |
 | 遮罩窗失焦 | selecting/editing blur → 自动取消 hide 回 idle;会话期注册全局 Esc 兜底、退出注销 |
-| 遮罩窗键盘焦点 | show 后立即 `focus()`(A4/B6/C4/D12 键盘交互前提);与 `type:'panel'` non-activating 的取舍实测,冲突则文字编辑时临时提权 |
+| 遮罩窗键盘焦点 | show 后立即 `focus()`(A4/B6/C4/D12 键盘交互前提)。**文字 textarea 用 rAF 聚焦 + textEditKey 每次开框驱动**,不靠 autoFocus(Electron 不可靠);连续开框 boolean 依赖不翻转→不重跑,故用自增 key(见 §4.9) |
 | 多屏其余屏 | 每块屏各铺遮罩窗:光标屏可框选,其余纯压暗+吞点击(已确认);show/setBounds:**setBounds 必在 show 前**,避免旧屏闪现 |
-| 遮罩盖不住 mac 菜单栏 | `screen-saver` level + `type:'panel'`;实现时实测,不达标再调 |
-| 文字标注 IME(中文) | panel/高层级窗 IME 候选框可能错位/无焦点;实测中文输入,冲突则文字编辑临时换普通窗;第一版可先英文验证不阻塞骨架 |
+| 遮罩盖不住 mac 菜单栏 | `screen-saver` level(已去 panel);实现时实测,不达标再调 |
+| 文字标注 IME(中文) | 实现落地遮罩窗为普通 focusable 窗(非 panel),中文输入正常;第一版已验证 |
 | transparent 窗开 DevTools 失透明 | 已知,仅调试;不影响生产 |
 | 发送时对方离线/不接受 | 复用现有 file 发送的 failed 路径;fire-and-forget 后台持有的 Promise reject 也触发 finally 清理;进程退出 core.stop→chat.shutdown reject 挂起也要能清 |
 
@@ -381,6 +382,26 @@ interface ShotSceneState {
 **E3 保存默认值**:文件名 `截图_yyyyMMdd_HHmmss.png`、默认目录=系统图片目录或记忆上次、格式第一版仅 PNG。
 
 > 测试策略:纯逻辑(坐标换算 ratioX/Y、裁剪矩形角点取整+clamp、状态机转移与守卫、撤销栈封顶、临时文件唯一命名/finally 清理时机)抽成可单测纯函数(node 环境,契合现有 vitest 约定);canvas 绘制/遮罩窗/IME 等 UI 层手动验证 + 关键纯函数覆盖。坐标换算单测须含:1.5x/2x、贴边/非贴边、奇偶坐标、非等比 ratio 各一例。
+
+---
+
+## 4.9 实现落地与 design 的偏离(第 7 步回同步)
+
+实现阶段实测发现的问题与方案的差异,**照原 §3/§4 重做会重现 bug 或漏掉机制**,故集中记录。上文相关处已就地标注。
+
+| # | 偏离 | 原方案 | 落地做法(为什么) |
+|---|------|--------|-------------------|
+| 1 | **遮罩窗不用 `type:'panel'`** | §3.2 建议 panel 浮在全屏 app 上 | panel 会把 mac activation policy 降到 accessory → **Dock 图标消失且不回来**。去掉 panel + `setVisibleOnAllWorkspaces`;保留 `screen-saver` level 盖 Dock。代价:不能在别 app 原生全屏上截图 |
+| 2 | **保存对话框 `dialogBusy` 抑制失焦取消** | §4 未涉及 | 遮罩 blur→endSession 会在对话框弹出瞬间把遮罩收掉、对话框随之消失。加 `dialogBusy` 标志:对话框期间 blur 不触发 endSession。对话框以遮罩窗为父级、`finally` 里 endSession |
+| 3 | **完成后不主动 hide/focus 主窗** | §4 未涉及 | 一致性:截图前 app 在后台,复制/保存/发聊天完成后不该把主窗抢到最前。从头到尾不碰主窗层叠(macOS 无 API 精确恢复 z-order,只保证不主动扰动)。**去掉了曾试的 `app.focus({steal})` 和 `app.hide()`** |
+| 4 | **`EVT.shotHide` 复位信号** | §4.7 只提 shotId remount | 遮罩窗 hide 复用,overlay 的 `shot` 状态不清 → 下次 F1 先闪上次选区框。endSession 里 hide 前发 `shotHide`→overlay `setShot(null)`;onShow 里也先清 |
+| 5 | **浮层 UI 必须 `stopPropagation`** | §4.7 未写 | 工具条/颜色板贴在选区外,pointerdown 冒泡到 root 的框选处理 → 清空选区(复制/保存失效、遮罩不收)。所有浮层容器 `onPointerDown/onContextMenu` stopPropagation |
+| 6 | **文字 textarea 聚焦机制** | §3.3 只说"叠加 textarea" | ① `onBlur` 提交会被"框刚现的假失焦"误触发→空提交关框:去掉 blur 提交,改 Enter/Esc/pointerdown 提交。② 聚焦 effect 依赖 boolean 时连续开框不重跑:引入 `textEditKey` 自增 + rAF 聚焦 |
+| 7 | **去掉马克笔(marker)工具** | §Story D6 P1、§4.4 列了 marker | 用户要求移除。工具条不再暴露;底层 `marker` 联合类型/绘制分支保留(清它要动数据结构+测试,dead-but-harmless) |
+| 8 | **输出按钮用内联 Lucide SVG 图标** | §4 未涉及 | 复制/保存/发送改图标(修文字换行 + 风格统一)。overlay 严格 CSP 禁 CDN 图标字体,故 **SVG 内联**(`src/renderer/src/icons.tsx`,Lucide copy/save/send) |
+| 9 | **裁剪/绘制不用 `drawScene`** | §4.4 提"按 elements 全量重绘" | `drawScene` 内含 `clearRect`:重绘层平移坐标系下清不到左上、导出层会擦掉已画底图。改为 `drawElement` 逐个画,清屏在调用方复位变换后单独做 |
+
+**其余与 design 一致**:多入口构建、抓屏&两轴 ratio、fire-and-forget 发送走 `core.chat.sendFiles`、临时文件唯一命名+finally 清理、双层 canvas + retained-mode 对象模型 + 撤销栈封顶、放大镜单一 ratio 真源、多屏其余屏压暗吞点击(用普通窗非 panel)。
 
 ---
 

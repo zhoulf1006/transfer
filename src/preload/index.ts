@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   CMD,
   EVT,
+  SHOT_CMD,
   type SendTextArgs,
   type SendFilesArgs,
   type RespondArgs,
@@ -9,7 +10,8 @@ import {
   type AutoAcceptSettings,
   type IdentityInfo,
   type UiMessage,
-  type ProgressPayload
+  type ProgressPayload,
+  type ShotSource
 } from '@shared/ipc'
 import type { RemoteDevice } from '@shared/types'
 
@@ -41,7 +43,30 @@ const api = {
   // 事件订阅(返回取消函数)
   onDevicesUpdated: (cb: (devices: RemoteDevice[]) => void) => subscribe(EVT.devicesUpdated, cb),
   onMessageUpserted: (cb: (msg: UiMessage) => void) => subscribe(EVT.messageUpserted, cb),
-  onProgress: (cb: (p: ProgressPayload) => void) => subscribe(EVT.progress, cb)
+  onProgress: (cb: (p: ProgressPayload) => void) => subscribe(EVT.progress, cb),
+
+  // ── 截图(主窗同步 peer;overlay 用 shot 子分组,见 docs/screenshot-feature §4.1)──
+  /** 主窗当前聊天对象变化时同步给 main(决定截图"发聊天"可用性) */
+  setShotActivePeer: (peerFp: string | null): Promise<void> =>
+    ipcRenderer.invoke(SHOT_CMD.setActivePeer, peerFp),
+
+  shot: {
+    /** overlay 拉背景位图 + display 信息 + 有无 peer(会话未就绪时为 null) */
+    getShot: (): Promise<ShotSource | null> => ipcRenderer.invoke(SHOT_CMD.getShot),
+    /** 复制到剪贴板(不落盘) */
+    toClipboard: (png: Uint8Array): Promise<void> =>
+      ipcRenderer.invoke(SHOT_CMD.toClipboard, png),
+    /** 另存为(直写选定路径),返回保存路径或 null(取消) */
+    saveAs: (png: Uint8Array): Promise<string | null> => ipcRenderer.invoke(SHOT_CMD.saveAs, png),
+    /** 发到当前聊天(fire-and-forget,peer 由 main 缓存) */
+    sendToChat: (png: Uint8Array): Promise<void> => ipcRenderer.invoke(SHOT_CMD.sendToChat, png),
+    /** 结束会话(Esc/取消)→ main hide 遮罩窗 */
+    cancel: (): Promise<void> => ipcRenderer.invoke(SHOT_CMD.cancel),
+    /** 订阅"进入会话"(main → overlay,带 shotId) */
+    onShow: (cb: (shotId: string) => void) => subscribe(EVT.shotShow, cb),
+    /** 订阅"会话结束"(main → overlay:清空状态回等待态) */
+    onHide: (cb: () => void) => subscribe(EVT.shotHide, cb)
+  }
 }
 
 function subscribe(channel: string, cb: (payload: any) => void): () => void {
