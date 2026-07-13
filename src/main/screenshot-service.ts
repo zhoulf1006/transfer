@@ -52,6 +52,8 @@ export class ScreenshotService {
   private pending: ShotSource | null = null
   /** overlay 首帧是否加载完(gate shotShow 通知,避免首次发早于 renderer 注册监听) */
   private overlayLoaded = false
+  /** 多屏时给"非光标屏"铺的纯压暗窗(吞点击防误触,§4.5);会话结束销毁 */
+  private dimWindows: BrowserWindow[] = []
 
   constructor(private readonly deps: ScreenshotDeps) {}
 
@@ -61,9 +63,11 @@ export class ScreenshotService {
     this.registerIpc()
   }
 
-  /** app 退出前调用:注销快捷键 + 销毁遮罩窗。 */
+  /** app 退出前调用:注销快捷键 + 销毁遮罩窗/压暗窗。 */
   stop(): void {
     globalShortcut.unregisterAll()
+    for (const w of this.dimWindows) if (!w.isDestroyed()) w.destroy()
+    this.dimWindows = []
     this.overlay?.destroy()
     this.overlay = null
   }
@@ -107,6 +111,8 @@ export class ScreenshotService {
       this.pending = source
       // ③ 先置 selecting 再 show(show/focus 触发的 blur 需落在 blur handler 覆盖的态,§4.5)。
       this.state = 'selecting'
+      // 其余屏先压暗(showInactive),再 show 光标屏遮罩并 focus,确保焦点落在可交互遮罩上。
+      this.dimOtherScreens(display.id)
       this.showOverlay(display.bounds)
       // ④ 通知 overlay 进入会话(它据此 getShot 拉背景 + 复位,§4.3)。
       // 用 notifyShow gate 首帧加载,避免首次发早于 renderer 注册监听(见其注释)。
@@ -178,11 +184,51 @@ export class ScreenshotService {
     }
   }
 
-  /** 结束会话:hide 遮罩窗、清背景、回 idle(§4.2 复位入口)。 */
+  /** 结束会话:hide 遮罩窗、销毁压暗窗、清背景、回 idle(§4.2 复位入口)。 */
   private endSession(): void {
     this.state = 'idle'
     this.pending = null // 释放背景 dataURL,防复用累积(§4.7)
     if (this.overlay && !this.overlay.isDestroyed()) this.overlay.hide()
+    for (const w of this.dimWindows) if (!w.isDestroyed()) w.destroy()
+    this.dimWindows = []
+  }
+
+  /**
+   * 多屏:给非光标屏各铺一个纯压暗窗(吞点击防误触,§4.5)。
+   * 用轻量 data: URL 页面,不加载 React,不接收键盘/框选。
+   */
+  private dimOtherScreens(activeDisplayId: number): void {
+    for (const d of screen.getAllDisplays()) {
+      if (d.id === activeDisplayId) continue
+      const win = new BrowserWindow({
+        ...d.bounds,
+        show: false,
+        frame: false,
+        transparent: true,
+        resizable: false,
+        movable: false,
+        skipTaskbar: true,
+        hasShadow: false,
+        focusable: false, // 不抢键盘焦点(键盘归光标屏遮罩)
+        enableLargerThanScreen: true,
+        type: process.platform === 'darwin' ? 'panel' : undefined,
+        webPreferences: { contextIsolation: true, nodeIntegration: false }
+      })
+      // 纯半透明黑,吞点击(窗口接收但页面无任何交互)。
+      void win.loadURL(
+        'data:text/html,' +
+          encodeURIComponent(
+            '<body style="margin:0;background:rgba(0,0,0,0.45);height:100vh"></body>'
+          )
+      )
+      win.setBounds(d.bounds)
+      win.setAlwaysOnTop(true, 'screen-saver')
+      if (process.platform === 'darwin') {
+        win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+      }
+      win.showInactive() // 显示但不激活(不抢焦点)
+      this.dimWindows.push(win)
+    }
   }
 
   // ── 遮罩窗(§3.2 透明置顶配置 + §4.5 setBounds 必在 show 前)──
