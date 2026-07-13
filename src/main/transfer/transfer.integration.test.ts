@@ -293,6 +293,15 @@ describe('文件收发(集成)', () => {
     expect(readFileSync(join(recvDir, 'after-text.bin')).equals(f.content)).toBe(true)
   })
 
+  // 回归:连发两条相同文本,接收端应收到两条(曾只收到一条 = 第二条被去重/挡掉)
+  test('文本消息:连发两条相同内容都应收到', async () => {
+    const r1 = await sendText(target, selfInfo('S', 'FP'), 'hi')
+    const r2 = await sendText(target, selfInfo('S', 'FP'), 'hi')
+    expect(r1.kind).toBe('done')
+    expect(r2.kind).toBe('done')
+    expect(receivedTexts).toEqual(['hi', 'hi'])
+  })
+
   test('自动接收开启:文件不询问用户,直接落盘', async () => {
     autoAcceptImpl = () => true // 全部自动接收
     let askCalled = false

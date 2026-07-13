@@ -306,7 +306,9 @@ function Chat(props: {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            // 中文输入法组字中按 Enter 是"确认选词",不是发送。
+            // e.nativeEvent.isComposing 在 IME 组字期间为 true,此时不发送。
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
               sendText()
             }

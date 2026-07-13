@@ -22,6 +22,14 @@ const userDataOverride = process.env['TRANSFER_USERDATA']
 if (userDataOverride) app.setPath('userData', userDataOverride)
 const portOverride = process.env['TRANSFER_PORT'] ? Number(process.env['TRANSFER_PORT']) : undefined
 
+// 单实例锁:一次只运行一个实例,第二个实例聚焦已有窗后退出。
+// 锁基于 userData 目录(Electron 源码级),故必须排在上面 setPath 之后——
+// TRANSFER_USERDATA 测试实例用不同 userData=各自独立锁,不互相争,多实例测试不受影响。
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+}
+
 let core: AppCore | null = null
 let store: MessageStore | null = null
 let settings: SettingsStore | null = null
@@ -116,7 +124,20 @@ function registerIpc(): void {
   })
 }
 
+// 第二个实例启动时,聚焦/还原已有主窗(在第一实例里触发,保证 ready 之后)。
+if (gotTheLock) {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+}
+
 app.whenReady().then(async () => {
+  // 非首个实例:已 app.quit(),不初始化(whenReady 仍可能触发,这里兜住)。
+  if (!gotTheLock) return
   const identity = loadOrCreateIdentity(app.getPath('userData'))
   const userData = app.getPath('userData')
   store = new MessageStore(join(userData, 'messages.db'))
@@ -174,6 +195,7 @@ app.on('window-all-closed', () => {
 // 否则 stop()(含挂起 resolver reject/标 expired)和 store.close() 可能来不及执行。
 let quitting = false
 app.on('before-quit', (e) => {
+  if (!gotTheLock) return // 非首个实例:没初始化任何东西,直接放行退出,不走清理
   if (quitting) return // 已在清理,放行第二次 quit
   e.preventDefault()
   quitting = true
