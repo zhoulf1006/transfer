@@ -595,3 +595,14 @@ settings.ts            # 自动接收开关+阈值(持久化,复用 identity.jso
 2. 拖文件到聊天区 → 发送(等价于点📎选文件)。
 3. 传输中文件气泡显示递增百分比进度条,done 后隐藏。
 4. 下载列表面板列出所有已接收文件(名/大小/时间/发送人),点"打开"能打开。
+
+### 12.8 视觉主题(静谧石墨 + 海蓝 / 深浅色切换)
+
+纯表现层改动,不动任何传输/数据逻辑。
+
+- **配色**:中性走带极轻冷调的石墨灰;强调色**海蓝**——浅色底 `#2d84c4`、深色底提亮到 `#5aa8e6`(浅深分开定亮度,保证各自底上对比足)。语义色(在线绿 / 危险红)与强调色分离。
+- **token 化**:颜色全部走 CSS 变量,定义在 `src/renderer/src/theme.css` 的 `:root`;组件(`App.tsx`)只引用 `var(--token)`,不硬编码色值(唯一例外:海蓝气泡内的白色进度条 `#fff`)。基准字号 13px。
+- **三层生效**(深浅色):`:root` 浅色基线 → `@media (prefers-color-scheme: dark)` 跟随系统 → `:root[data-theme='light'|'dark']` **两个方向都完整覆盖** @media(手动 toggle 双向都能压过系统偏好)。
+- **切换**:`useTheme` 三态循环 `system→light→dark`;`system` 时移除 `data-theme` 属性(回落 @media),否则打在 `<html>` 上;偏好存 `localStorage['theme']`。侧栏图标 `◐/☀/☾`。
+- **交互反馈**:内联样式无法表达 `:hover`,用 `.tf-row/.tf-btn/.tf-icon-btn` class 钩子在 theme.css 里补;选中态背景是内联样式(优先级高于 class),故 hover 不会盖掉高亮态。尊重 `prefers-reduced-motion`。
+- **文件图标**:`fileEmoji(name)` 按扩展名给贴切 emoji(图片/视频/音频/压缩包/文档…),纯装饰,识别不了回落 📄。

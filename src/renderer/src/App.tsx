@@ -5,7 +5,30 @@ import type { IdentityInfo, UiMessage, AutoAcceptSettings, ProgressPayload } fro
 /** 传输进度快照:messageId → 已传/总字节(不落库,仅内存) */
 type ProgressMap = Record<string, { sent: number; total: number }>
 
+type ThemePref = 'system' | 'light' | 'dark'
+
+/**
+ * 主题:跟随系统 / 手动浅 / 手动深,持久化到 localStorage。
+ * 手动时在 <html> 上打 data-theme(CSS 里 :root[data-theme] 覆盖 @media)。
+ */
+function useTheme(): { pref: ThemePref; cycle: () => void } {
+  const [pref, setPref] = useState<ThemePref>(
+    () => (localStorage.getItem('theme') as ThemePref) || 'system'
+  )
+  useEffect(() => {
+    const root = document.documentElement
+    if (pref === 'system') root.removeAttribute('data-theme')
+    else root.setAttribute('data-theme', pref)
+    localStorage.setItem('theme', pref)
+  }, [pref])
+  // 循环:system → light → dark → system
+  const cycle = (): void =>
+    setPref((p) => (p === 'system' ? 'light' : p === 'light' ? 'dark' : 'system'))
+  return { pref, cycle }
+}
+
 export function App(): JSX.Element {
+  const { pref: themePref, cycle: cycleTheme } = useTheme()
   const [identity, setIdentity] = useState<IdentityInfo | null>(null)
   const [devices, setDevices] = useState<RemoteDevice[]>([])
   const [peer, setPeer] = useState<string | null>(null) // 选中对端 fingerprint
@@ -67,6 +90,8 @@ export function App(): JSX.Element {
         devices={devices}
         peer={peer}
         view={view}
+        themePref={themePref}
+        onCycleTheme={cycleTheme}
         onPick={(fp) => {
           setPeer(fp)
           setView('chat')
@@ -113,13 +138,17 @@ function Sidebar(props: {
   devices: RemoteDevice[]
   peer: string | null
   view: 'chat' | 'downloads'
+  themePref: ThemePref
+  onCycleTheme: () => void
   onPick: (fp: string) => void
   onShowDownloads: () => void
   onOpenSettings: () => void
 }): JSX.Element {
-  const { identity, devices, peer, view, onPick, onShowDownloads, onOpenSettings } = props
+  const { identity, devices, peer, view, themePref, onCycleTheme, onPick, onShowDownloads, onOpenSettings } = props
   const online = devices.filter((d) => d.status !== 'offline')
   const offline = devices.filter((d) => d.status === 'offline')
+  const themeIcon = themePref === 'system' ? '◐' : themePref === 'light' ? '☀' : '☾'
+  const themeLabel = themePref === 'system' ? '跟随系统' : themePref === 'light' ? '浅色' : '深色'
 
   const DeviceRow = (d: RemoteDevice): JSX.Element => {
     const off = d.status === 'offline'
@@ -127,11 +156,12 @@ function Sidebar(props: {
     return (
       <div
         key={d.info.fingerprint}
+        className="tf-row"
         onClick={() => onPick(d.info.fingerprint)}
         style={{ ...S.devItem, ...(active ? S.devItemActive : {}), ...(off ? S.devItemOffline : {}) }}
       >
-        <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ ...S.dot, background: off ? '#bbb' : '#22c55e' }} />
+        <div style={{ fontWeight: 550, display: 'flex', alignItems: 'center', gap: 7 }}>
+          <span style={{ ...S.dot, background: off ? 'var(--offline)' : 'var(--online)' }} />
           {d.info.alias}
         </div>
         <div style={S.devSub}>
@@ -144,14 +174,25 @@ function Sidebar(props: {
   return (
     <div style={S.sidebar}>
       <div style={S.brand}>
-        <strong>Transfer</strong>
-        <button onClick={onOpenSettings} title="设置" style={S.iconBtn}>
-          ⚙
-        </button>
+        <strong style={S.brandName}>Transfer</strong>
+        <div style={{ display: 'flex', gap: 2 }}>
+          <button
+            className="tf-icon-btn"
+            onClick={onCycleTheme}
+            title={`主题:${themeLabel}(点击切换)`}
+            style={S.iconBtn}
+          >
+            {themeIcon}
+          </button>
+          <button className="tf-icon-btn" onClick={onOpenSettings} title="设置" style={S.iconBtn}>
+            ⚙
+          </button>
+        </div>
       </div>
-      {identity && <div style={S.self}>本机:{identity.alias}</div>}
+      {identity && <div style={S.self}>本机 · {identity.alias}</div>}
 
       <div
+        className="tf-row"
         onClick={onShowDownloads}
         style={{ ...S.downloadsEntry, ...(view === 'downloads' ? S.devItemActive : {}) }}
       >
@@ -268,7 +309,7 @@ function Chat(props: {
           rows={1}
           style={S.textarea}
         />
-        <button onClick={sendText} disabled={!text.trim()} style={S.sendBtn}>
+        <button className="tf-btn" onClick={sendText} disabled={!text.trim()} style={S.sendBtn}>
           ➤
         </button>
       </div>
@@ -294,8 +335,8 @@ function Downloads(): JSX.Element {
       <div style={{ ...S.stream, gap: 0 }}>
         {files.length === 0 && <div style={S.hint}>还没有接收到文件。</div>}
         {files.map((f) => (
-          <div key={f.id} style={S.dlRow}>
-            <span style={{ fontSize: 22 }}>📄</span>
+          <div key={f.id} className="tf-row" style={S.dlRow}>
+            <div style={S.fileIcon}>{fileEmoji(f.fileName)}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={S.dlName} title={f.fileName ?? ''}>
                 {f.fileName}
@@ -305,7 +346,7 @@ function Downloads(): JSX.Element {
                 {fmtDateTime(f.createdAt)}
               </div>
             </div>
-            <button style={S.openBtn} onClick={() => window.transfer.openFile(f.id)}>
+            <button className="tf-btn" style={S.openBtn} onClick={() => window.transfer.openFile(f.id)}>
               打开
             </button>
           </div>
@@ -323,7 +364,7 @@ function Bubble({ msg, prog }: { msg: UiMessage; prog?: { sent: number; total: n
         {msg.type === 'text' ? (
           <div style={S.text}>{msg.content}</div>
         ) : (
-          <FileBubble msg={msg} prog={prog} />
+          <FileBubble msg={msg} prog={prog} own={own} />
         )}
         <div style={S.meta}>
           {statusLabel(msg)} · {fmtTime(msg.createdAt)}
@@ -333,12 +374,27 @@ function Bubble({ msg, prog }: { msg: UiMessage; prog?: { sent: number; total: n
   )
 }
 
+/** 按文件扩展名给个贴切的图标(纯装饰,识别不了就用通用文件图标) */
+function fileEmoji(name: string | null): string {
+  const ext = (name ?? '').split('.').pop()?.toLowerCase() ?? ''
+  if (/^(png|jpg|jpeg|gif|webp|heic|bmp|svg)$/.test(ext)) return '🖼️'
+  if (/^(mp4|mov|avi|mkv|webm)$/.test(ext)) return '🎬'
+  if (/^(mp3|wav|flac|aac|m4a)$/.test(ext)) return '🎵'
+  if (/^(pdf)$/.test(ext)) return '📕'
+  if (/^(zip|rar|7z|tar|gz|dmg|pkg|exe|msi)$/.test(ext)) return '📦'
+  if (/^(doc|docx|txt|md|rtf)$/.test(ext)) return '📝'
+  if (/^(xls|xlsx|csv)$/.test(ext)) return '📊'
+  return '📄'
+}
+
 function FileBubble({
   msg,
-  prog
+  prog,
+  own
 }: {
   msg: UiMessage
   prog?: { sent: number; total: number }
+  own: boolean
 }): JSX.Element {
   const canRespond = msg.direction === 'recv' && msg.status === 'pending'
   const canOpen = msg.status === 'done' && msg.filePath
@@ -348,34 +404,37 @@ function FileBubble({
   return (
     <div>
       <div style={S.fileLine}>
-        <span style={{ fontSize: 20 }}>📄</span>
-        <div>
-          <div style={{ fontWeight: 500 }}>{msg.fileName}</div>
+        <div style={own ? S.fileIconOwn : S.fileIcon}>{fileEmoji(msg.fileName)}</div>
+        <div style={{ minWidth: 0 }}>
+          <div style={S.fileName}>{msg.fileName}</div>
           {msg.fileSize != null && <div style={S.fileSize}>{fmtSize(msg.fileSize)}</div>}
         </div>
       </div>
       {transferring && pct !== null && (
-        <div style={S.progWrap}>
-          <div style={{ ...S.progBar, width: `${pct}%` }} />
-          <span style={S.progPct}>{pct}%</span>
-        </div>
+        <>
+          <div style={own ? S.progWrapOwn : S.progWrap}>
+            <div style={{ ...(own ? S.progBarOwn : S.progBar), width: `${pct}%` }} />
+          </div>
+          <div style={S.progPct}>{pct}%</div>
+        </>
       )}
+      {/* 接收确认按钮只出现在 recv(对方=灰底气泡),用中性描边按钮 */}
       {canRespond && (
         <div style={S.actions}>
           <button
+            className="tf-btn"
             style={S.acceptBtn}
             onClick={() =>
-              msg.transferId &&
-              window.transfer.respond({ transferId: msg.transferId, accept: true })
+              msg.transferId && window.transfer.respond({ transferId: msg.transferId, accept: true })
             }
           >
             接收
           </button>
           <button
+            className="tf-btn"
             style={S.rejectBtn}
             onClick={() =>
-              msg.transferId &&
-              window.transfer.respond({ transferId: msg.transferId, accept: false })
+              msg.transferId && window.transfer.respond({ transferId: msg.transferId, accept: false })
             }
           >
             拒绝
@@ -383,7 +442,7 @@ function FileBubble({
         </div>
       )}
       {canOpen && (
-        <button style={S.openBtn} onClick={() => window.transfer.openFile(msg.id)}>
+        <button className="tf-btn" style={S.openBtn} onClick={() => window.transfer.openFile(msg.id)}>
           打开
         </button>
       )}
@@ -468,55 +527,61 @@ function fmtSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-const purple = '#673ab7'
+// 静谧石墨 + 海蓝:所有颜色走 CSS 变量(见 theme.css),字号小一档、边框细、留白从容。
 const S: Record<string, React.CSSProperties> = {
-  app: { display: 'flex', height: '100vh', fontFamily: 'system-ui', color: '#222' },
-  sidebar: { width: 240, borderRight: '1px solid #eee', display: 'flex', flexDirection: 'column', padding: 12, boxSizing: 'border-box', overflowY: 'auto' },
-  brand: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 18 },
-  iconBtn: { border: 'none', background: 'none', fontSize: 18, cursor: 'pointer' },
-  self: { fontSize: 12, color: '#888', margin: '6px 0 12px' },
-  devHeader: { fontSize: 12, color: '#999', margin: '8px 0 4px' },
-  hint: { color: '#aaa', fontSize: 13, padding: 8 },
-  devItem: { padding: '8px 10px', borderRadius: 8, cursor: 'pointer', marginBottom: 4 },
-  devItemActive: { background: 'rgba(103,58,183,0.12)' },
-  devItemOffline: { opacity: 0.55 },
-  devSub: { fontSize: 11, color: '#999' },
-  dot: { width: 8, height: 8, borderRadius: '50%', display: 'inline-block', flexShrink: 0 },
-  downloadsEntry: { padding: '8px 10px', borderRadius: 8, cursor: 'pointer', marginBottom: 8, fontSize: 13, fontWeight: 500 },
-  main: { flex: 1, display: 'flex', minWidth: 0 },
-  empty: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#aaa' },
+  app: { display: 'flex', height: '100vh', color: 'var(--ink)', fontSize: 13 },
+  sidebar: { width: 224, borderRight: '1px solid var(--line)', background: 'var(--side)', display: 'flex', flexDirection: 'column', padding: '14px 12px', boxSizing: 'border-box', overflowY: 'auto' },
+  brand: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
+  brandName: { fontSize: 15, fontWeight: 640, letterSpacing: '-0.01em' },
+  iconBtn: { border: 'none', background: 'none', fontSize: 14, cursor: 'pointer', color: 'var(--muted)', width: 26, height: 26, borderRadius: 7, display: 'grid', placeItems: 'center' },
+  self: { fontSize: 11, color: 'var(--muted)', margin: '3px 0 14px' },
+  devHeader: { fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--muted)', margin: '12px 4px 5px' },
+  hint: { color: 'var(--muted)', fontSize: 12.5, padding: 8, lineHeight: 1.5 },
+  devItem: { padding: '7px 9px', borderRadius: 8, cursor: 'pointer', marginBottom: 1 },
+  devItemActive: { background: 'var(--accent-soft)', color: 'var(--accent)' },
+  devItemOffline: { opacity: 0.5 },
+  devSub: { fontSize: 10.5, color: 'var(--muted)', marginTop: 1, paddingLeft: 14 },
+  dot: { width: 7, height: 7, borderRadius: '50%', display: 'inline-block', flexShrink: 0 },
+  downloadsEntry: { padding: '7px 9px', borderRadius: 8, cursor: 'pointer', marginBottom: 8, fontSize: 12.5, fontWeight: 550, display: 'flex', alignItems: 'center', gap: 7 },
+  main: { flex: 1, display: 'flex', minWidth: 0, background: 'var(--card)' },
+  empty: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', gap: 8 },
   chat: { flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 },
-  chatHeader: { padding: '12px 16px', borderBottom: '1px solid #eee', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 },
-  offlineTag: { fontSize: 11, fontWeight: 400, color: '#999', border: '1px solid #ddd', borderRadius: 4, padding: '1px 6px' },
-  stream: { flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 8, position: 'relative' },
-  streamDragging: { outline: `2px dashed ${purple}`, outlineOffset: -8, background: 'rgba(103,58,183,0.04)' },
-  dropHint: { position: 'sticky', bottom: 8, alignSelf: 'center', background: purple, color: '#fff', padding: '6px 16px', borderRadius: 16, fontSize: 13, pointerEvents: 'none' },
+  chatHeader: { padding: '13px 18px', borderBottom: '1px solid var(--line)', fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 },
+  offlineTag: { fontSize: 10.5, fontWeight: 450, color: 'var(--muted)', border: '1px solid var(--line)', borderRadius: 5, padding: '1px 7px' },
+  stream: { flex: 1, overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 9, position: 'relative' },
+  streamDragging: { outline: '2px dashed var(--accent)', outlineOffset: -8, background: 'var(--accent-soft)' },
+  dropHint: { position: 'sticky', bottom: 8, alignSelf: 'center', background: 'var(--accent)', color: 'var(--accent-on)', padding: '6px 16px', borderRadius: 18, fontSize: 12.5, pointerEvents: 'none', boxShadow: 'var(--shadow-md)' },
   bubbleRow: { display: 'flex' },
-  bubble: { maxWidth: '72%', padding: '8px 12px', borderRadius: 14 },
-  bubbleOwn: { background: 'rgba(103,58,183,0.15)', borderBottomRightRadius: 4 },
-  bubbleOther: { background: '#f1f3f5', borderBottomLeftRadius: 4 },
-  text: { fontSize: 14, lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
-  meta: { fontSize: 10, color: '#999', marginTop: 4 },
-  fileLine: { display: 'flex', alignItems: 'center', gap: 8 },
-  fileSize: { fontSize: 11, color: '#999' },
-  progWrap: { position: 'relative', height: 14, background: 'rgba(0,0,0,0.08)', borderRadius: 7, marginTop: 8, overflow: 'hidden' },
-  progBar: { position: 'absolute', left: 0, top: 0, bottom: 0, background: purple, borderRadius: 7, transition: 'width 0.1s linear' },
-  progPct: { position: 'absolute', right: 6, top: 0, lineHeight: '14px', fontSize: 9, color: '#333' },
-  dlRow: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 4px', borderBottom: '1px solid #f0f0f0' },
-  dlName: { fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  dlMeta: { fontSize: 11, color: '#999', marginTop: 2 },
-  actions: { display: 'flex', gap: 8, marginTop: 8 },
-  acceptBtn: { padding: '4px 12px', border: 'none', borderRadius: 6, background: purple, color: '#fff', cursor: 'pointer' },
-  rejectBtn: { padding: '4px 12px', border: '1px solid #ccc', borderRadius: 6, background: '#fff', cursor: 'pointer' },
-  openBtn: { marginTop: 8, padding: '4px 12px', border: '1px solid #ccc', borderRadius: 6, background: '#fff', cursor: 'pointer' },
-  inputBar: { display: 'flex', gap: 8, padding: 12, borderTop: '1px solid #eee', alignItems: 'flex-end' },
-  attachBtn: { border: 'none', background: 'none', fontSize: 20, cursor: 'pointer' },
-  textarea: { flex: 1, border: '1px solid #ddd', borderRadius: 10, padding: '8px 12px', fontSize: 14, resize: 'none', fontFamily: 'inherit', maxHeight: 120 },
-  sendBtn: { width: 38, height: 38, border: 'none', borderRadius: '50%', background: purple, color: '#fff', cursor: 'pointer', fontSize: 16 },
-  modalMask: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  modal: { background: '#fff', borderRadius: 12, padding: 24, width: 360 },
-  settingRow: { display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0', fontSize: 14 },
-  numInput: { width: 80, padding: '4px 8px', border: '1px solid #ccc', borderRadius: 6 },
-  btn: { padding: '6px 16px', border: '1px solid #ccc', borderRadius: 6, background: '#fff', cursor: 'pointer' },
-  btnPrimary: { border: 'none', background: purple, color: '#fff' }
+  bubble: { maxWidth: '74%', padding: '8px 12px', borderRadius: 14 },
+  bubbleOwn: { background: 'var(--bubble-me)', color: 'var(--bubble-me-ink)', borderBottomRightRadius: 5 },
+  bubbleOther: { background: 'var(--bubble-you)', color: 'var(--bubble-you-ink)', borderBottomLeftRadius: 5 },
+  text: { fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
+  meta: { fontSize: 9.5, opacity: 0.7, marginTop: 4 },
+  fileLine: { display: 'flex', alignItems: 'center', gap: 9 },
+  fileIcon: { width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', fontSize: 15, flexShrink: 0, background: 'var(--accent-soft)' },
+  fileIconOwn: { width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', fontSize: 15, flexShrink: 0, background: 'rgba(255,255,255,0.2)' },
+  fileName: { fontWeight: 560, fontSize: 12.5 },
+  fileSize: { fontSize: 10.5, opacity: 0.65, marginTop: 1 },
+  progWrap: { position: 'relative', height: 5, background: 'var(--track)', borderRadius: 3, marginTop: 8, overflow: 'hidden' },
+  progWrapOwn: { position: 'relative', height: 5, background: 'rgba(255,255,255,0.25)', borderRadius: 3, marginTop: 8, overflow: 'hidden' },
+  progBar: { position: 'absolute', left: 0, top: 0, bottom: 0, background: 'var(--accent)', borderRadius: 3, transition: 'width 0.12s linear' },
+  progBarOwn: { position: 'absolute', left: 0, top: 0, bottom: 0, background: '#fff', borderRadius: 3, transition: 'width 0.12s linear' },
+  progPct: { fontSize: 9.5, marginTop: 3, opacity: 0.85, fontVariantNumeric: 'tabular-nums' },
+  dlRow: { display: 'flex', alignItems: 'center', gap: 12, padding: '11px 4px', borderBottom: '1px solid var(--line)' },
+  dlName: { fontWeight: 550, fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  dlMeta: { fontSize: 10.5, color: 'var(--muted)', marginTop: 2, fontVariantNumeric: 'tabular-nums' },
+  actions: { display: 'flex', gap: 7, marginTop: 8 },
+  acceptBtn: { padding: '4px 13px', border: 'none', borderRadius: 6, background: 'var(--accent)', color: 'var(--accent-on)', cursor: 'pointer', fontSize: 11.5 },
+  rejectBtn: { padding: '4px 13px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--card)', color: 'var(--ink)', cursor: 'pointer', fontSize: 11.5 },
+  openBtn: { marginTop: 8, padding: '4px 13px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--card)', color: 'var(--ink)', cursor: 'pointer', fontSize: 11.5 },
+  inputBar: { display: 'flex', gap: 8, padding: '11px 14px', borderTop: '1px solid var(--line)', alignItems: 'flex-end' },
+  attachBtn: { border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', opacity: 0.6 },
+  textarea: { flex: 1, border: '1px solid var(--line-strong)', borderRadius: 10, padding: '8px 12px', fontSize: 13, resize: 'none', fontFamily: 'inherit', maxHeight: 120, background: 'var(--bg)', color: 'var(--ink)', outline: 'none' },
+  sendBtn: { width: 34, height: 34, border: 'none', borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-on)', cursor: 'pointer', fontSize: 14, display: 'grid', placeItems: 'center', flexShrink: 0 },
+  modalMask: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' },
+  modal: { background: 'var(--card)', color: 'var(--ink)', borderRadius: 14, padding: 24, width: 380, border: '1px solid var(--line)', boxShadow: 'var(--shadow-md)' },
+  settingRow: { display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0', fontSize: 13 },
+  numInput: { width: 80, padding: '4px 8px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--bg)', color: 'var(--ink)' },
+  btn: { padding: '6px 16px', border: '1px solid var(--line-strong)', borderRadius: 8, background: 'var(--card)', color: 'var(--ink)', cursor: 'pointer', fontSize: 13 },
+  btnPrimary: { border: 'none', background: 'var(--accent)', color: 'var(--accent-on)' }
 }

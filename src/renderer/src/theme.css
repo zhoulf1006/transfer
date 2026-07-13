@@ -1,0 +1,192 @@
+/* 静谧石墨 (Graphite) + 海蓝 (Sea Blue) 主题 token
+ * 颜色全部走 CSS 变量,组件只引用变量,不硬编码。
+ * 三层生效:@media(系统偏好) → :root[data-theme] 手动覆盖(两向都覆盖)。
+ */
+
+:root {
+  /* 中性:带极轻微冷调的石墨灰(不是纯灰,是"选过"的灰) */
+  --bg: #f7f8f9; /* 应用底 */
+  --card: #ffffff; /* 主区/气泡卡片 */
+  --side: #f2f3f5; /* 侧栏底 */
+  --ink: #1a1c1f; /* 主文字 */
+  --ink-2: #52565c; /* 次级文字 */
+  --muted: #868b93; /* 弱化文字/占位 */
+  --line: #e8eaed; /* 分隔线/边框 */
+  --line-strong: #d9dce0; /* 强一点的边框(输入框等) */
+  --hover: rgba(20, 22, 26, 0.04); /* hover 底 */
+
+  /* 海蓝强调:浅色底用深一档(对比足),深色底用亮一档(见 dark) */
+  --accent: #2d84c4;
+  --accent-hover: #2877b0;
+  --accent-soft: #e4eff8; /* 文件图标/选中项浅底 */
+  --accent-on: #ffffff; /* 强调底上的文字 */
+
+  /* 气泡 */
+  --bubble-me: var(--accent); /* 自己发的(海蓝) */
+  --bubble-me-ink: #ffffff;
+  --bubble-you: #eef0f3; /* 对方发的(浅灰) */
+  --bubble-you-ink: var(--ink);
+
+  /* 语义色(与强调分离) */
+  --online: #22c55e;
+  --offline: #b7bbc2;
+  --danger: #dc2626;
+
+  /* 进度条轨道 */
+  --track: rgba(20, 22, 26, 0.09);
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px rgba(20, 22, 26, 0.04);
+  --shadow-md: 0 4px 16px -6px rgba(20, 22, 26, 0.12);
+}
+
+/* ── 系统偏好深色 ── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #18191b;
+    --card: #1f2124;
+    --side: #141517;
+    --ink: #e9eaed;
+    --ink-2: #b4b8bd;
+    --muted: #7f858c;
+    --line: #2a2c30;
+    --line-strong: #34373c;
+    --hover: rgba(255, 255, 255, 0.05);
+
+    --accent: #5aa8e6; /* 深色底上提亮的海蓝 */
+    --accent-hover: #6fb4ea;
+    --accent-soft: #182c3c;
+    --accent-on: #0f1113;
+
+    --bubble-me: #2d84c4; /* 气泡仍用中等海蓝,白字压得住 */
+    --bubble-me-ink: #ffffff;
+    --bubble-you: #26282c;
+    --bubble-you-ink: var(--ink);
+
+    --online: #34d17d;
+    --offline: #5a5f66;
+    --danger: #f87171;
+
+    --track: rgba(255, 255, 255, 0.1);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 6px 20px -8px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* ── 手动切换:两个方向都覆盖 @media,确保 toggle 双向生效 ── */
+:root[data-theme='light'] {
+  --bg: #f7f8f9;
+  --card: #ffffff;
+  --side: #f2f3f5;
+  --ink: #1a1c1f;
+  --ink-2: #52565c;
+  --muted: #868b93;
+  --line: #e8eaed;
+  --line-strong: #d9dce0;
+  --hover: rgba(20, 22, 26, 0.04);
+  --accent: #2d84c4;
+  --accent-hover: #2877b0;
+  --accent-soft: #e4eff8;
+  --accent-on: #ffffff;
+  --bubble-me: #2d84c4;
+  --bubble-me-ink: #ffffff;
+  --bubble-you: #eef0f3;
+  --bubble-you-ink: #1a1c1f;
+  --online: #22c55e;
+  --offline: #b7bbc2;
+  --danger: #dc2626;
+  --track: rgba(20, 22, 26, 0.09);
+  --shadow-sm: 0 1px 2px rgba(20, 22, 26, 0.04);
+  --shadow-md: 0 4px 16px -6px rgba(20, 22, 26, 0.12);
+}
+
+:root[data-theme='dark'] {
+  --bg: #18191b;
+  --card: #1f2124;
+  --side: #141517;
+  --ink: #e9eaed;
+  --ink-2: #b4b8bd;
+  --muted: #7f858c;
+  --line: #2a2c30;
+  --line-strong: #34373c;
+  --hover: rgba(255, 255, 255, 0.05);
+  --accent: #5aa8e6;
+  --accent-hover: #6fb4ea;
+  --accent-soft: #182c3c;
+  --accent-on: #0f1113;
+  --bubble-me: #2d84c4;
+  --bubble-me-ink: #ffffff;
+  --bubble-you: #26282c;
+  --bubble-you-ink: #e9eaed;
+  --online: #34d17d;
+  --offline: #5a5f66;
+  --danger: #f87171;
+  --track: rgba(255, 255, 255, 0.1);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 6px 20px -8px rgba(0, 0, 0, 0.5);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
+    system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 13px; /* 基准小一档(原 14) */
+}
+
+/* 细滚动条,融进石墨感 */
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+  background-clip: padding-box;
+}
+
+/* ── 交互反馈:可点的东西看起来可点 ──
+ * 组件走内联样式,这里只补 :hover(内联无法表达),用 class 钩子挂上。
+ */
+.tf-row {
+  transition: background 0.12s ease;
+}
+.tf-row:hover {
+  background: var(--hover);
+}
+.tf-btn {
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    opacity 0.12s ease;
+}
+.tf-btn:hover:not(:disabled) {
+  filter: brightness(0.96);
+}
+.tf-icon-btn {
+  transition: background 0.12s ease;
+}
+.tf-icon-btn:hover {
+  background: var(--hover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
