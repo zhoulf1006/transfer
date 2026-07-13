@@ -236,10 +236,15 @@ app.whenReady().then(async () => {
   })
   screenshot.start()
 
-  try {
-    await core.start()
-  } catch (err) {
-    dialog.showErrorBox('启动失败', String(err))
+  // 网络服务(HTTP server + UDP 发现)延迟到窗口显示之后再起:让首帧更早、不被网络初始化阻塞。
+  // 代价:启动后极短时间内(窗口已显示到服务就绪之间)可能收不到连接,可接受。
+  const startCore = (): void => {
+    core?.start().catch((err) => dialog.showErrorBox('启动失败', String(err)))
+  }
+  if (mainWindow && !mainWindow.isVisible()) {
+    mainWindow.once('show', startCore)
+  } else {
+    startCore()
   }
 
   app.on('activate', () => {

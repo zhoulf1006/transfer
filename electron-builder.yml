@@ -15,9 +15,16 @@ asarUnpack:
 # 局域网直连需要网络权限;无签名(测试用,朋友端会有一次性安全提示)
 win:
   target:
-    - target: portable        # 免安装 exe,双击即运行 —— 最适合发到 Windows 测试
+    - target: nsis            # 安装版:装到固定目录,启动不再每次解压(portable 每次解压慢,冷启动优化)
       arch: [x64]
   # icon: build/icon.ico       # 未提供图标时用 Electron 默认图标
+
+# NSIS:一键静默安装(体验接近免安装),装到用户目录、不弹安装向导
+nsis:
+  oneClick: true              # 双击即静默安装并启动,不弹向导
+  perMachine: false           # 装到当前用户目录(无需管理员)
+  allowToChangeInstallationDirectory: false
+  artifactName: ${productName}-${version}-setup.exe
 
 mac:
   category: public.app-category.utilities
@@ -25,10 +32,6 @@ mac:
     - target: dmg
       arch: [arm64]           # 本机 M 芯片;需 Intel 再加 x64
   # icon: build/icon.icns
-
-# portable 产物文件名
-portable:
-  artifactName: ${productName}-${version}-portable.exe
 
 dmg:
   artifactName: ${productName}-${version}.dmg
