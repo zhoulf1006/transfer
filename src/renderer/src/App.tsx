@@ -473,6 +473,24 @@ function FileBubble({
 function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
   const [thumb, setThumb] = useState<string | null | undefined>(undefined) // undefined=加载中
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null) // 右键菜单位置
+  const [viewer, setViewer] = useState<string | null>(null) // 原图 dataURL(居中弹层打开中)
+
+  // 点击缩略图 → 拉原图 dataURL,打开居中弹层看大图
+  const openViewer = (): void => {
+    window.transfer.getImageDataUrl(msg.id).then((d) => {
+      if (d) setViewer(d)
+    })
+  }
+
+  // 弹层打开时 Esc 关闭
+  useEffect(() => {
+    if (!viewer) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setViewer(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [viewer])
 
   useEffect(() => {
     let alive = true
@@ -517,7 +535,7 @@ function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
       <img
         src={thumb}
         style={S.thumb}
-        onClick={() => window.transfer.openFile(msg.id)}
+        onClick={openViewer}
         onContextMenu={(e) => {
           e.preventDefault()
           setMenu({ x: e.clientX, y: e.clientY })
@@ -525,6 +543,11 @@ function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
         title="点击查看原图 · 右键保存"
         alt={msg.fileName ?? ''}
       />
+      {viewer && (
+        <div style={S.lightbox} onClick={() => setViewer(null)}>
+          <img src={viewer} style={S.lightboxImg} alt={msg.fileName ?? ''} />
+        </div>
+      )}
       {menu && (
         <div style={{ ...S.imgMenu, left: menu.x, top: menu.y }} onClick={(e) => e.stopPropagation()}>
           <div
@@ -699,6 +722,25 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 5,
     cursor: 'pointer',
     color: 'var(--ink)'
+  },
+  lightbox: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 2000,
+    background: 'rgba(0,0,0,0.85)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'zoom-out',
+    padding: 32,
+    boxSizing: 'border-box'
+  },
+  lightboxImg: {
+    maxWidth: '100%',
+    maxHeight: '100%',
+    objectFit: 'contain',
+    borderRadius: 4,
+    boxShadow: '0 8px 40px rgba(0,0,0,0.5)'
   },
   progWrap: { position: 'relative', height: 5, background: 'var(--track)', borderRadius: 3, marginTop: 8, overflow: 'hidden' },
   progWrapOwn: { position: 'relative', height: 5, background: 'var(--own-wash)', borderRadius: 3, marginTop: 8, overflow: 'hidden' },

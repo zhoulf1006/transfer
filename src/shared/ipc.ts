@@ -67,6 +67,8 @@ export const CMD = {
   getThumbnail: 'message:getThumbnail',
   /** 图片"另存为":弹系统对话框把原图复制到用户选定位置,返回保存路径或 null(取消) */
   saveImageAs: 'message:saveImageAs',
+  /** 取图片原图 dataURL(app 内居中弹层看大图用);拿不到返回 null */
+  getImageDataUrl: 'message:getImageDataUrl',
   getAutoAccept: 'settings:getAutoAccept',
   setAutoAccept: 'settings:setAutoAccept'
 } as const

@@ -42,6 +42,9 @@ const api = {
   /** 图片另存为(弹对话框复制原图到选定位置),返回保存路径或 null(取消) */
   saveImageAs: (messageId: string): Promise<string | null> =>
     ipcRenderer.invoke(CMD.saveImageAs, messageId),
+  /** 取原图 dataURL(居中弹层看大图);拿不到返回 null */
+  getImageDataUrl: (messageId: string): Promise<string | null> =>
+    ipcRenderer.invoke(CMD.getImageDataUrl, messageId),
   getAutoAccept: (): Promise<AutoAcceptSettings> => ipcRenderer.invoke(CMD.getAutoAccept),
   setAutoAccept: (s: Partial<AutoAcceptSettings>): Promise<AutoAcceptSettings> =>
     ipcRenderer.invoke(CMD.setAutoAccept, s),

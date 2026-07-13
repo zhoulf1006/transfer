@@ -1,5 +1,5 @@
-import { join, basename } from 'node:path'
-import { copyFile } from 'node:fs/promises'
+import { join, basename, extname } from 'node:path'
+import { copyFile, readFile } from 'node:fs/promises'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } from 'electron'
 import {
   CMD,
@@ -23,8 +23,23 @@ const userDataOverride = process.env['TRANSFER_USERDATA']
 if (userDataOverride) app.setPath('userData', userDataOverride)
 const portOverride = process.env['TRANSFER_PORT'] ? Number(process.env['TRANSFER_PORT']) : undefined
 
-// 聊天缩略图宽度(px):够清晰又小(几十KB),点击看原图走系统查看器
+// 聊天缩略图宽度(px):够清晰又小(几十KB)
 const THUMB_WIDTH = 180
+
+/** 按扩展名给图片 mime(拼原图 dataURL 用) */
+function imageMime(path: string): string {
+  const ext = extname(path).toLowerCase()
+  const map: Record<string, string> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.bmp': 'image/bmp',
+    '.svg': 'image/svg+xml'
+  }
+  return map[ext] ?? 'image/png'
+}
 
 // 单实例锁:一次只运行一个实例,第二个实例聚焦已有窗后退出。
 // 锁基于 userData 目录(Electron 源码级),故必须排在上面 setPath 之后——
@@ -138,6 +153,17 @@ function registerIpc(): void {
     if (r.canceled || !r.filePath) return null
     await copyFile(msg.filePath, r.filePath)
     return r.filePath
+  })
+  // 取原图 dataURL(app 内居中弹层看大图):fs 读原文件按扩展名拼 mime,支持所有图片格式。
+  ipcMain.handle(CMD.getImageDataUrl, async (_e, messageId: string): Promise<string | null> => {
+    const msg = store?.get(messageId)
+    if (!msg?.filePath) return null
+    try {
+      const buf = await readFile(msg.filePath)
+      return `data:${imageMime(msg.filePath)};base64,${buf.toString('base64')}`
+    } catch {
+      return null
+    }
   })
   ipcMain.handle(CMD.getAutoAccept, (): AutoAcceptSettings => {
     return settings!.getAutoAccept()
