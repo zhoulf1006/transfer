@@ -215,17 +215,21 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
     return new Uint8Array(await blob.arrayBuffer())
   }
 
+  // 三出口:导出失败(采样未就绪/选区失效)也收起遮罩,不静默卡住。
   const doCopy = async (): Promise<void> => {
     const png = await exportPng()
     if (png) await window.transfer.shot.toClipboard(png)
+    else window.transfer.shot.cancel()
   }
   const doSave = async (): Promise<void> => {
     const png = await exportPng()
     if (png) await window.transfer.shot.saveAs(png)
+    else window.transfer.shot.cancel()
   }
   const doSend = async (): Promise<void> => {
     const png = await exportPng()
     if (png) await window.transfer.shot.sendToChat(png)
+    else window.transfer.shot.cancel()
   }
 
   return (
@@ -390,7 +394,12 @@ function Toolbar(props: {
         : sel.y + sel.h - TOOLBAR_H - 8 // 内右下
   const right = Math.max(4, bounds.w - (sel.x + sel.w))
   return (
-    <div style={{ ...S.toolbar, top, right }}>
+    // 阻止 pointerdown 冒泡到 root:否则点按钮会被当成"选区外点击"→ 清空选区(§4.7)
+    <div
+      style={{ ...S.toolbar, top, right }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.stopPropagation()}
+    >
       <button style={S.tbBtn} onClick={onCopy}>
         复制
       </button>
