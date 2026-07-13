@@ -327,12 +327,13 @@ export class ScreenshotService {
     })
     // 另存为:直接写到用户选定路径,不经临时文件。返回保存路径或 null(取消)。
     ipcMain.handle(SHOT_CMD.saveAs, async (_e, png: Uint8Array): Promise<string | null> => {
+      // 必须先收起遮罩:遮罩是 screen-saver 最高层置顶透明窗,不收会盖住保存对话框
+      // (且遮罩失焦本就触发 endSession)→ 现象是"点保存直接退出、对话框看不见"。
+      this.endSession()
       const r = await dialog.showSaveDialog({
         defaultPath: `截图_${stamp()}.png`,
         filters: [{ name: 'PNG 图片', extensions: ['png'] }]
       })
-      // 先收起遮罩再落盘(对话框已抢焦点,遮罩失焦本会 endSession,这里显式收尾)。
-      this.endSession()
       if (r.canceled || !r.filePath) return null
       await writeFile(r.filePath, Buffer.from(png))
       return r.filePath
