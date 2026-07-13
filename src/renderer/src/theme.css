@@ -24,7 +24,7 @@
 
   /* 气泡:自己发的用 Notion 紫柔底 + 同色深紫字(callout 用法,不实心) */
   --bubble-me: #f6f3f8; /* Notion Purple 浅背景 */
-  --bubble-me-ink: #8a67ab; /* Notion Purple 浅文字 */
+  --bubble-me-ink: var(--ink); /* 气泡文字用默认正文色,只气泡上背景色 */
   --bubble-you: #eef0f3; /* 对方发的(石墨冷灰,与中性统一) */
   --bubble-you-ink: var(--ink);
   --own-wash: rgba(138, 103, 171, 0.16); /* me 柔紫气泡内:文件图标底/进度轨道(比气泡深一档) */
@@ -61,7 +61,7 @@
     --accent-on: var(--accent);
 
     --bubble-me: #2a2430; /* Notion Purple 深背景 */
-    --bubble-me-ink: #b79fd6; /* 深底提亮的紫字(比官方 #865dbb 亮一档,压得住) */
+    --bubble-me-ink: var(--ink); /* 气泡文字用默认正文色 */
     --bubble-you: #26282c; /* 石墨冷灰深 */
     --bubble-you-ink: var(--ink);
     --own-wash: rgba(160, 132, 199, 0.2); /* 深底 me 气泡内的图标底/轨道 */
@@ -93,7 +93,7 @@
   --accent-soft: #f0ebf6;
   --accent-on: #8a67ab;
   --bubble-me: #f6f3f8;
-  --bubble-me-ink: #8a67ab;
+  --bubble-me-ink: var(--ink);
   --bubble-you: #eef0f3;
   --bubble-you-ink: #1a1c1f;
   --own-wash: rgba(138, 103, 171, 0.16);
@@ -120,7 +120,7 @@
   --accent-soft: #2a2430;
   --accent-on: #a084c7;
   --bubble-me: #2a2430;
-  --bubble-me-ink: #b79fd6;
+  --bubble-me-ink: var(--ink);
   --bubble-you: #26282c;
   --bubble-you-ink: #e9eaed;
   --own-wash: rgba(160, 132, 199, 0.2);
