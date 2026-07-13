@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- overlay 需显示屏幕快照(data: dataURL)+ canvas 导出(blob:),故放开 img-src(见 §4.1 blocker#6) -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:"
+    />
+    <title>截图</title>
+  </head>
+  <body>
+    <div id="overlay-root"></div>
+    <script type="module" src="./src/overlay.tsx"></script>
+  </body>
+</html>

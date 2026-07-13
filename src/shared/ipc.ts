@@ -36,7 +36,9 @@ export const EVT = {
   /** 单条消息新增/状态变化(带完整 UiMessage) */
   messageUpserted: 'message:upserted',
   /** 传输进度(不落库,§12.3) */
-  progress: 'transfer:progress'
+  progress: 'transfer:progress',
+  /** 截图:main → overlay,进入会话(带 shotId),overlay 按复位清单复位并拉背景 */
+  shotShow: 'shot:show'
 } as const
 
 export interface ProgressPayload {
@@ -62,6 +64,43 @@ export const CMD = {
   getAutoAccept: 'settings:getAutoAccept',
   setAutoAccept: 'settings:setAutoAccept'
 } as const
+
+// ── 截图(overlay ↔ main)独立分组,避免 CMD 膨胀(见 docs/screenshot-feature §4.3)──
+export const SHOT_CMD = {
+  /** 主窗 setPeer 时同步当前 peerFp|null 给 main 缓存(决定"发聊天"可用性) */
+  setActivePeer: 'shot:setActivePeer',
+  /** overlay 拉背景位图 + display 信息 + 有无当前 peer(返回 ShotSource) */
+  getShot: 'shot:getShot',
+  /** (pngBuffer) → void;写进系统剪贴板(不落盘) */
+  toClipboard: 'shot:toClipboard',
+  /** (pngBuffer) → savedPath|null;直接写到用户选定路径(不经临时文件) */
+  saveAs: 'shot:saveAs',
+  /** (pngBuffer) → void;fire-and-forget,peer 从 main 缓存取,不由 overlay 传 */
+  sendToChat: 'shot:sendToChat',
+  /** overlay → main:结束会话,hide 遮罩窗回 idle */
+  cancel: 'shot:cancel'
+} as const
+
+/** 截图背景位图 payload(getShot 返回);坐标换算规则见 docs/screenshot-feature §3.3/§4.5 */
+export interface ShotSource {
+  /** 本次会话 id(overlay 用作 React key 强制重挂,保证复位) */
+  shotId: string
+  /** 屏幕快照 PNG(物理像素)dataURL */
+  dataUrl: string
+  /** 位图物理尺寸(thumbnail.getSize() 实测) */
+  bitmapW: number
+  bitmapH: number
+  /** display.size 逻辑尺寸 */
+  displayW: number
+  displayH: number
+  /** = bitmapW/displayW、bitmapH/displayH(两轴各自算,非等比时不同) */
+  ratioX: number
+  ratioY: number
+  /** display.rotation(0/90/180/270);≠0 时第一版走 scaleFactor 兜底 */
+  rotation: number
+  /** 有无当前聊天对象 → 决定"发聊天"按钮是否可用 */
+  hasActivePeer: boolean
+}
 
 export interface IdentityInfo {
   alias: string

@@ -80,6 +80,12 @@ export function App(): JSX.Element {
     return () => unsubs.forEach((u) => u())
   }, [])
 
+  // 同步"当前聊天对象"给 main(决定截图"发聊天"可用性,§4.3)。
+  // 仅聊天视图下的选中 peer 才算活跃对象;下载页/未选设备时为 null。
+  useEffect(() => {
+    window.transfer.setShotActivePeer(view === 'chat' ? peer : null)
+  }, [peer, view])
+
   // 选中对端的消息(按对端 fingerprint 过滤)
   const peerMessages = peer ? messages.filter((m) => m.peerFp === peer) : []
 
