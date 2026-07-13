@@ -21,6 +21,18 @@ import {
   type ColorFormat
 } from '@shared/screenshot-color'
 import { cropRect } from '@shared/screenshot-geometry'
+import {
+  emptyScene,
+  commit,
+  undo as undoScene,
+  redo as redoScene,
+  clearAll,
+  type ShotTool,
+  type ShotElement,
+  type ShotStyle,
+  type SceneState
+} from '@shared/screenshot-annotation'
+import { drawElement } from './annotation-draw'
 
 /**
  * 截图遮罩层(见 docs/screenshot-feature §4.1)。
@@ -65,6 +77,89 @@ type DragMode =
   | { kind: 'handle'; handle: Handle; startPx: number; startPy: number; startRect: Rect }
   | null
 
+let elementSeq = 0
+const nextId = (): string => `el${++elementSeq}`
+
+/** 按工具在按下点创建一个初始 element(拖拽/移动中由 updateElement 更新终点)。 */
+function startElement(
+  tool: ShotTool,
+  p: { x: number; y: number },
+  style: ShotStyle,
+  badgeN: number
+): ShotElement {
+  const id = nextId()
+  switch (tool) {
+    case 'rect':
+    case 'ellipse':
+    case 'mosaic':
+    case 'blur':
+      return { id, type: tool, x: p.x, y: p.y, w: 0, h: 0, style }
+    case 'line':
+    case 'arrow':
+      return { id, type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, style }
+    case 'pen':
+    case 'marker':
+      return { id, type: tool, points: [[p.x, p.y]], style }
+    case 'text':
+      return { id, type: 'text', x: p.x, y: p.y, text: '', fontSize: 16 + style.width * 4, style }
+    case 'badge':
+      return { id, type: 'badge', cx: p.x, cy: p.y, n: badgeN + 1, style }
+  }
+}
+
+/**
+ * 拖拽中更新 element 的终点/尺寸(就地改,画完才 commit)。
+ * anchor 为按下点(rect 类反向拖时用它归一,保证正矩形)。
+ */
+function updateElement(el: ShotElement, p: { x: number; y: number }, anchor: { x: number; y: number }): void {
+  switch (el.type) {
+    case 'rect':
+    case 'ellipse':
+    case 'mosaic':
+    case 'blur': {
+      const r = rectFromPoints(anchor.x, anchor.y, p.x, p.y)
+      el.x = r.x
+      el.y = r.y
+      el.w = r.w
+      el.h = r.h
+      break
+    }
+    case 'line':
+    case 'arrow':
+      el.x2 = p.x
+      el.y2 = p.y
+      break
+    case 'pen':
+    case 'marker':
+      el.points.push([p.x, p.y])
+      break
+    case 'text':
+    case 'badge':
+      break // 点击型,不随拖拽变
+  }
+}
+
+/** 画完的 element 是否有效(太小/空的丢弃)。 */
+function isElementValid(el: ShotElement): boolean {
+  switch (el.type) {
+    case 'rect':
+    case 'ellipse':
+    case 'mosaic':
+    case 'blur':
+      return el.w >= 3 && el.h >= 3
+    case 'line':
+    case 'arrow':
+      return Math.hypot(el.x2 - el.x1, el.y2 - el.y1) >= 3
+    case 'pen':
+    case 'marker':
+      return el.points.length >= 2
+    case 'text':
+      return el.text.length > 0
+    case 'badge':
+      return true
+  }
+}
+
 /** 一次截图会话(shotId 变 → 整体重挂,天然复位)。 */
 function Session({ shot }: { shot: ShotSource }): JSX.Element {
   const bounds = { w: shot.displayW, h: shot.displayH }
@@ -77,6 +172,16 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
   const rootRef = useRef<HTMLDivElement>(null)
   // 离屏采样 canvas:背景物理位图画进来,供放大镜 getImageData 取色(§2.4)。
   const sampleRef = useRef<HTMLCanvasElement | null>(null)
+
+  // ── 标注(§4.4)──
+  const [tool, setTool] = useState<ShotTool | null>(null) // null=无工具(纯框选态,可调选区)
+  const [style, setStyle] = useState<ShotStyle>({ color: '#e23b3b', width: 3, alpha: 1 })
+  const [scene, setScene] = useState<SceneState>(emptyScene)
+  const annoRef = useRef<HTMLCanvasElement | null>(null)
+  // 正在画的临时 element + 按下锚点(rect 类反向拖归一用)
+  const drawing = useRef<{ el: ShotElement; anchor: { x: number; y: number } } | null>(null)
+  // 文字标注:点击后在该点开一个 textarea 收字,提交转成 text element(§3.3)。
+  const [textEdit, setTextEdit] = useState<{ x: number; y: number; value: string } | null>(null)
 
   useEffect(() => {
     const cv = document.createElement('canvas')
@@ -100,10 +205,24 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
     return { x: e.clientX - r.left, y: e.clientY - r.top }
   }
 
+  const inSel = (p: { x: number; y: number }): boolean =>
+    !!sel && p.x >= sel.x && p.x <= sel.x + sel.w && p.y >= sel.y && p.y <= sel.y + sel.h
+
   const onPointerDown = (e: React.PointerEvent): void => {
     if (e.button === 2) return // 右键交给 contextmenu 处理(重选)
     const p = pt(e)
     rootRef.current?.setPointerCapture(e.pointerId)
+    // 文字工具:点选区内 → 开 textarea 收字(先提交上一个未完成的)
+    if (tool === 'text' && sel && inSel(p)) {
+      commitTextEdit()
+      setTextEdit({ x: p.x, y: p.y, value: '' })
+      return
+    }
+    // 其他标注工具 且 点在选区内 → 拖拽/点击画标注(不动选区)
+    if (tool && sel && inSel(p)) {
+      drawing.current = { el: startElement(tool, p, style, scene.badgeCounter), anchor: p }
+      return
+    }
     if (sel) {
       const h = hitTest(sel, p.x, p.y, HANDLE_TOL)
       if (h) {
@@ -118,7 +237,12 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
 
   const onPointerMove = (e: React.PointerEvent): void => {
     const p = pt(e)
-    setHover(p) // 放大镜跟指针(任何时候)
+    setHover(p) // 放大镜跟指针(框选前)
+    if (drawing.current) {
+      updateElement(drawing.current.el, p, drawing.current.anchor)
+      redrawAnno(drawing.current.el) // 实时预览当前笔
+      return
+    }
     const d = drag.current
     if (!d) return
     if (d.kind === 'creating') {
@@ -131,22 +255,98 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
 
   const onPointerUp = (e: React.PointerEvent): void => {
     rootRef.current?.releasePointerCapture(e.pointerId)
+    // 画完一笔 → commit 到场景(badge 递增)
+    if (drawing.current) {
+      const el = drawing.current.el
+      drawing.current = null
+      if (isElementValid(el)) {
+        setScene((s) => {
+          const next = commit(s, [...s.elements, el])
+          return el.type === 'badge' ? { ...next, badgeCounter: s.badgeCounter + 1 } : next
+        })
+      } else {
+        redrawAnno(null) // 无效笔,清掉预览
+      }
+      return
+    }
     // 框选结束若太小视为无效 → 清空(回到未选区态)
     if (drag.current?.kind === 'creating' && sel && !isValidSelection(sel)) setSel(null)
     drag.current = null
   }
 
-  // 右键:有选区则重选(清空),无选区则取消会话(§2.3)
+  // 右键:标注中(有工具/有笔)→ 撤销一步;纯框选态有选区→重选,无选区→取消(§2.3/§4.7)
   const onContextMenu = (e: React.MouseEvent): void => {
     e.preventDefault()
-    if (sel) setSel(null)
+    if (tool || scene.elements.length > 0) setScene((s) => undoScene(s))
+    else if (sel) setSel(null)
     else window.transfer.shot.cancel()
   }
 
-  // 方向键像素微调(§2.3):无修饰=移动,Ctrl=扩,Shift=缩
+  // 逻辑矩形 → 底图物理像素矩形(马赛克/模糊从底图取区域)。
+  const pxRect = (x: number, y: number, w: number, h: number): { sx: number; sy: number; sw: number; sh: number } =>
+    cropRect({ x, y, w, h }, ratio, { width: shot.bitmapW, height: shot.bitmapH })
+
+  // 重绘标注层:场景所有 element +(可选)正在画的临时笔。ctx 平移到选区原点。
+  const redrawAnno = (inProgress: ShotElement | null): void => {
+    const cv = annoRef.current
+    if (!cv || !sel) return
+    const ctx = cv.getContext('2d')
+    if (!ctx) return
+    const dpr = window.devicePixelRatio || 1
+    ctx.setTransform(1, 0, 0, 1, 0, 0) // 先复位变换,清整块 backing store(否则平移后清不到左上)
+    ctx.clearRect(0, 0, cv.width, cv.height)
+    ctx.setTransform(dpr, 0, 0, dpr, -sel.x * dpr, -sel.y * dpr) // 选区原点 + dpr 锐化
+    const els = inProgress ? [...scene.elements, inProgress] : scene.elements
+    // clearRect 已在上面做,drawScene 内部的 clear 传 0(不再重复清,避免坐标系不符)
+    for (const el of els) drawElement(ctx, el, sampleRef.current, pxRect, 1)
+  }
+
+  // 提交文字编辑:非空则转成 text element 入场景;空则丢弃。
+  const commitTextEdit = (): void => {
+    setTextEdit((te) => {
+      if (te && te.value.trim()) {
+        const el: ShotElement = {
+          id: nextId(),
+          type: 'text',
+          x: te.x,
+          y: te.y,
+          text: te.value,
+          fontSize: 16 + style.width * 4,
+          style
+        }
+        setScene((s) => commit(s, [...s.elements, el]))
+      }
+      return null
+    })
+  }
+
+  // 场景/选区变化时重绘标注层。
+  useEffect(() => {
+    redrawAnno(null)
+    // redrawAnno 依赖闭包内 scene/sel;显式列关键依赖
+  }, [scene, sel?.x, sel?.y, sel?.w, sel?.h])
+
+  // 撤销/重做键位(§4.7):Ctrl+Z / Ctrl+Shift+Z(重做)/ Ctrl+Y(重做)。
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (!sel) return
+      const mod = e.ctrlKey || e.metaKey
+      if (!mod) return
+      if (e.key === 'z' || e.key === 'Z') {
+        e.preventDefault()
+        setScene((s) => (e.shiftKey ? redoScene(s) : undoScene(s)))
+      } else if (e.key === 'y' || e.key === 'Y') {
+        e.preventDefault()
+        setScene((s) => redoScene(s))
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // 方向键像素微调(§2.3):仅"无标注工具"时调选区;选了工具则方向键留给标注(暂不用)。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!sel || tool) return
       const map: Record<string, [number, number]> = {
         ArrowLeft: [-1, 0],
         ArrowRight: [1, 0],
@@ -161,7 +361,7 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [sel, bounds.w, bounds.h])
+  }, [sel, tool, bounds.w, bounds.h])
 
   const valid = sel && isValidSelection(sel)
   const level = sel ? anchorLevel(sel) : 'none'
@@ -202,8 +402,8 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
   }, [showMag, hover, fmt])
 
   /**
-   * 导出选区为 PNG(§4.4 导出):独立离屏 canvas 按物理像素尺寸裁背景。
-   * 阶段5 无标注,只裁底图;标注合成在阶段6 叠加。
+   * 导出选区为 PNG(§4.4 导出):独立离屏 canvas 按物理像素尺寸裁底图 + 叠加标注。
+   * 标注坐标是逻辑坐标,导出层按物理尺寸:translate 选区原点 + scale(ratio),尺寸量 × min(ratio)。
    */
   const exportPng = async (): Promise<Uint8Array | null> => {
     const sample = sampleRef.current
@@ -215,6 +415,26 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
     out.height = sh
     const ctx = out.getContext('2d')!
     ctx.drawImage(sample, sx, sy, sw, sh, 0, 0, sw, sh)
+    // 叠加标注:元素坐标是逻辑坐标,setTransform 平移到选区原点 + × ratio 到物理像素。
+    // 变换已负责缩放几何与线宽,故 drawScene 的 sizeScale=1(不再二次乘)。
+    // 未提交的文字编辑也一并画进去(避免"打了字直接点复制"漏掉)。
+    const els = [...scene.elements]
+    if (textEdit && textEdit.value.trim()) {
+      els.push({
+        id: 'text-pending',
+        type: 'text',
+        x: textEdit.x,
+        y: textEdit.y,
+        text: textEdit.value,
+        fontSize: 16 + style.width * 4,
+        style
+      })
+    }
+    ctx.save()
+    ctx.setTransform(ratio.x, 0, 0, ratio.y, -sel.x * ratio.x, -sel.y * ratio.y)
+    // 用 drawElement 逐个画,不用 drawScene(它内部 clearRect 会擦掉刚画的底图)。
+    for (const el of els) drawElement(ctx, el, sample, pxRect, 1)
+    ctx.restore()
     const blob = await new Promise<Blob | null>((res) => out.toBlob(res, 'image/png'))
     if (!blob) return null
     return new Uint8Array(await blob.arrayBuffer())
@@ -252,18 +472,66 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
       {sel && valid ? <DimAround sel={sel} /> : <div style={S.dimFull} />}
       {sel && valid && (
         <>
+          {/* 标注层:铺在选区上,pointerEvents:none 让事件穿透到 root 统一处理绘制 */}
+          <canvas
+            ref={annoRef}
+            width={Math.round(sel.w * (window.devicePixelRatio || 1))}
+            height={Math.round(sel.h * (window.devicePixelRatio || 1))}
+            style={{
+              position: 'absolute',
+              left: sel.x,
+              top: sel.y,
+              width: sel.w,
+              height: sel.h,
+              pointerEvents: 'none'
+            }}
+          />
           <div style={{ ...S.selBox, left: sel.x, top: sel.y, width: sel.w, height: sel.h }} />
           <SizeLabel sel={sel} />
-          {level !== 'none' && <Anchors sel={sel} level={level} />}
+          {level !== 'none' && !tool && <Anchors sel={sel} level={level} />}
           <Toolbar
             sel={sel}
             bounds={bounds}
             hasPeer={shot.hasActivePeer}
+            tool={tool}
+            style={style}
+            canUndo={scene.undoStack.length > 0}
+            canRedo={scene.redoStack.length > 0}
+            onTool={setTool}
+            onStyle={setStyle}
+            onUndo={() => setScene((s) => undoScene(s))}
+            onRedo={() => setScene((s) => redoScene(s))}
+            onClear={() => setScene((s) => clearAll(s))}
             onCopy={doCopy}
             onSave={doSave}
             onSend={doSend}
           />
         </>
+      )}
+      {textEdit && (
+        <textarea
+          autoFocus
+          value={textEdit.value}
+          onPointerDown={(e) => e.stopPropagation()}
+          onChange={(e) => setTextEdit((te) => (te ? { ...te, value: e.target.value } : te))}
+          onBlur={commitTextEdit}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              commitTextEdit()
+            } else if (e.key === 'Escape') {
+              setTextEdit(null)
+            }
+          }}
+          style={{
+            ...S.textInput,
+            left: textEdit.x,
+            top: textEdit.y,
+            color: style.color,
+            fontSize: 16 + style.width * 4
+          }}
+        />
       )}
       {!sel && <div style={S.hint}>拖拽框选 · 右键取消 · Esc 退出</div>}
       {showMag && hover && sampleRef.current && (
@@ -379,17 +647,40 @@ function SizeLabel({ sel }: { sel: Rect }): JSX.Element {
   )
 }
 
-const TOOLBAR_H = 40
-/** 输出工具条(§4.7):贴选区下外侧,下方不足翻上方,再不足浮内右下。 */
+const TOOLBAR_H = 44
+const TOOLS: Array<{ t: ShotTool; icon: string; label: string }> = [
+  { t: 'rect', icon: '▭', label: '矩形' },
+  { t: 'ellipse', icon: '◯', label: '椭圆' },
+  { t: 'arrow', icon: '↗', label: '箭头' },
+  { t: 'line', icon: '／', label: '直线' },
+  { t: 'pen', icon: '✎', label: '画笔' },
+  { t: 'marker', icon: '▍', label: '马克笔' },
+  { t: 'mosaic', icon: '▚', label: '马赛克' },
+  { t: 'blur', icon: '◍', label: '模糊' },
+  { t: 'text', icon: 'A', label: '文字' },
+  { t: 'badge', icon: '①', label: '序号' }
+]
+const COLORS = ['#e23b3b', '#f59e0b', '#22c55e', '#2d84c4', '#7c3aed', '#111111', '#ffffff']
+
+/** 工具条(§4.7):标注工具 + 颜色/粗细 + 撤销重做 + 输出。贴选区下外侧,不足翻上/浮内。 */
 function Toolbar(props: {
   sel: Rect
   bounds: { w: number; h: number }
   hasPeer: boolean
+  tool: ShotTool | null
+  style: ShotStyle
+  canUndo: boolean
+  canRedo: boolean
+  onTool: (t: ShotTool | null) => void
+  onStyle: (s: ShotStyle) => void
+  onUndo: () => void
+  onRedo: () => void
+  onClear: () => void
   onCopy: () => void
   onSave: () => void
   onSend: () => void
 }): JSX.Element {
-  const { sel, bounds, hasPeer, onCopy, onSave, onSend } = props
+  const { sel, bounds, hasPeer, tool, style } = props
   const belowTop = sel.y + sel.h + 8
   const top =
     belowTop + TOOLBAR_H <= bounds.h
@@ -399,21 +690,60 @@ function Toolbar(props: {
         : sel.y + sel.h - TOOLBAR_H - 8 // 内右下
   const right = Math.max(4, bounds.w - (sel.x + sel.w))
   return (
-    // 阻止 pointerdown 冒泡到 root:否则点按钮会被当成"选区外点击"→ 清空选区(§4.7)
+    // 阻止 pointerdown 冒泡到 root:否则点按钮会被当成"选区外点击"→ 清空选区(§4.7 / 记忆)
     <div
       style={{ ...S.toolbar, top, right }}
       onPointerDown={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.stopPropagation()}
     >
-      <button style={S.tbBtn} onClick={onCopy}>
+      {TOOLS.map(({ t, icon, label }) => (
+        <button
+          key={t}
+          style={{ ...S.tbTool, ...(tool === t ? S.tbToolOn : {}) }}
+          title={label}
+          onClick={() => props.onTool(tool === t ? null : t)}
+        >
+          {icon}
+        </button>
+      ))}
+      <div style={S.tbSep} />
+      {COLORS.map((c) => (
+        <button
+          key={c}
+          style={{
+            ...S.tbSwatch,
+            background: c,
+            outline: style.color === c ? '2px solid #2d84c4' : '1px solid rgba(255,255,255,0.25)'
+          }}
+          onClick={() => props.onStyle({ ...style, color: c })}
+        />
+      ))}
+      <input
+        type="range"
+        min={1}
+        max={12}
+        value={style.width}
+        onChange={(e) => props.onStyle({ ...style, width: Number(e.target.value) })}
+        style={S.tbRange}
+        title="粗细"
+      />
+      <div style={S.tbSep} />
+      <button style={S.tbTool} disabled={!props.canUndo} onClick={props.onUndo} title="撤销">
+        ↶
+      </button>
+      <button style={S.tbTool} disabled={!props.canRedo} onClick={props.onRedo} title="重做">
+        ↷
+      </button>
+      <div style={S.tbSep} />
+      <button style={S.tbBtn} onClick={props.onCopy}>
         复制
       </button>
-      <button style={S.tbBtn} onClick={onSave}>
+      <button style={S.tbBtn} onClick={props.onSave}>
         保存
       </button>
       <button
         style={{ ...S.tbBtn, ...S.tbPrimary, ...(hasPeer ? {} : S.tbDisabled) }}
-        onClick={onSend}
+        onClick={props.onSend}
         disabled={!hasPeer}
         title={hasPeer ? '发到当前聊天' : '先在主窗选择一个聊天对象'}
       >
@@ -541,6 +871,35 @@ const S: Record<string, React.CSSProperties> = {
   },
   tbPrimary: { background: '#2d84c4', color: '#fff' },
   tbDisabled: { background: 'rgba(255,255,255,0.06)', color: '#6a6d73', cursor: 'not-allowed' },
+  tbTool: {
+    width: 28,
+    height: 28,
+    border: 'none',
+    borderRadius: 5,
+    fontSize: 14,
+    cursor: 'pointer',
+    background: 'transparent',
+    color: '#d6d7da',
+    display: 'grid',
+    placeItems: 'center'
+  },
+  tbToolOn: { background: '#2d84c4', color: '#fff' },
+  tbSep: { width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,0.15)', margin: '0 2px' },
+  tbSwatch: { width: 16, height: 16, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0 },
+  tbRange: { width: 64, cursor: 'pointer' },
+  textInput: {
+    position: 'absolute',
+    minWidth: 60,
+    background: 'transparent',
+    border: '1px dashed rgba(45,132,196,0.8)',
+    outline: 'none',
+    resize: 'none',
+    overflow: 'hidden',
+    fontFamily: '-apple-system, "PingFang SC", sans-serif',
+    lineHeight: 1.2,
+    padding: 0,
+    pointerEvents: 'auto'
+  },
   hint: {
     position: 'absolute',
     top: 16,
