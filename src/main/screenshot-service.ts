@@ -60,6 +60,8 @@ export class ScreenshotService {
   private pending: ShotSource | null = null
   /** overlay 首帧是否加载完(gate shotShow 通知,避免首次发早于 renderer 注册监听) */
   private overlayLoaded = false
+  /** 输出对话框(另存为)进行中:此时遮罩失焦是对话框抢焦点,不能触发 blur→endSession */
+  private dialogBusy = false
   /** 多屏时给"非光标屏"铺的纯压暗窗(吞点击防误触,§4.5);会话结束销毁 */
   private dimWindows: BrowserWindow[] = []
 
@@ -199,6 +201,8 @@ export class ScreenshotService {
     if (this.overlay && !this.overlay.isDestroyed()) this.overlay.hide()
     for (const w of this.dimWindows) if (!w.isDestroyed()) w.destroy()
     this.dimWindows = []
+    // 注:不主动 hide/focus 主窗——从头到尾不碰主窗层叠,它本在哪层就还在哪层,自然"不抢最前"。
+    // (macOS 无法精确记录/恢复窗口全局层叠顺序,故不做"回到原位置",只保证不主动扰动。)
   }
 
   /**
@@ -219,7 +223,7 @@ export class ScreenshotService {
         hasShadow: false,
         focusable: false, // 不抢键盘焦点(键盘归光标屏遮罩)
         enableLargerThanScreen: true,
-        type: process.platform === 'darwin' ? 'panel' : undefined,
+        // 同遮罩窗:不用 panel(避免 Dock 图标消失)
         webPreferences: { contextIsolation: true, nodeIntegration: false }
       })
       // 纯半透明黑,吞点击(窗口接收但页面无任何交互)。
@@ -231,9 +235,6 @@ export class ScreenshotService {
       )
       win.setBounds(d.bounds)
       win.setAlwaysOnTop(true, 'screen-saver')
-      if (process.platform === 'darwin') {
-        win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-      }
       win.showInactive() // 显示但不激活(不抢焦点)
       this.dimWindows.push(win)
     }
@@ -254,7 +255,8 @@ export class ScreenshotService {
       skipTaskbar: true,
       hasShadow: false,
       enableLargerThanScreen: true, // macOS:允许铺满/超出屏
-      type: process.platform === 'darwin' ? 'panel' : undefined, // mac 浮在全屏 app 上
+      // 不用 type:'panel':panel 会把 mac app 的 activation policy 降到 accessory
+      // (Dock 图标消失),代价是不能浮在别的 app 原生全屏之上(普通截图不受影响)。
       webPreferences: {
         preload: this.deps.preload,
         contextIsolation: true,
@@ -263,7 +265,9 @@ export class ScreenshotService {
       }
     })
     // 失焦即取消会话,避免僵尸遮罩(§4.5)。
+    // 但"另存为对话框抢焦点"导致的失焦不算取消,否则对话框一弹遮罩就被收、对话框随之消失。
     win.on('blur', () => {
+      if (this.dialogBusy) return
       if (this.state === 'selecting' || this.state === 'editing') this.endSession()
     })
     // 首帧加载完才允许 send(shotShow),否则首次会话发得比 renderer 注册监听早会丢失。
@@ -303,12 +307,8 @@ export class ScreenshotService {
   private showOverlay(bounds: Electron.Rectangle): void {
     const win = this.ensureOverlay()
     win.setBounds(bounds)
-    if (process.platform === 'darwin') {
-      win.setAlwaysOnTop(true, 'screen-saver') // 盖 Dock(§3.2)
-      win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-    } else {
-      win.setAlwaysOnTop(true, 'screen-saver')
-    }
+    // screen-saver 级足以盖 Dock/任务栏,且不改 activation policy(降级的是 panel,已去掉)。
+    win.setAlwaysOnTop(true, 'screen-saver')
     win.show()
     win.focus() // 键盘交互(Esc/方向键/Ctrl+Z)前提(§4.5)
   }
@@ -327,16 +327,24 @@ export class ScreenshotService {
     })
     // 另存为:直接写到用户选定路径,不经临时文件。返回保存路径或 null(取消)。
     ipcMain.handle(SHOT_CMD.saveAs, async (_e, png: Uint8Array): Promise<string | null> => {
-      // 必须先收起遮罩:遮罩是 screen-saver 最高层置顶透明窗,不收会盖住保存对话框
-      // (且遮罩失焦本就触发 endSession)→ 现象是"点保存直接退出、对话框看不见"。
-      this.endSession()
-      const r = await dialog.showSaveDialog({
-        defaultPath: `截图_${stamp()}.png`,
-        filters: [{ name: 'PNG 图片', extensions: ['png'] }]
-      })
-      if (r.canceled || !r.filePath) return null
-      await writeFile(r.filePath, Buffer.from(png))
-      return r.filePath
+      const win = this.overlay && !this.overlay.isDestroyed() ? this.overlay : null
+      // dialogBusy 抑制"对话框抢焦点→遮罩 blur→endSession"(否则对话框一弹遮罩就被收、对话框随之沉底)。
+      // 不主动 app.focus 抢前台:对话框依附遮罩窗(screen-saver 置顶)已能呈现,且要保持"不抢最前"
+      // 的一致性——若截图前在后台,endSession 里 app.hide 会把焦点交回之前的 app。
+      this.dialogBusy = true
+      try {
+        const opts = {
+          defaultPath: `截图_${stamp()}.png`,
+          filters: [{ name: 'PNG 图片', extensions: ['png'] }]
+        }
+        const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+        if (r.canceled || !r.filePath) return null
+        await writeFile(r.filePath, Buffer.from(png))
+        return r.filePath
+      } finally {
+        this.dialogBusy = false
+        this.endSession()
+      }
     })
     // 发到当前聊天:fire-and-forget,peer 从缓存取;写临时文件→sendFiles→finally 清理。
     ipcMain.handle(SHOT_CMD.sendToChat, (_e, png: Uint8Array) => {
