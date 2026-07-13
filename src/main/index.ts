@@ -1,6 +1,6 @@
 import { join, basename, extname } from 'node:path'
 import { copyFile, readFile } from 'node:fs/promises'
-import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, nativeTheme } from 'electron'
 import {
   CMD,
   EVT,
@@ -83,6 +83,8 @@ function createWindow(): void {
     width: 900,
     height: 640,
     show: false,
+    // 底色跟随系统深浅(与 theme.css 的 --bg 一致):renderer 加载前不露白屏
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#18191b' : '#f7f8f9',
     webPreferences: {
       preload: PRELOAD,
       contextIsolation: true,
@@ -192,6 +194,13 @@ if (gotTheLock) {
 app.whenReady().then(async () => {
   // 非首个实例:已 app.quit(),不初始化(whenReady 仍可能触发,这里兜住)。
   if (!gotTheLock) return
+
+  // 先注册 IPC + 建窗:让 renderer 尽早开始加载/绘制外壳,与下面的后端初始化并行,避免白屏。
+  // IPC handler 全走 core?./store?. 短路,渲染层早期调用(getIdentity/listDevices)在 store/core
+  // 就绪前返回空,就绪后正常;首屏骨架不依赖数据即可显示。
+  registerIpc()
+  createWindow()
+
   const identity = loadOrCreateIdentity(app.getPath('userData'))
   const userData = app.getPath('userData')
   store = new MessageStore(join(userData, 'messages.db'))
@@ -213,9 +222,6 @@ app.whenReady().then(async () => {
 
   // 启动:遗留 pending 消息标 expired(挂起会话已随上次进程消失,DESIGN §11.2.2)
   core.chat.onStartup()
-
-  registerIpc()
-  createWindow()
 
   // 截图服务:注册 F1 + 遮罩窗管理 + 三出口(§4.1)
   screenshot = new ScreenshotService({

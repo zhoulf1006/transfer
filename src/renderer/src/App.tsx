@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import type { RemoteDevice } from '@shared/types'
 import { isImageFile } from '@shared/ipc'
 import type { IdentityInfo, UiMessage, AutoAcceptSettings, ProgressPayload } from '@shared/ipc'
+import { ErrorBoundary } from './ErrorBoundary'
 
 /** 传输进度快照:messageId → 已传/总字节(不落库,仅内存) */
 type ProgressMap = Record<string, { sent: number; total: number }>
@@ -92,34 +93,39 @@ export function App(): JSX.Element {
 
   return (
     <div style={S.app}>
-      <Sidebar
-        identity={identity}
-        devices={devices}
-        peer={peer}
-        view={view}
-        themePref={themePref}
-        onCycleTheme={cycleTheme}
-        onPick={(fp) => {
-          setPeer(fp)
-          setView('chat')
-        }}
-        onShowDownloads={() => setView('downloads')}
-        onOpenSettings={() => setShowSettings(true)}
-      />
+      {/* 侧栏与主区各自包错误边界:一块崩溃不影响另一块(用户诉求) */}
+      <ErrorBoundary label="设备列表">
+        <Sidebar
+          identity={identity}
+          devices={devices}
+          peer={peer}
+          view={view}
+          themePref={themePref}
+          onCycleTheme={cycleTheme}
+          onPick={(fp) => {
+            setPeer(fp)
+            setView('chat')
+          }}
+          onShowDownloads={() => setView('downloads')}
+          onOpenSettings={() => setShowSettings(true)}
+        />
+      </ErrorBoundary>
       <div style={S.main}>
-        {view === 'downloads' ? (
-          <Downloads />
-        ) : peer ? (
-          <Chat
-            peer={peer}
-            peerAlias={peerAliasOf(devices, peer)}
-            online={devices.find((d) => d.info.fingerprint === peer)?.status !== 'offline'}
-            messages={peerMessages}
-            progress={progress}
-          />
-        ) : (
-          <Empty devices={devices} />
-        )}
+        <ErrorBoundary label="聊天" key={view + (peer ?? '')}>
+          {view === 'downloads' ? (
+            <Downloads />
+          ) : peer ? (
+            <Chat
+              peer={peer}
+              peerAlias={peerAliasOf(devices, peer)}
+              online={devices.find((d) => d.info.fingerprint === peer)?.status !== 'offline'}
+              messages={peerMessages}
+              progress={progress}
+            />
+          ) : (
+            <Empty devices={devices} />
+          )}
+        </ErrorBoundary>
       </div>
       {showSettings && (
         <SettingsModal
