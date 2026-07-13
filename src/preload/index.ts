@@ -63,7 +63,9 @@ const api = {
     /** 结束会话(Esc/取消)→ main hide 遮罩窗 */
     cancel: (): Promise<void> => ipcRenderer.invoke(SHOT_CMD.cancel),
     /** 订阅"进入会话"(main → overlay,带 shotId) */
-    onShow: (cb: (shotId: string) => void) => subscribe(EVT.shotShow, cb)
+    onShow: (cb: (shotId: string) => void) => subscribe(EVT.shotShow, cb),
+    /** 订阅"会话结束"(main → overlay:清空状态回等待态) */
+    onHide: (cb: () => void) => subscribe(EVT.shotHide, cb)
   }
 }
 

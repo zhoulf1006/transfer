@@ -32,15 +32,20 @@ function Overlay(): JSX.Element {
   const [shot, setShot] = useState<ShotSource | null>(null)
 
   useEffect(() => {
-    const unsub = window.transfer.shot.onShow(() => {
+    const unsubShow = window.transfer.shot.onShow(() => {
+      // 先清空再拉新:即便上次 shotHide 丢失,也不会在新背景到达前露出旧选区框。
+      setShot(null)
       window.transfer.shot.getShot().then((s) => setShot(s))
     })
+    // 会话结束清空 shot:遮罩窗 hide 复用,不清下次 show 会闪上次选区框(§4.7)。
+    const unsubHide = window.transfer.shot.onHide(() => setShot(null))
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') window.transfer.shot.cancel()
     }
     window.addEventListener('keydown', onKey)
     return () => {
-      unsub()
+      unsubShow()
+      unsubHide()
       window.removeEventListener('keydown', onKey)
     }
   }, [])

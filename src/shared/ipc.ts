@@ -38,7 +38,9 @@ export const EVT = {
   /** 传输进度(不落库,§12.3) */
   progress: 'transfer:progress',
   /** 截图:main → overlay,进入会话(带 shotId),overlay 按复位清单复位并拉背景 */
-  shotShow: 'shot:show'
+  shotShow: 'shot:show',
+  /** 截图:main → overlay,会话结束,overlay 清空状态(回等待态,防下次 show 闪旧框) */
+  shotHide: 'shot:hide'
 } as const
 
 export interface ProgressPayload {

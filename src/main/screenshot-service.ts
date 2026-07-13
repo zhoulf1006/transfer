@@ -198,7 +198,11 @@ export class ScreenshotService {
   private endSession(): void {
     this.state = 'idle'
     this.pending = null // 释放背景 dataURL,防复用累积(§4.7)
-    if (this.overlay && !this.overlay.isDestroyed()) this.overlay.hide()
+    if (this.overlay && !this.overlay.isDestroyed()) {
+      // hide 前先通知 overlay 清空状态,否则遮罩窗 hide 复用,下次 show 会先闪上次的选区框(§4.7)。
+      this.overlay.webContents.send(EVT.shotHide)
+      this.overlay.hide()
+    }
     for (const w of this.dimWindows) if (!w.isDestroyed()) w.destroy()
     this.dimWindows = []
     // 注:不主动 hide/focus 主窗——从头到尾不碰主窗层叠,它本在哪层就还在哪层,自然"不抢最前"。
