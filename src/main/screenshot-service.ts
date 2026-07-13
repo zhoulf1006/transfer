@@ -1,5 +1,17 @@
-import { BrowserWindow, globalShortcut, screen, ipcMain } from 'electron'
-import { SHOT_CMD } from '@shared/ipc'
+import { randomUUID } from 'node:crypto'
+import {
+  BrowserWindow,
+  globalShortcut,
+  screen,
+  ipcMain,
+  desktopCapturer,
+  systemPreferences,
+  shell,
+  dialog,
+  type Display
+} from 'electron'
+import { SHOT_CMD, EVT, type ShotSource } from '@shared/ipc'
+import { computeRatios } from './screenshot-geometry'
 
 /**
  * 截图会话服务(见 docs/screenshot-feature §4)。
@@ -7,7 +19,8 @@ import { SHOT_CMD } from '@shared/ipc'
  * 职责:F1 全局快捷键、遮罩窗生命周期、会话状态机。抓屏/裁剪/发送在后续阶段接入。
  *
  * 状态机(§4.2):idle → capturing → selecting → editing → (输出/取消) → idle。
- * 本阶段(骨架)只实现 idle ↔ (show 空遮罩窗) ↔ idle,失败/取消/失焦均回 idle。
+ * 阶段2:mac 权限先查 → 先抓屏(光标屏)拿干净位图 → setBounds → show → 下发 ShotSource。
+ * 裁剪/标注/发送在后续阶段接入。
  */
 export type ShotState = 'idle' | 'capturing' | 'selecting' | 'editing'
 
@@ -35,11 +48,10 @@ export class ScreenshotService {
   private capturing = false
   /** 主窗当前选中的 peerFp(决定"发聊天"可用);由 SHOT_CMD.setActivePeer 同步 */
   private activePeer: string | null = null
-
-  /** 当前是否有可发送的聊天对象(阶段2 的 getShot 会带上此标志给 overlay)。 */
-  hasActivePeer(): boolean {
-    return this.activePeer !== null
-  }
+  /** 本次会话抓到的背景 + display 信息,供 overlay 经 getShot 拉取 */
+  private pending: ShotSource | null = null
+  /** overlay 首帧是否加载完(gate shotShow 通知,避免首次发早于 renderer 注册监听) */
+  private overlayLoaded = false
 
   constructor(private readonly deps: ScreenshotDeps) {}
 
@@ -84,13 +96,21 @@ export class ScreenshotService {
     this.capturing = true
     this.state = 'capturing'
     try {
-      // TODO(阶段2):mac 权限先查;desktopCapturer 抓光标屏拿干净位图。
-      // 本阶段先跳过抓屏,直接铺遮罩窗验证骨架。
+      // ① mac 权限先查:denied → 根本不 show 遮罩,引导系统设置,回 idle(§4.5)。
+      if (!this.ensureScreenPermission()) {
+        this.endSession()
+        return
+      }
+      // ② 选光标屏 → 先抓屏拿干净位图(此时屏上无本 app 可见窗,防自截,§4.5)。
       const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
-      // 先置 selecting 再 show:确保 show/focus 触发的 blur 落在 blur handler 覆盖的态上,
-      // 不会停在 capturing 而漏掉失焦取消(§4.5 失焦)。
+      const source = await this.capture(display)
+      this.pending = source
+      // ③ 先置 selecting 再 show(show/focus 触发的 blur 需落在 blur handler 覆盖的态,§4.5)。
       this.state = 'selecting'
       this.showOverlay(display.bounds)
+      // ④ 通知 overlay 进入会话(它据此 getShot 拉背景 + 复位,§4.3)。
+      // 用 notifyShow gate 首帧加载,避免首次发早于 renderer 注册监听(见其注释)。
+      this.notifyShow(source.shotId)
     } catch (err) {
       // 任何失败分支都回 idle,否则 state 卡死会让 F1 被永久吞(§4.2)。
       console.error('[screenshot] 会话启动失败', err)
@@ -100,9 +120,68 @@ export class ScreenshotService {
     }
   }
 
-  /** 结束会话:hide 遮罩窗、回 idle(§4.2 复位入口)。 */
+  /**
+   * mac 屏幕录制权限(§4.5)。granted/not-determined 放行(后者首次调用系统会自动弹);
+   * denied/restricted → 引导系统设置并返回 false。Windows 恒 granted。
+   */
+  private ensureScreenPermission(): boolean {
+    if (process.platform !== 'darwin') return true
+    const status = systemPreferences.getMediaAccessStatus('screen')
+    if (status === 'granted' || status === 'not-determined') return true
+    void dialog
+      .showMessageBox({
+        type: 'warning',
+        message: '需要屏幕录制权限',
+        detail: '请在「系统设置 → 隐私与安全性 → 屏幕录制」中允许 Transfer,然后重启应用。',
+        buttons: ['打开系统设置', '取消'],
+        defaultId: 0,
+        cancelId: 1
+      })
+      .then((r) => {
+        if (r.response === 0) {
+          void shell.openExternal(
+            'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'
+          )
+        }
+      })
+    return false
+  }
+
+  /**
+   * 抓光标屏原生位图(§3.1)。thumbnailSize = 逻辑尺寸 × scaleFactor 取物理像素;
+   * 实际返回尺寸系统说了算,故一切换算以 thumbnail.getSize() 实测为准。
+   */
+  private async capture(display: Display): Promise<ShotSource> {
+    const { width: dw, height: dh } = display.size
+    const sf = display.scaleFactor
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: Math.round(dw * sf), height: Math.round(dh * sf) }
+    })
+    if (sources.length === 0) throw new Error('desktopCapturer 未返回任何屏幕源')
+    // 多屏:按 display_id 匹配光标屏;拿不到(空串/无匹配)时退回第一个源(§3.1)。
+    const src = sources.find((s) => s.display_id === String(display.id)) ?? sources[0]
+    const bmp = src.thumbnail
+    const { width: bw, height: bh } = bmp.getSize() // 实测物理尺寸
+    const ratios = computeRatios({ width: bw, height: bh }, { width: dw, height: dh })
+    return {
+      shotId: randomUUID(),
+      dataUrl: bmp.toDataURL(),
+      bitmapW: bw,
+      bitmapH: bh,
+      displayW: dw,
+      displayH: dh,
+      ratioX: ratios.x,
+      ratioY: ratios.y,
+      rotation: display.rotation,
+      hasActivePeer: this.activePeer !== null
+    }
+  }
+
+  /** 结束会话:hide 遮罩窗、清背景、回 idle(§4.2 复位入口)。 */
   private endSession(): void {
     this.state = 'idle'
+    this.pending = null // 释放背景 dataURL,防复用累积(§4.7)
     if (this.overlay && !this.overlay.isDestroyed()) this.overlay.hide()
   }
 
@@ -133,9 +212,29 @@ export class ScreenshotService {
     win.on('blur', () => {
       if (this.state === 'selecting' || this.state === 'editing') this.endSession()
     })
+    // 首帧加载完才允许 send(shotShow),否则首次会话发得比 renderer 注册监听早会丢失。
+    win.webContents.once('did-finish-load', () => {
+      this.overlayLoaded = true
+    })
     this.loadOverlay(win)
     this.overlay = win
     return win
+  }
+
+  /** 通知 overlay 进会话:已加载直接发,未加载则等 did-finish-load(避免丢首次事件)。 */
+  private notifyShow(shotId: string): void {
+    const win = this.overlay
+    if (!win || win.isDestroyed()) return
+    if (this.overlayLoaded) {
+      win.webContents.send(EVT.shotShow, shotId)
+    } else {
+      win.webContents.once('did-finish-load', () => {
+        // 加载完成时会话可能已被取消(state 回 idle),校验后再发。
+        if (this.state !== 'idle' && this.pending?.shotId === shotId) {
+          win.webContents.send(EVT.shotShow, shotId)
+        }
+      })
+    }
   }
 
   private loadOverlay(win: BrowserWindow): void {
@@ -163,6 +262,8 @@ export class ScreenshotService {
   // ── IPC(overlay → main)──
   private registerIpc(): void {
     ipcMain.handle(SHOT_CMD.cancel, () => this.endSession())
-    // getShot/toClipboard/saveAs/sendToChat 在阶段2/5 接入。
+    // overlay 进会话后拉背景 + display 信息(§4.3)。
+    ipcMain.handle(SHOT_CMD.getShot, () => this.pending)
+    // toClipboard/saveAs/sendToChat 在阶段5 接入。
   }
 }

@@ -51,8 +51,8 @@ const api = {
     ipcRenderer.invoke(SHOT_CMD.setActivePeer, peerFp),
 
   shot: {
-    /** overlay 拉背景位图 + display 信息 + 有无 peer */
-    getShot: (): Promise<ShotSource> => ipcRenderer.invoke(SHOT_CMD.getShot),
+    /** overlay 拉背景位图 + display 信息 + 有无 peer(会话未就绪时为 null) */
+    getShot: (): Promise<ShotSource | null> => ipcRenderer.invoke(SHOT_CMD.getShot),
     /** 复制到剪贴板(不落盘) */
     toClipboard: (png: Uint8Array): Promise<void> =>
       ipcRenderer.invoke(SHOT_CMD.toClipboard, png),
