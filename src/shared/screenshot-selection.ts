@@ -87,18 +87,27 @@ export function applyDrag(orig: Rect, handle: Handle, dx: number, dy: number): R
 }
 
 /**
- * 键盘像素微调(§2.3):
- * - 无修饰键:移动选区 dx,dy(各 1px)
- * - Ctrl:右/下边界各扩 1px(选区变大)
- * - Shift:右/下边界各缩 1px(选区变小,不小于 1×1)
- * dir 为方向单位向量(如 → = {dx:1,dy:0})。
+ * 键盘像素微调(§2.3),跟手方向:方向键决定作用哪条边,mod 决定往外扩还是往内收。
+ * dir 为方向单位向量(→={1,0} ←={-1,0} ↑={0,-1} ↓={0,1}),dx/dy 的符号选边:
+ * - move:整体平移 dx,dy
+ * - expand:沿该方向把对应边界外推(Ctrl+右=右边外扩、Ctrl+左=左边外扩、Ctrl+上=上边外扩、Ctrl+下=下边外扩)
+ * - shrink:沿该方向把对应边界内收(Shift+右=右边内收…),不小于 1×1
+ * 归一后返回正矩形(内收可能翻面)。
  */
 export type NudgeMod = 'move' | 'expand' | 'shrink'
 export function nudge(r: Rect, dx: number, dy: number, mod: NudgeMod): Rect {
   if (mod === 'move') return { ...r, x: r.x + dx, y: r.y + dy }
-  if (mod === 'expand') return { ...r, w: r.w + Math.abs(dx), h: r.h + Math.abs(dy) }
-  // shrink:不小于 1×1
-  return { ...r, w: Math.max(1, r.w - Math.abs(dx)), h: Math.max(1, r.h - Math.abs(dy)) }
+  const s = mod === 'expand' ? 1 : -1 // 外扩=边界背离选区,内收=边界朝向选区
+  let l = r.x
+  let t = r.y
+  let rr = r.x + r.w
+  let bb = r.y + r.h
+  if (dx > 0) rr += s // 右边界:expand 外推(+),shrink 内收(-)
+  else if (dx < 0) l -= s // 左边界:expand 外推(-),shrink 内收(+)
+  if (dy > 0) bb += s // 下边界
+  else if (dy < 0) t -= s // 上边界
+  const out = rectFromPoints(l, t, rr, bb)
+  return { ...out, w: Math.max(1, out.w), h: Math.max(1, out.h) }
 }
 
 /** 选区是否有效(达到最小尺寸才出工具条/可导出,§4.5)。 */

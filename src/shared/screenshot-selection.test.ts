@@ -85,21 +85,38 @@ describe('applyDrag — 拖锚点/整块', () => {
   })
 })
 
-describe('nudge — 键盘像素微调', () => {
-  const r: Rect = { x: 100, y: 100, w: 50, h: 50 }
+describe('nudge — 键盘像素微调(跟手方向)', () => {
+  const r: Rect = { x: 100, y: 100, w: 50, h: 50 } // 边界 L100 T100 R150 B150
+
   it('移动(无修饰)', () => {
     expect(nudge(r, 1, 0, 'move')).toEqual({ x: 101, y: 100, w: 50, h: 50 })
     expect(nudge(r, 0, -1, 'move')).toEqual({ x: 100, y: 99, w: 50, h: 50 })
   })
-  it('Ctrl 扩大', () => {
-    expect(nudge(r, 1, 0, 'expand')).toEqual({ x: 100, y: 100, w: 51, h: 50 })
+
+  // 回归:曾用 Math.abs 导致"上下都向下扩、左右都向右扩"。现按方向键各扩对应边。
+  it('expand 各方向扩对应边界', () => {
+    expect(nudge(r, 1, 0, 'expand')).toEqual({ x: 100, y: 100, w: 51, h: 50 }) // 右外扩
+    expect(nudge(r, -1, 0, 'expand')).toEqual({ x: 99, y: 100, w: 51, h: 50 }) // 左外扩
+    expect(nudge(r, 0, -1, 'expand')).toEqual({ x: 100, y: 99, w: 50, h: 51 }) // 上外扩
+    expect(nudge(r, 0, 1, 'expand')).toEqual({ x: 100, y: 100, w: 50, h: 51 }) // 下外扩
   })
-  it('Shift 缩小', () => {
-    expect(nudge(r, 1, 0, 'shrink')).toEqual({ x: 100, y: 100, w: 49, h: 50 })
+
+  it('shrink 各方向收对应边界', () => {
+    expect(nudge(r, 1, 0, 'shrink')).toEqual({ x: 100, y: 100, w: 49, h: 50 }) // 右内收
+    expect(nudge(r, -1, 0, 'shrink')).toEqual({ x: 101, y: 100, w: 49, h: 50 }) // 左内收
+    expect(nudge(r, 0, -1, 'shrink')).toEqual({ x: 100, y: 101, w: 50, h: 49 }) // 上内收
+    expect(nudge(r, 0, 1, 'shrink')).toEqual({ x: 100, y: 100, w: 50, h: 49 }) // 下内收
   })
+
+  it('上扩与下扩方向相反(旧 abs bug 会让二者相同)', () => {
+    expect(nudge(r, 0, -1, 'expand')).not.toEqual(nudge(r, 0, 1, 'expand'))
+    expect(nudge(r, -1, 0, 'expand')).not.toEqual(nudge(r, 1, 0, 'expand'))
+  })
+
   it('缩小不低于 1×1', () => {
     const tiny: Rect = { x: 0, y: 0, w: 1, h: 1 }
-    expect(nudge(tiny, 1, 1, 'shrink')).toEqual({ x: 0, y: 0, w: 1, h: 1 })
+    const out = nudge(tiny, 1, 0, 'shrink')
+    expect(out.w).toBe(1)
   })
 })
 
