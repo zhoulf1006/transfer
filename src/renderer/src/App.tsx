@@ -527,7 +527,7 @@ function fmtSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-// 静谧石墨 + 海蓝:所有颜色走 CSS 变量(见 theme.css),字号小一档、边框细、留白从容。
+// 静谧石墨中性 + Notion 紫:所有颜色走 CSS 变量(见 theme.css),字号小一档、边框细、留白从容。
 const S: Record<string, React.CSSProperties> = {
   app: { display: 'flex', height: '100vh', color: 'var(--ink)', fontSize: 13 },
   sidebar: { width: 224, borderRight: '1px solid var(--line)', background: 'var(--side)', display: 'flex', flexDirection: 'column', padding: '14px 12px', boxSizing: 'border-box', overflowY: 'auto' },
@@ -550,7 +550,7 @@ const S: Record<string, React.CSSProperties> = {
   offlineTag: { fontSize: 10.5, fontWeight: 450, color: 'var(--muted)', border: '1px solid var(--line)', borderRadius: 5, padding: '1px 7px' },
   stream: { flex: 1, overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 9, position: 'relative' },
   streamDragging: { outline: '2px dashed var(--accent)', outlineOffset: -8, background: 'var(--accent-soft)' },
-  dropHint: { position: 'sticky', bottom: 8, alignSelf: 'center', background: 'var(--accent)', color: 'var(--accent-on)', padding: '6px 16px', borderRadius: 18, fontSize: 12.5, pointerEvents: 'none', boxShadow: 'var(--shadow-md)' },
+  dropHint: { position: 'sticky', bottom: 8, alignSelf: 'center', background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent)', padding: '6px 16px', borderRadius: 18, fontSize: 12.5, pointerEvents: 'none', boxShadow: 'var(--shadow-md)' },
   bubbleRow: { display: 'flex' },
   bubble: { maxWidth: '74%', padding: '8px 12px', borderRadius: 14 },
   bubbleOwn: { background: 'var(--bubble-me)', color: 'var(--bubble-me-ink)', borderBottomRightRadius: 5 },
@@ -559,29 +559,31 @@ const S: Record<string, React.CSSProperties> = {
   meta: { fontSize: 9.5, opacity: 0.7, marginTop: 4 },
   fileLine: { display: 'flex', alignItems: 'center', gap: 9 },
   fileIcon: { width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', fontSize: 15, flexShrink: 0, background: 'var(--accent-soft)' },
-  fileIconOwn: { width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', fontSize: 15, flexShrink: 0, background: 'rgba(255,255,255,0.2)' },
+  // me 气泡是柔紫底,图标底不能再用同支柔紫(会糊),改用紫墨半透明:比气泡深一档、浅深底都可见
+  fileIconOwn: { width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', fontSize: 15, flexShrink: 0, background: 'var(--own-wash)' },
   fileName: { fontWeight: 560, fontSize: 12.5 },
   fileSize: { fontSize: 10.5, opacity: 0.65, marginTop: 1 },
   progWrap: { position: 'relative', height: 5, background: 'var(--track)', borderRadius: 3, marginTop: 8, overflow: 'hidden' },
-  progWrapOwn: { position: 'relative', height: 5, background: 'rgba(255,255,255,0.25)', borderRadius: 3, marginTop: 8, overflow: 'hidden' },
+  progWrapOwn: { position: 'relative', height: 5, background: 'var(--own-wash)', borderRadius: 3, marginTop: 8, overflow: 'hidden' },
   progBar: { position: 'absolute', left: 0, top: 0, bottom: 0, background: 'var(--accent)', borderRadius: 3, transition: 'width 0.12s linear' },
-  progBarOwn: { position: 'absolute', left: 0, top: 0, bottom: 0, background: '#fff', borderRadius: 3, transition: 'width 0.12s linear' },
+  // 全柔紫方案:me 气泡里的填充条也用中等紫(和非 own 一致),柔底上够清楚
+  progBarOwn: { position: 'absolute', left: 0, top: 0, bottom: 0, background: 'var(--accent)', borderRadius: 3, transition: 'width 0.12s linear' },
   progPct: { fontSize: 9.5, marginTop: 3, opacity: 0.85, fontVariantNumeric: 'tabular-nums' },
   dlRow: { display: 'flex', alignItems: 'center', gap: 12, padding: '11px 4px', borderBottom: '1px solid var(--line)' },
   dlName: { fontWeight: 550, fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   dlMeta: { fontSize: 10.5, color: 'var(--muted)', marginTop: 2, fontVariantNumeric: 'tabular-nums' },
   actions: { display: 'flex', gap: 7, marginTop: 8 },
-  acceptBtn: { padding: '4px 13px', border: 'none', borderRadius: 6, background: 'var(--accent)', color: 'var(--accent-on)', cursor: 'pointer', fontSize: 11.5 },
+  acceptBtn: { padding: '4px 13px', border: '1px solid var(--accent-soft)', borderRadius: 6, background: 'var(--accent-soft)', color: 'var(--accent)', cursor: 'pointer', fontSize: 11.5 },
   rejectBtn: { padding: '4px 13px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--card)', color: 'var(--ink)', cursor: 'pointer', fontSize: 11.5 },
   openBtn: { marginTop: 8, padding: '4px 13px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--card)', color: 'var(--ink)', cursor: 'pointer', fontSize: 11.5 },
   inputBar: { display: 'flex', gap: 8, padding: '11px 14px', borderTop: '1px solid var(--line)', alignItems: 'flex-end' },
   attachBtn: { border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', opacity: 0.6 },
   textarea: { flex: 1, border: '1px solid var(--line-strong)', borderRadius: 10, padding: '8px 12px', fontSize: 13, resize: 'none', fontFamily: 'inherit', maxHeight: 120, background: 'var(--bg)', color: 'var(--ink)', outline: 'none' },
-  sendBtn: { width: 34, height: 34, border: 'none', borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-on)', cursor: 'pointer', fontSize: 14, display: 'grid', placeItems: 'center', flexShrink: 0 },
+  sendBtn: { width: 34, height: 34, border: 'none', borderRadius: '50%', background: 'var(--accent-soft)', color: 'var(--accent)', cursor: 'pointer', fontSize: 14, display: 'grid', placeItems: 'center', flexShrink: 0 },
   modalMask: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' },
   modal: { background: 'var(--card)', color: 'var(--ink)', borderRadius: 14, padding: 24, width: 380, border: '1px solid var(--line)', boxShadow: 'var(--shadow-md)' },
   settingRow: { display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0', fontSize: 13 },
   numInput: { width: 80, padding: '4px 8px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--bg)', color: 'var(--ink)' },
   btn: { padding: '6px 16px', border: '1px solid var(--line-strong)', borderRadius: 8, background: 'var(--card)', color: 'var(--ink)', cursor: 'pointer', fontSize: 13 },
-  btnPrimary: { border: 'none', background: 'var(--accent)', color: 'var(--accent-on)' }
+  btnPrimary: { border: '1px solid var(--accent-soft)', background: 'var(--accent-soft)', color: 'var(--accent)' }
 }
