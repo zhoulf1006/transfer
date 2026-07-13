@@ -17,6 +17,8 @@ win:
   target:
     - target: nsis            # 安装版:装到固定目录,启动不再每次解压(portable 每次解压慢,冷启动优化)
       arch: [x64]
+  # 明确不签名:CI runner 上无证书时 signtool 仍被调用会失败;关掉签名/改 exe(uninstaller 也不签)
+  signAndEditExecutable: false
   # icon: build/icon.ico       # 未提供图标时用 Electron 默认图标
 
 # NSIS:一键静默安装(体验接近免安装),装到用户目录、不弹安装向导

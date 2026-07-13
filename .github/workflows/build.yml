@@ -33,10 +33,11 @@ jobs:
       - name: Build (electron-vite) and package Windows NSIS installer
         run: pnpm run dist:win
         env:
-          # 未签名构建:无证书时 electron-builder 自动跳过签名。
-          # CSC_IDENTITY_AUTO_DISCOVERY 仅 macOS 生效,Windows 上无副作用,
-          # 保留仅为显式表达"不签名"意图。
+          # 明确不签名:NSIS 会对 setup/uninstaller/elevate 调 signtool,runner 无证书时会失败。
+          # 清空证书变量 + 配置里 signAndEditExecutable:false 双保险跳过签名。
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          CSC_LINK: ''
+          WIN_CSC_LINK: ''
 
       # 只匹配 NSIS 安装包本身(-setup.exe);排除 win-unpacked 里的中间件 exe
       - name: Upload setup exe (artifact)
