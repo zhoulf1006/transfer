@@ -472,6 +472,7 @@ function FileBubble({
  */
 function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
   const [thumb, setThumb] = useState<string | null | undefined>(undefined) // undefined=加载中
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null) // 右键菜单位置
 
   useEffect(() => {
     let alive = true
@@ -482,6 +483,18 @@ function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
       alive = false
     }
   }, [msg.id])
+
+  // 右键菜单打开时,点别处/滚动关闭
+  useEffect(() => {
+    if (!menu) return
+    const close = (): void => setMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('scroll', close, true)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('scroll', close, true)
+    }
+  }, [menu])
 
   // 拿不到缩略图 → 回退文件行
   if (thumb === null) {
@@ -500,13 +513,43 @@ function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
     return <div style={S.thumbLoading}>{msg.fileName}</div>
   }
   return (
-    <img
-      src={thumb}
-      style={S.thumb}
-      onClick={() => window.transfer.openFile(msg.id)}
-      title="点击用系统程序查看原图"
-      alt={msg.fileName ?? ''}
-    />
+    <>
+      <img
+        src={thumb}
+        style={S.thumb}
+        onClick={() => window.transfer.openFile(msg.id)}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          setMenu({ x: e.clientX, y: e.clientY })
+        }}
+        title="点击查看原图 · 右键保存"
+        alt={msg.fileName ?? ''}
+      />
+      {menu && (
+        <div style={{ ...S.imgMenu, left: menu.x, top: menu.y }} onClick={(e) => e.stopPropagation()}>
+          <div
+            className="tf-row"
+            style={S.imgMenuItem}
+            onClick={() => {
+              setMenu(null)
+              void window.transfer.saveImageAs(msg.id)
+            }}
+          >
+            保存图片
+          </div>
+          <div
+            className="tf-row"
+            style={S.imgMenuItem}
+            onClick={() => {
+              setMenu(null)
+              void window.transfer.openFile(msg.id)
+            }}
+          >
+            用系统程序打开
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -639,6 +682,23 @@ const S: Record<string, React.CSSProperties> = {
     background: 'var(--track)',
     borderRadius: 8,
     textAlign: 'center'
+  },
+  imgMenu: {
+    position: 'fixed',
+    zIndex: 1000,
+    background: 'var(--card)',
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    padding: 4,
+    boxShadow: 'var(--shadow-md)',
+    minWidth: 132
+  },
+  imgMenuItem: {
+    padding: '7px 10px',
+    fontSize: 12.5,
+    borderRadius: 5,
+    cursor: 'pointer',
+    color: 'var(--ink)'
   },
   progWrap: { position: 'relative', height: 5, background: 'var(--track)', borderRadius: 3, marginTop: 8, overflow: 'hidden' },
   progWrapOwn: { position: 'relative', height: 5, background: 'var(--own-wash)', borderRadius: 3, marginTop: 8, overflow: 'hidden' },

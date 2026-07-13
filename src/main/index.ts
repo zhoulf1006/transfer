@@ -1,4 +1,5 @@
-import { join } from 'node:path'
+import { join, basename } from 'node:path'
+import { copyFile } from 'node:fs/promises'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } from 'electron'
 import {
   CMD,
@@ -128,6 +129,15 @@ function registerIpc(): void {
     } catch {
       return null
     }
+  })
+  // 图片另存为:弹系统对话框,把原图(filePath)复制到用户选定位置。
+  ipcMain.handle(CMD.saveImageAs, async (_e, messageId: string): Promise<string | null> => {
+    const msg = store?.get(messageId)
+    if (!msg?.filePath) return null
+    const r = await dialog.showSaveDialog({ defaultPath: basename(msg.filePath) })
+    if (r.canceled || !r.filePath) return null
+    await copyFile(msg.filePath, r.filePath)
+    return r.filePath
   })
   ipcMain.handle(CMD.getAutoAccept, (): AutoAcceptSettings => {
     return settings!.getAutoAccept()

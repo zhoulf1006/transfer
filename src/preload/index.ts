@@ -39,6 +39,9 @@ const api = {
   /** 取图片消息缩略图 dataURL(拿不到返回 null,UI 回退文件图标) */
   getThumbnail: (messageId: string): Promise<string | null> =>
     ipcRenderer.invoke(CMD.getThumbnail, messageId),
+  /** 图片另存为(弹对话框复制原图到选定位置),返回保存路径或 null(取消) */
+  saveImageAs: (messageId: string): Promise<string | null> =>
+    ipcRenderer.invoke(CMD.saveImageAs, messageId),
   getAutoAccept: (): Promise<AutoAcceptSettings> => ipcRenderer.invoke(CMD.getAutoAccept),
   setAutoAccept: (s: Partial<AutoAcceptSettings>): Promise<AutoAcceptSettings> =>
     ipcRenderer.invoke(CMD.setAutoAccept, s),

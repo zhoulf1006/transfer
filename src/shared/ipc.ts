@@ -65,6 +65,8 @@ export const CMD = {
   openFile: 'message:openFile',
   /** 取图片消息缩略图 dataURL(png/jpg 可生成;拿不到返回 null → UI 回退文件图标) */
   getThumbnail: 'message:getThumbnail',
+  /** 图片"另存为":弹系统对话框把原图复制到用户选定位置,返回保存路径或 null(取消) */
+  saveImageAs: 'message:saveImageAs',
   getAutoAccept: 'settings:getAutoAccept',
   setAutoAccept: 'settings:setAutoAccept'
 } as const
