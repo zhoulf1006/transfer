@@ -200,10 +200,16 @@ app.on('before-quit', (e) => {
   e.preventDefault()
   quitting = true
   ;(async () => {
+    // 先摘引用再清理:退出期间渲染层仍可能发 IPC(sendText/listReceivedFiles 等),
+    // 先置 null 让 handler 的 `?.` 直接跳过,避免访问已 close 的 store → "database is not open"。
+    const s = store
+    const c = core
+    store = null
+    core = null
     try {
       screenshot?.stop()
-      await core?.stop()
-      store?.close()
+      await c?.stop()
+      s?.close()
     } finally {
       app.quit()
     }
