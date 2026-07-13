@@ -199,6 +199,16 @@ app.on('before-quit', (e) => {
   if (quitting) return // 已在清理,放行第二次 quit
   e.preventDefault()
   quitting = true
+
+  // 兜底:清理最多等 3s,超时也强制退出。
+  // 关键——core.stop 里 fastify server.close() 会等所有活动连接关闭,若有挂起连接可能永不 resolve,
+  // 导致进程卡死不退(表现为"点关闭后进程还在、反复启动堆积僵尸进程")。用 app.exit(0) 强杀,
+  // 比 app.quit() 更硬(quit 本身也可能被 before-quit 再次拦)。
+  const forceExit = setTimeout(() => {
+    console.warn('[quit] 清理超时,强制退出')
+    app.exit(0)
+  }, 3000)
+
   ;(async () => {
     // 先摘引用再清理:退出期间渲染层仍可能发 IPC(sendText/listReceivedFiles 等),
     // 先置 null 让 handler 的 `?.` 直接跳过,避免访问已 close 的 store → "database is not open"。
@@ -210,7 +220,10 @@ app.on('before-quit', (e) => {
       screenshot?.stop()
       await c?.stop()
       s?.close()
+    } catch (err) {
+      console.error('[quit] 清理出错', err)
     } finally {
+      clearTimeout(forceExit)
       app.quit()
     }
   })()

@@ -225,7 +225,12 @@ export class AppCore {
     if (this.server) {
       const server = this.server
       this.server = null
-      await server.close()
+      // fastify close() 会等所有活动/keep-alive 连接关闭,有挂起连接时可能久等甚至不 resolve
+      // → 拖住退出(僵尸进程根因)。给 1.5s 上限,超时就不等了(进程即将退出,OS 会回收 socket)。
+      await Promise.race([
+        server.close(),
+        new Promise((resolve) => setTimeout(resolve, 1500))
+      ])
     }
   }
 }
