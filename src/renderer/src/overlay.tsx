@@ -33,6 +33,7 @@ import {
   type SceneState
 } from '@shared/screenshot-annotation'
 import { drawElement } from './annotation-draw'
+import { CopyIcon, SaveIcon, SendIcon } from './icons'
 
 /**
  * 截图遮罩层(见 docs/screenshot-feature §4.1)。
@@ -80,6 +81,9 @@ type DragMode =
 let elementSeq = 0
 const nextId = (): string => `el${++elementSeq}`
 
+/** 文字字号:随粗细轻微变化(默认 width=3 → 18px),textarea 与提交的 element 用同一算法保持一致。 */
+const textFontSize = (width: number): number => 12 + width * 2
+
 /** 按工具在按下点创建一个初始 element(拖拽/移动中由 updateElement 更新终点)。 */
 function startElement(
   tool: ShotTool,
@@ -101,7 +105,7 @@ function startElement(
     case 'marker':
       return { id, type: tool, points: [[p.x, p.y]], style }
     case 'text':
-      return { id, type: 'text', x: p.x, y: p.y, text: '', fontSize: 16 + style.width * 4, style }
+      return { id, type: 'text', x: p.x, y: p.y, text: '', fontSize: textFontSize(style.width), style }
     case 'badge':
       return { id, type: 'badge', cx: p.x, cy: p.y, n: badgeN + 1, style }
   }
@@ -175,13 +179,15 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
 
   // ── 标注(§4.4)──
   const [tool, setTool] = useState<ShotTool | null>(null) // null=无工具(纯框选态,可调选区)
-  const [style, setStyle] = useState<ShotStyle>({ color: '#e23b3b', width: 3, alpha: 1 })
+  const [style, setStyle] = useState<ShotStyle>({ color: '#e23b3b', width: 2, alpha: 1 })
   const [scene, setScene] = useState<SceneState>(emptyScene)
   const annoRef = useRef<HTMLCanvasElement | null>(null)
   // 正在画的临时 element + 按下锚点(rect 类反向拖归一用)
   const drawing = useRef<{ el: ShotElement; anchor: { x: number; y: number } } | null>(null)
   // 文字标注:点击后在该点开一个 textarea 收字,提交转成 text element(§3.3)。
   const [textEdit, setTextEdit] = useState<{ x: number; y: number; value: string } | null>(null)
+  const [textEditKey, setTextEditKey] = useState(0) // 每次开框自增,驱动聚焦 effect 重跑
+  const textRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
     const cv = document.createElement('canvas')
@@ -211,13 +217,15 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
   const onPointerDown = (e: React.PointerEvent): void => {
     if (e.button === 2) return // 右键交给 contextmenu 处理(重选)
     const p = pt(e)
-    rootRef.current?.setPointerCapture(e.pointerId)
-    // 文字工具:点选区内 → 开 textarea 收字(先提交上一个未完成的)
+    // 有未提交的文字框时,任意点击(切工具/画别的)先提交它(替代 onBlur 提交,见 §3.3)。
+    if (textEdit) commitTextEdit()
+    // 文字工具:点选区内 → 开 textarea 收字。
+    // 不 setPointerCapture:否则 root 抓住指针,textarea 拿不到焦点/立刻失焦。
     if (tool === 'text' && sel && inSel(p)) {
-      commitTextEdit()
-      setTextEdit({ x: p.x, y: p.y, value: '' })
+      openTextEdit(p.x, p.y)
       return
     }
+    rootRef.current?.setPointerCapture(e.pointerId)
     // 其他标注工具 且 点在选区内 → 拖拽/点击画标注(不动选区)
     if (tool && sel && inSel(p)) {
       drawing.current = { el: startElement(tool, p, style, scene.badgeCounter), anchor: p }
@@ -301,6 +309,19 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
     for (const el of els) drawElement(ctx, el, sampleRef.current, pxRect, 1)
   }
 
+  // 打开(或换位置重开)文字框:统一入口,开完 rAF 聚焦(DOM 挂载后)。
+  // 用 textEditKey 唯一标识每个框:连续点两处时 textEdit 直接 {旧}→{新}(textOpen 始终 true),
+  // 若靠 boolean 依赖 effect 不会重跑 → 只第一次聚焦。key 每次自增,保证每个新框都聚焦。
+  const openTextEdit = (x: number, y: number): void => {
+    setTextEditKey((k) => k + 1)
+    setTextEdit({ x, y, value: '' })
+  }
+  useEffect(() => {
+    if (textEdit === null) return
+    const id = requestAnimationFrame(() => textRef.current?.focus())
+    return () => cancelAnimationFrame(id)
+  }, [textEditKey])
+
   // 提交文字编辑:非空则转成 text element 入场景;空则丢弃。
   const commitTextEdit = (): void => {
     setTextEdit((te) => {
@@ -311,7 +332,7 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
           x: te.x,
           y: te.y,
           text: te.value,
-          fontSize: 16 + style.width * 4,
+          fontSize: textFontSize(style.width),
           style
         }
         setScene((s) => commit(s, [...s.elements, el]))
@@ -426,7 +447,7 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
         x: textEdit.x,
         y: textEdit.y,
         text: textEdit.value,
-        fontSize: 16 + style.width * 4,
+        fontSize: textFontSize(style.width),
         style
       })
     }
@@ -510,11 +531,11 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
       )}
       {textEdit && (
         <textarea
-          autoFocus
+          ref={textRef}
           value={textEdit.value}
+          rows={1}
           onPointerDown={(e) => e.stopPropagation()}
           onChange={(e) => setTextEdit((te) => (te ? { ...te, value: e.target.value } : te))}
-          onBlur={commitTextEdit}
           onKeyDown={(e) => {
             e.stopPropagation()
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -529,7 +550,7 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
             left: textEdit.x,
             top: textEdit.y,
             color: style.color,
-            fontSize: 16 + style.width * 4
+            fontSize: textFontSize(style.width)
           }}
         />
       )}
@@ -647,14 +668,13 @@ function SizeLabel({ sel }: { sel: Rect }): JSX.Element {
   )
 }
 
-const TOOLBAR_H = 44
+const TOOLBAR_H = 32
 const TOOLS: Array<{ t: ShotTool; icon: string; label: string }> = [
   { t: 'rect', icon: '▭', label: '矩形' },
   { t: 'ellipse', icon: '◯', label: '椭圆' },
   { t: 'arrow', icon: '↗', label: '箭头' },
   { t: 'line', icon: '／', label: '直线' },
   { t: 'pen', icon: '✎', label: '画笔' },
-  { t: 'marker', icon: '▍', label: '马克笔' },
   { t: 'mosaic', icon: '▚', label: '马赛克' },
   { t: 'blur', icon: '◍', label: '模糊' },
   { t: 'text', icon: 'A', label: '文字' },
@@ -707,21 +727,23 @@ function Toolbar(props: {
         </button>
       ))}
       <div style={S.tbSep} />
-      {COLORS.map((c) => (
-        <button
-          key={c}
-          style={{
-            ...S.tbSwatch,
-            background: c,
-            outline: style.color === c ? '2px solid #2d84c4' : '1px solid rgba(255,255,255,0.25)'
-          }}
-          onClick={() => props.onStyle({ ...style, color: c })}
-        />
-      ))}
+      <div style={S.tbSwatches}>
+        {COLORS.map((c) => (
+          <button
+            key={c}
+            style={{
+              ...S.tbSwatch,
+              background: c,
+              outline: style.color === c ? '2px solid #2d84c4' : '1px solid rgba(255,255,255,0.25)'
+            }}
+            onClick={() => props.onStyle({ ...style, color: c })}
+          />
+        ))}
+      </div>
       <input
         type="range"
         min={1}
-        max={12}
+        max={6}
         value={style.width}
         onChange={(e) => props.onStyle({ ...style, width: Number(e.target.value) })}
         style={S.tbRange}
@@ -735,19 +757,19 @@ function Toolbar(props: {
         ↷
       </button>
       <div style={S.tbSep} />
-      <button style={S.tbBtn} onClick={props.onCopy}>
-        复制
+      <button style={S.tbTool} onClick={props.onCopy} title="复制到剪贴板">
+        <CopyIcon size={15} />
       </button>
-      <button style={S.tbBtn} onClick={props.onSave}>
-        保存
+      <button style={S.tbTool} onClick={props.onSave} title="保存为文件">
+        <SaveIcon size={15} />
       </button>
       <button
-        style={{ ...S.tbBtn, ...S.tbPrimary, ...(hasPeer ? {} : S.tbDisabled) }}
+        style={{ ...S.tbTool, ...(hasPeer ? S.tbToolPrimary : S.tbToolDisabled) }}
         onClick={props.onSend}
         disabled={!hasPeer}
         title={hasPeer ? '发到当前聊天' : '先在主窗选择一个聊天对象'}
       >
-        发聊天
+        <SendIcon size={15} />
       </button>
     </div>
   )
@@ -852,31 +874,23 @@ const S: Record<string, React.CSSProperties> = {
   toolbar: {
     position: 'absolute',
     display: 'flex',
-    gap: 6,
-    padding: 5,
+    alignItems: 'center',
+    gap: 1,
+    padding: 3,
     background: 'rgba(28,28,30,0.95)',
     borderRadius: 8,
     boxShadow: '0 2px 10px rgba(0,0,0,0.4)',
     pointerEvents: 'auto', // 按钮可点(root 是 crosshair 但工具条要交互)
+    whiteSpace: 'nowrap', // 不折行:窄选区时工具条整体保持一行,靠定位不超出屏
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif'
   },
-  tbBtn: {
-    border: 'none',
-    borderRadius: 5,
-    padding: '5px 12px',
-    fontSize: 12,
-    cursor: 'pointer',
-    background: 'rgba(255,255,255,0.12)',
-    color: '#eaeaec'
-  },
-  tbPrimary: { background: '#2d84c4', color: '#fff' },
-  tbDisabled: { background: 'rgba(255,255,255,0.06)', color: '#6a6d73', cursor: 'not-allowed' },
   tbTool: {
-    width: 28,
-    height: 28,
+    flexShrink: 0,
+    width: 24,
+    height: 24,
     border: 'none',
     borderRadius: 5,
-    fontSize: 14,
+    fontSize: 13,
     cursor: 'pointer',
     background: 'transparent',
     color: '#d6d7da',
@@ -884,21 +898,27 @@ const S: Record<string, React.CSSProperties> = {
     placeItems: 'center'
   },
   tbToolOn: { background: '#2d84c4', color: '#fff' },
-  tbSep: { width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,0.15)', margin: '0 2px' },
-  tbSwatch: { width: 16, height: 16, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0 },
-  tbRange: { width: 64, cursor: 'pointer' },
+  tbToolPrimary: { background: '#2d84c4', color: '#fff' },
+  tbToolDisabled: { color: '#5f6167', cursor: 'not-allowed' },
+  tbSep: { width: 1, height: 18, alignSelf: 'center', background: 'rgba(255,255,255,0.15)', margin: '0 3px', flexShrink: 0 },
+  tbSwatches: { display: 'flex', alignItems: 'center', gap: 4, margin: '0 3px' },
+  tbSwatch: { width: 11, height: 11, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 },
+  tbRange: { width: 40, cursor: 'pointer', flexShrink: 0 },
   textInput: {
     position: 'absolute',
-    minWidth: 60,
-    background: 'transparent',
-    border: '1px dashed rgba(45,132,196,0.8)',
+    width: 160,
+    height: '1.4em',
+    background: 'rgba(0,0,0,0.25)',
+    border: '1px dashed rgba(45,132,196,0.9)',
     outline: 'none',
     resize: 'none',
     overflow: 'hidden',
     fontFamily: '-apple-system, "PingFang SC", sans-serif',
-    lineHeight: 1.2,
-    padding: 0,
-    pointerEvents: 'auto'
+    lineHeight: 1.3,
+    padding: '1px 3px',
+    boxSizing: 'content-box',
+    pointerEvents: 'auto',
+    zIndex: 10
   },
   hint: {
     position: 'absolute',
