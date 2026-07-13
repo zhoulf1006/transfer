@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } from 'electron'
 import {
   CMD,
   EVT,
@@ -21,6 +21,9 @@ import { ScreenshotService } from './screenshot-service'
 const userDataOverride = process.env['TRANSFER_USERDATA']
 if (userDataOverride) app.setPath('userData', userDataOverride)
 const portOverride = process.env['TRANSFER_PORT'] ? Number(process.env['TRANSFER_PORT']) : undefined
+
+// 聊天缩略图宽度(px):够清晰又小(几十KB),点击看原图走系统查看器
+const THUMB_WIDTH = 180
 
 // 单实例锁:一次只运行一个实例,第二个实例聚焦已有窗后退出。
 // 锁基于 userData 目录(Electron 源码级),故必须排在上面 setPath 之后——
@@ -113,6 +116,18 @@ function registerIpc(): void {
     // ④-B:按 id 精确取(store.get),不受 list 分页上限限制
     const msg = store?.get(messageId)
     if (msg?.filePath) shell.openPath(msg.filePath)
+  })
+  // 图片缩略图:nativeImage 生成小图 dataURL(仅 PNG/JPEG 可靠;GIF/WEBP/非图片返回 null → UI 回退图标)
+  ipcMain.handle(CMD.getThumbnail, (_e, messageId: string): string | null => {
+    const msg = store?.get(messageId)
+    if (!msg?.filePath) return null
+    try {
+      const img = nativeImage.createFromPath(msg.filePath)
+      if (img.isEmpty()) return null // 不支持的格式/读失败
+      return img.resize({ width: THUMB_WIDTH }).toDataURL()
+    } catch {
+      return null
+    }
   })
   ipcMain.handle(CMD.getAutoAccept, (): AutoAcceptSettings => {
     return settings!.getAutoAccept()

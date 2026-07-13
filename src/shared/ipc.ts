@@ -63,6 +63,8 @@ export const CMD = {
   listMessages: 'message:list',
   listReceivedFiles: 'message:listReceivedFiles',
   openFile: 'message:openFile',
+  /** 取图片消息缩略图 dataURL(png/jpg 可生成;拿不到返回 null → UI 回退文件图标) */
+  getThumbnail: 'message:getThumbnail',
   getAutoAccept: 'settings:getAutoAccept',
   setAutoAccept: 'settings:setAutoAccept'
 } as const
@@ -102,6 +104,14 @@ export interface ShotSource {
   rotation: number
   /** 有无当前聊天对象 → 决定"发聊天"按钮是否可用 */
   hasActivePeer: boolean
+}
+
+/** 按文件名扩展名判断是否图片(决定聊天里是否尝试显示缩略图)。 */
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'heic', 'svg'])
+export function isImageFile(fileName: string | null): boolean {
+  if (!fileName) return false
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  return ext ? IMAGE_EXTS.has(ext) : false
 }
 
 export interface IdentityInfo {

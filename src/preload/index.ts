@@ -36,6 +36,9 @@ const api = {
   listReceivedFiles: (args?: ListMessagesArgs): Promise<UiMessage[]> =>
     ipcRenderer.invoke(CMD.listReceivedFiles, args),
   openFile: (messageId: string): Promise<void> => ipcRenderer.invoke(CMD.openFile, messageId),
+  /** 取图片消息缩略图 dataURL(拿不到返回 null,UI 回退文件图标) */
+  getThumbnail: (messageId: string): Promise<string | null> =>
+    ipcRenderer.invoke(CMD.getThumbnail, messageId),
   getAutoAccept: (): Promise<AutoAcceptSettings> => ipcRenderer.invoke(CMD.getAutoAccept),
   setAutoAccept: (s: Partial<AutoAcceptSettings>): Promise<AutoAcceptSettings> =>
     ipcRenderer.invoke(CMD.setAutoAccept, s),

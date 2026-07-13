@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import type { RemoteDevice } from '@shared/types'
+import { isImageFile } from '@shared/ipc'
 import type { IdentityInfo, UiMessage, AutoAcceptSettings, ProgressPayload } from '@shared/ipc'
 
 /** 传输进度快照:messageId → 已传/总字节(不落库,仅内存) */
@@ -409,15 +410,21 @@ function FileBubble({
   // 传输中(pending/accepted)且有进度 → 百分比进度条(§12.3)
   const transferring = msg.status === 'pending' || msg.status === 'accepted'
   const pct = prog && prog.total > 0 ? Math.min(100, Math.round((prog.sent / prog.total) * 100)) : null
+  // 图片消息(已完成落盘)尝试缩略图;拿不到(GIF/WEBP/失败)由 ImageThumb 回退文件行
+  const showThumb = canOpen && isImageFile(msg.fileName)
   return (
     <div>
-      <div style={S.fileLine}>
-        <div style={own ? S.fileIconOwn : S.fileIcon}>{fileEmoji(msg.fileName)}</div>
-        <div style={{ minWidth: 0 }}>
-          <div style={S.fileName}>{msg.fileName}</div>
-          {msg.fileSize != null && <div style={S.fileSize}>{fmtSize(msg.fileSize)}</div>}
+      {showThumb ? (
+        <ImageThumb msg={msg} />
+      ) : (
+        <div style={S.fileLine}>
+          <div style={own ? S.fileIconOwn : S.fileIcon}>{fileEmoji(msg.fileName)}</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={S.fileName}>{msg.fileName}</div>
+            {msg.fileSize != null && <div style={S.fileSize}>{fmtSize(msg.fileSize)}</div>}
+          </div>
         </div>
-      </div>
+      )}
       {transferring && pct !== null && (
         <>
           <div style={own ? S.progWrapOwn : S.progWrap}>
@@ -449,12 +456,57 @@ function FileBubble({
           </button>
         </div>
       )}
-      {canOpen && (
+      {canOpen && !showThumb && (
         <button className="tf-btn" style={S.openBtn} onClick={() => window.transfer.openFile(msg.id)}>
           打开
         </button>
       )}
     </div>
+  )
+}
+
+/**
+ * 图片缩略图气泡:向 main 拉缩略图 dataURL(nativeImage 生成)。
+ * 拿到 → 显示缩略图,点击调 openFile 用系统查看器看原图;
+ * 拿不到(GIF/WEBP/读失败)→ 回退文件图标行(与非图片一致)。
+ */
+function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
+  const [thumb, setThumb] = useState<string | null | undefined>(undefined) // undefined=加载中
+
+  useEffect(() => {
+    let alive = true
+    window.transfer.getThumbnail(msg.id).then((d) => {
+      if (alive) setThumb(d)
+    })
+    return () => {
+      alive = false
+    }
+  }, [msg.id])
+
+  // 拿不到缩略图 → 回退文件行
+  if (thumb === null) {
+    return (
+      <div style={S.fileLine}>
+        <div style={S.fileIcon}>{fileEmoji(msg.fileName)}</div>
+        <div style={{ minWidth: 0 }}>
+          <div style={S.fileName}>{msg.fileName}</div>
+          {msg.fileSize != null && <div style={S.fileSize}>{fmtSize(msg.fileSize)}</div>}
+        </div>
+      </div>
+    )
+  }
+  // 加载中:占位(保持文件名,避免闪)
+  if (thumb === undefined) {
+    return <div style={S.thumbLoading}>{msg.fileName}</div>
+  }
+  return (
+    <img
+      src={thumb}
+      style={S.thumb}
+      onClick={() => window.transfer.openFile(msg.id)}
+      title="点击用系统程序查看原图"
+      alt={msg.fileName ?? ''}
+    />
   )
 }
 
@@ -571,6 +623,23 @@ const S: Record<string, React.CSSProperties> = {
   fileIconOwn: { width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', fontSize: 15, flexShrink: 0, background: 'var(--own-wash)' },
   fileName: { fontWeight: 560, fontSize: 12.5 },
   fileSize: { fontSize: 10.5, opacity: 0.65, marginTop: 1 },
+  thumb: {
+    display: 'block',
+    maxWidth: 180,
+    maxHeight: 240,
+    borderRadius: 8,
+    cursor: 'pointer',
+    objectFit: 'cover'
+  },
+  thumbLoading: {
+    minWidth: 100,
+    padding: '18px 12px',
+    fontSize: 11.5,
+    color: 'var(--muted)',
+    background: 'var(--track)',
+    borderRadius: 8,
+    textAlign: 'center'
+  },
   progWrap: { position: 'relative', height: 5, background: 'var(--track)', borderRadius: 3, marginTop: 8, overflow: 'hidden' },
   progWrapOwn: { position: 'relative', height: 5, background: 'var(--own-wash)', borderRadius: 3, marginTop: 8, overflow: 'hidden' },
   progBar: { position: 'absolute', left: 0, top: 0, bottom: 0, background: 'var(--accent)', borderRadius: 3, transition: 'width 0.12s linear' },
