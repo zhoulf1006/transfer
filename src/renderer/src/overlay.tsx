@@ -20,6 +20,7 @@ import {
   clampZoom,
   type ColorFormat
 } from '@shared/screenshot-color'
+import { cropRect } from '@shared/screenshot-geometry'
 
 /**
  * 截图遮罩层(见 docs/screenshot-feature §4.1)。
@@ -195,6 +196,38 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
     // colorAt/hover 依赖闭包;showMag/fmt 触发重绑
   }, [showMag, hover, fmt])
 
+  /**
+   * 导出选区为 PNG(§4.4 导出):独立离屏 canvas 按物理像素尺寸裁背景。
+   * 阶段5 无标注,只裁底图;标注合成在阶段6 叠加。
+   */
+  const exportPng = async (): Promise<Uint8Array | null> => {
+    const sample = sampleRef.current
+    if (!sample || !sel || !valid) return null
+    const { sx, sy, sw, sh } = cropRect(sel, ratio, { width: shot.bitmapW, height: shot.bitmapH })
+    if (sw <= 0 || sh <= 0) return null
+    const out = document.createElement('canvas')
+    out.width = sw
+    out.height = sh
+    const ctx = out.getContext('2d')!
+    ctx.drawImage(sample, sx, sy, sw, sh, 0, 0, sw, sh)
+    const blob = await new Promise<Blob | null>((res) => out.toBlob(res, 'image/png'))
+    if (!blob) return null
+    return new Uint8Array(await blob.arrayBuffer())
+  }
+
+  const doCopy = async (): Promise<void> => {
+    const png = await exportPng()
+    if (png) await window.transfer.shot.toClipboard(png)
+  }
+  const doSave = async (): Promise<void> => {
+    const png = await exportPng()
+    if (png) await window.transfer.shot.saveAs(png)
+  }
+  const doSend = async (): Promise<void> => {
+    const png = await exportPng()
+    if (png) await window.transfer.shot.sendToChat(png)
+  }
+
   return (
     <div
       ref={rootRef}
@@ -213,6 +246,14 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
           <div style={{ ...S.selBox, left: sel.x, top: sel.y, width: sel.w, height: sel.h }} />
           <SizeLabel sel={sel} />
           {level !== 'none' && <Anchors sel={sel} level={level} />}
+          <Toolbar
+            sel={sel}
+            bounds={bounds}
+            hasPeer={shot.hasActivePeer}
+            onCopy={doCopy}
+            onSave={doSave}
+            onSend={doSend}
+          />
         </>
       )}
       {!sel && <div style={S.hint}>拖拽框选 · 右键取消 · Esc 退出</div>}
@@ -329,6 +370,45 @@ function SizeLabel({ sel }: { sel: Rect }): JSX.Element {
   )
 }
 
+const TOOLBAR_H = 40
+/** 输出工具条(§4.7):贴选区下外侧,下方不足翻上方,再不足浮内右下。 */
+function Toolbar(props: {
+  sel: Rect
+  bounds: { w: number; h: number }
+  hasPeer: boolean
+  onCopy: () => void
+  onSave: () => void
+  onSend: () => void
+}): JSX.Element {
+  const { sel, bounds, hasPeer, onCopy, onSave, onSend } = props
+  const belowTop = sel.y + sel.h + 8
+  const top =
+    belowTop + TOOLBAR_H <= bounds.h
+      ? belowTop
+      : sel.y - TOOLBAR_H - 8 >= 0
+        ? sel.y - TOOLBAR_H - 8
+        : sel.y + sel.h - TOOLBAR_H - 8 // 内右下
+  const right = Math.max(4, bounds.w - (sel.x + sel.w))
+  return (
+    <div style={{ ...S.toolbar, top, right }}>
+      <button style={S.tbBtn} onClick={onCopy}>
+        复制
+      </button>
+      <button style={S.tbBtn} onClick={onSave}>
+        保存
+      </button>
+      <button
+        style={{ ...S.tbBtn, ...S.tbPrimary, ...(hasPeer ? {} : S.tbDisabled) }}
+        onClick={onSend}
+        disabled={!hasPeer}
+        title={hasPeer ? '发到当前聊天' : '先在主窗选择一个聊天对象'}
+      >
+        发聊天
+      </button>
+    </div>
+  )
+}
+
 const ANCHOR_POS: Record<Anchor, [number, number]> = {
   nw: [0, 0],
   n: [0.5, 0],
@@ -425,6 +505,28 @@ const S: Record<string, React.CSSProperties> = {
   magColorRow: { display: 'flex', alignItems: 'center', gap: 5 },
   magSwatch: { width: 10, height: 10, borderRadius: 2, border: '1px solid rgba(255,255,255,0.3)' },
   magKeys: { color: '#8a8d93', fontSize: 9, marginTop: 1 },
+  toolbar: {
+    position: 'absolute',
+    display: 'flex',
+    gap: 6,
+    padding: 5,
+    background: 'rgba(28,28,30,0.95)',
+    borderRadius: 8,
+    boxShadow: '0 2px 10px rgba(0,0,0,0.4)',
+    pointerEvents: 'auto', // 按钮可点(root 是 crosshair 但工具条要交互)
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif'
+  },
+  tbBtn: {
+    border: 'none',
+    borderRadius: 5,
+    padding: '5px 12px',
+    fontSize: 12,
+    cursor: 'pointer',
+    background: 'rgba(255,255,255,0.12)',
+    color: '#eaeaec'
+  },
+  tbPrimary: { background: '#2d84c4', color: '#fff' },
+  tbDisabled: { background: 'rgba(255,255,255,0.06)', color: '#6a6d73', cursor: 'not-allowed' },
   hint: {
     position: 'absolute',
     top: 16,

@@ -142,11 +142,16 @@ app.whenReady().then(async () => {
   registerIpc()
   createWindow()
 
-  // 截图服务:注册 F1 + 遮罩窗管理(§4.1)
+  // 截图服务:注册 F1 + 遮罩窗管理 + 三出口(§4.1)
   screenshot = new ScreenshotService({
     rendererUrl: process.env['ELECTRON_RENDERER_URL'],
     overlayFile: join(__dirname, '../renderer/overlay.html'),
-    preload: PRELOAD
+    preload: PRELOAD,
+    tempDir: join(app.getPath('temp'), 'transfer-shot'),
+    // 复用现有聊天发送链路(§3.4:必须走 core.chat.sendFiles 才入库/推 UI/串行化)
+    sendFiles: async (peerFp, filePaths) => {
+      await core!.chat.sendFiles(peerFp, filePaths)
+    }
   })
   screenshot.start()
 

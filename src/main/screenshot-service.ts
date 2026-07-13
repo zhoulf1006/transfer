@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { writeFile, unlink, mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import {
   BrowserWindow,
   globalShortcut,
@@ -8,10 +10,12 @@ import {
   systemPreferences,
   shell,
   dialog,
+  clipboard,
+  nativeImage,
   type Display
 } from 'electron'
 import { SHOT_CMD, EVT, type ShotSource } from '@shared/ipc'
-import { computeRatios } from './screenshot-geometry'
+import { computeRatios } from '@shared/screenshot-geometry'
 
 /**
  * 截图会话服务(见 docs/screenshot-feature §4)。
@@ -39,6 +43,10 @@ export interface ScreenshotDeps {
   overlayFile: string
   /** preload 脚本路径(与主窗共用) */
   preload: string
+  /** 截图临时文件目录(app.getPath('temp')/transfer-shot) */
+  tempDir: string
+  /** 发文件到聊天(复用现有链路,注入解耦 AppCore)。fire-and-forget,内部管临时文件清理 */
+  sendFiles: (peerFp: string, filePaths: string[]) => Promise<void>
 }
 
 export class ScreenshotService {
@@ -310,6 +318,56 @@ export class ScreenshotService {
     ipcMain.handle(SHOT_CMD.cancel, () => this.endSession())
     // overlay 进会话后拉背景 + display 信息(§4.3)。
     ipcMain.handle(SHOT_CMD.getShot, () => this.pending)
-    // toClipboard/saveAs/sendToChat 在阶段5 接入。
+
+    // ── 三出口(§4.3):都在完成后 endSession 回 idle ──
+    // 复制到剪贴板(不落盘)。
+    ipcMain.handle(SHOT_CMD.toClipboard, (_e, png: Uint8Array) => {
+      clipboard.writeImage(nativeImage.createFromBuffer(Buffer.from(png)))
+      this.endSession()
+    })
+    // 另存为:直接写到用户选定路径,不经临时文件。返回保存路径或 null(取消)。
+    ipcMain.handle(SHOT_CMD.saveAs, async (_e, png: Uint8Array): Promise<string | null> => {
+      const r = await dialog.showSaveDialog({
+        defaultPath: `截图_${stamp()}.png`,
+        filters: [{ name: 'PNG 图片', extensions: ['png'] }]
+      })
+      // 先收起遮罩再落盘(对话框已抢焦点,遮罩失焦本会 endSession,这里显式收尾)。
+      this.endSession()
+      if (r.canceled || !r.filePath) return null
+      await writeFile(r.filePath, Buffer.from(png))
+      return r.filePath
+    })
+    // 发到当前聊天:fire-and-forget,peer 从缓存取;写临时文件→sendFiles→finally 清理。
+    ipcMain.handle(SHOT_CMD.sendToChat, (_e, png: Uint8Array) => {
+      const peer = this.activePeer
+      this.endSession() // 立即收起遮罩回 idle,不阻塞(§4.2)
+      if (!peer) return // 无对象不该走到这(overlay 已禁用按钮),兜底忽略
+      void this.sendToChatBackground(peer, Buffer.from(png))
+    })
   }
+
+  /**
+   * 后台发送(fire-and-forget,§4.2):写唯一命名临时文件 → sendFiles → finally 清理。
+   * sendFiles 内部即使失败也复用现有聊天流展示状态,这里只保证临时文件不泄漏。
+   */
+  private async sendToChatBackground(peer: string, png: Buffer): Promise<void> {
+    const path = join(this.deps.tempDir, `截图_${stamp()}_${randomUUID().slice(0, 8)}.png`)
+    try {
+      await mkdir(this.deps.tempDir, { recursive: true })
+      await writeFile(path, png)
+      await this.deps.sendFiles(peer, [path])
+    } catch (err) {
+      console.error('[screenshot] 发送失败', err)
+    } finally {
+      // 无论成败,sendFiles 这一 await 结束后一律删临时文件(流式读已完成,§4.5)。
+      await unlink(path).catch(() => {})
+    }
+  }
+}
+
+/** 时间戳文件名片段 yyyyMMdd_HHmmss(不含随机,唯一性由调用方加后缀保证)。 */
+function stamp(): string {
+  const d = new Date()
+  const p = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
 }
