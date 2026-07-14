@@ -12,8 +12,10 @@ import {
   type AutoAcceptSettings,
   type IdentityInfo,
   type ThemePref,
-  type StorageDirs
+  type StorageDirs,
+  type SetShortcutResult
 } from '@shared/ipc'
+import { isValidAccelerator } from '@shared/accelerator'
 import { loadOrCreateIdentity, saveAlias } from './device-identity'
 import { AppCore } from './app-core'
 import { MessageStore } from './db/messages'
@@ -214,6 +216,15 @@ function registerIpc(): void {
   // 主题偏好:存 main 侧(避开 file:// 下 localStorage 慢)
   ipcMain.handle(CMD.getTheme, (): ThemePref => settings!.getTheme())
   ipcMain.handle(CMD.setTheme, (_e, t: ThemePref): ThemePref => settings!.setTheme(t))
+  // 截图快捷键:取当前值。
+  ipcMain.handle(CMD.getShortcut, (): string => settings!.getShortcutCapture())
+  // 设新键:先粗校验格式 → 试注册(rebind,失败自动回滚旧键)→ 成功才持久化。
+  ipcMain.handle(CMD.setShortcut, (_e, accel: string): SetShortcutResult => {
+    if (!isValidAccelerator(accel)) return { ok: false, reason: 'invalid' }
+    if (!screenshot!.rebindShortcut(accel)) return { ok: false, reason: 'conflict' }
+    settings!.setShortcutCapture(accel)
+    return { ok: true, accel }
+  })
 
   // 截图:主窗同步当前聊天对象(决定"发聊天"可用性,§4.3 blocker#1)
   ipcMain.handle(SHOT_CMD.setActivePeer, (_e, peerFp: string | null) => {
@@ -273,6 +284,7 @@ app.whenReady().then(async () => {
     rendererUrl: process.env['ELECTRON_RENDERER_URL'],
     preload: PRELOAD,
     sentImagesDir: join(userData, 'sent-images'),
+    getShortcut: () => settings!.getShortcutCapture(),
     // 复用现有聊天发送链路(§3.4:必须走 core.chat.sendFiles 才入库/推 UI/串行化)
     sendFiles: async (peerFp, filePaths) => {
       await core!.chat.sendFiles(peerFp, filePaths)

@@ -15,9 +15,14 @@ export interface AutoAcceptSettings {
 /** 主题偏好:跟随系统 / 强制浅 / 强制深。存 main 侧,避开 file:// 下 localStorage 慢(3.9s)。 */
 export type ThemePref = 'system' | 'light' | 'dark'
 
+/** 截图快捷键默认值(Electron accelerator);未自定义时用它。 */
+export const DEFAULT_SHORTCUT_CAPTURE = 'F1'
+
 export interface AppSettings {
   autoAccept: AutoAcceptSettings
   theme: ThemePref
+  /** 截图快捷键(Electron accelerator 字符串,如 'F1' / 'Command+Shift+A') */
+  shortcutCapture: string
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -25,7 +30,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     enabled: false, // DESIGN §11.0:默认关,全部弹确认
     maxBytes: 100 * 1024 * 1024 // 100MB(启用后的默认阈值)
   },
-  theme: 'system'
+  theme: 'system',
+  shortcutCapture: DEFAULT_SHORTCUT_CAPTURE
 }
 
 /** 归一化(容错旧/损坏字段),保证返回合法结构 */
@@ -34,6 +40,11 @@ function normalize(raw: unknown): AppSettings {
   const aa = (r.autoAccept ?? {}) as Partial<AutoAcceptSettings>
   const theme: ThemePref =
     r.theme === 'light' || r.theme === 'dark' || r.theme === 'system' ? r.theme : DEFAULT_SETTINGS.theme
+  // 只保证是非空字符串;是否为合法/可注册 accelerator 是运行时 register 的事,不在此校验。
+  const shortcutCapture =
+    typeof r.shortcutCapture === 'string' && r.shortcutCapture.trim()
+      ? r.shortcutCapture
+      : DEFAULT_SETTINGS.shortcutCapture
   return {
     autoAccept: {
       enabled: typeof aa.enabled === 'boolean' ? aa.enabled : DEFAULT_SETTINGS.autoAccept.enabled,
@@ -42,7 +53,8 @@ function normalize(raw: unknown): AppSettings {
           ? aa.maxBytes
           : DEFAULT_SETTINGS.autoAccept.maxBytes
     },
-    theme
+    theme,
+    shortcutCapture
   }
 }
 
@@ -91,6 +103,16 @@ export class SettingsStore {
     this.cache = normalize({ ...this.cache, theme })
     this.persist()
     return this.cache.theme
+  }
+
+  getShortcutCapture(): string {
+    return this.cache.shortcutCapture
+  }
+
+  setShortcutCapture(accel: string): string {
+    this.cache = normalize({ ...this.cache, shortcutCapture: accel })
+    this.persist()
+    return this.cache.shortcutCapture
   }
 
   private persist(): void {

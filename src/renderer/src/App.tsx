@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import type { RemoteDevice } from '@shared/types'
 import { isImageFile } from '@shared/ipc'
+import { eventToAccelerator, acceleratorRejectReason } from '@shared/accelerator'
 import type {
   IdentityInfo,
   UiMessage,
@@ -604,6 +605,102 @@ function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
   )
 }
 
+/**
+ * 截图快捷键录制:显示当前键;点输入框进"按下快捷键…"态,捕获组合键。
+ * 捕获到合法 accelerator 即调 setShortcut 立即生效(成功即显示,失败红字提示,无需额外保存)。
+ * Esc / 失焦退出录制,不改键。
+ */
+function ShortcutRecorder(): JSX.Element {
+  const [accel, setAccel] = useState<string | null>(null) // 当前生效的键(null=加载中)
+  const [recording, setRecording] = useState(false)
+  const [hint, setHint] = useState<string | null>(null) // 提示(录制引导 / 冲突 / 非法)
+  const [hintErr, setHintErr] = useState(false) // hint 是否红字(错误)
+
+  useEffect(() => {
+    window.transfer.getShortcut().then(setAccel)
+  }, [])
+
+  const onKeyDown = (e: React.KeyboardEvent): void => {
+    if (!recording) return
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.key === 'Escape') {
+      setRecording(false)
+      setHint(null)
+      return
+    }
+    const info = {
+      ctrlKey: e.ctrlKey,
+      metaKey: e.metaKey,
+      altKey: e.altKey,
+      shiftKey: e.shiftKey,
+      key: e.key
+    }
+    const next = eventToAccelerator(info)
+    if (!next) {
+      // 未构成合法快捷键:给引导,继续等
+      const reason = acceleratorRejectReason(info)
+      setHintErr(false)
+      setHint(
+        reason === 'need-modifier'
+          ? '普通键需配合 Cmd/Ctrl/Alt/Shift'
+          : reason === 'unsupported'
+            ? '不支持该按键,请换一个'
+            : '继续按下组合键…'
+      )
+      return
+    }
+    // 合法 → 立即试生效
+    setRecording(false)
+    setHint('保存中…')
+    setHintErr(false)
+    window.transfer.setShortcut(next).then((r) => {
+      if (r.ok) {
+        setAccel(r.accel)
+        setHint(null)
+      } else {
+        setHintErr(true)
+        setHint(
+          r.reason === 'conflict'
+            ? '该快捷键可能被其他程序占用,请换一个'
+            : '快捷键格式非法,请换一个'
+        )
+      }
+    })
+  }
+
+  return (
+    <div style={S.settingRow}>
+      <span style={{ flexShrink: 0 }}>截图:</span>
+      <button
+        className="tf-btn"
+        style={{ ...S.shortcutBox, ...(recording ? S.shortcutBoxRec : {}) }}
+        onClick={() => {
+          setRecording(true)
+          setHint('按下快捷键…(Esc 取消)')
+          setHintErr(false)
+        }}
+        onKeyDown={onKeyDown}
+        onBlur={() => {
+          // 仅在"仍处录制态"时因失焦取消(清引导提示);已捕获后 setShortcut 的
+          // 成功/冲突结果不能被 blur 清掉(捕获时已 setRecording(false),故用它区分)。
+          if (recording) {
+            setRecording(false)
+            setHint(null)
+          }
+        }}
+      >
+        {recording ? '按下快捷键…' : (accel ?? '…')}
+      </button>
+      {hint && (
+        <span style={{ ...S.shortcutHint, color: hintErr ? 'var(--danger)' : 'var(--muted)' }}>
+          {hint}
+        </span>
+      )}
+    </div>
+  )
+}
+
 function SettingsModal(props: {
   value: AutoAcceptSettings
   onClose: () => void
@@ -652,6 +749,9 @@ function SettingsModal(props: {
             📂
           </button>
         </div>
+
+        <div style={S.settingSectionTitle}>快捷键</div>
+        <ShortcutRecorder />
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
           <button onClick={props.onClose} style={S.btn}>
@@ -818,6 +918,9 @@ const S: Record<string, React.CSSProperties> = {
   storageLabel: { flexShrink: 0, color: 'var(--ink)' },
   storagePath: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--muted)', direction: 'rtl', textAlign: 'left' },
   storageIconBtn: { flexShrink: 0, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 15, padding: '2px 4px', lineHeight: 1 },
+  shortcutBox: { minWidth: 120, padding: '4px 12px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--bg)', color: 'var(--ink)', cursor: 'pointer', fontSize: 12, fontFamily: 'ui-monospace, monospace', textAlign: 'center' },
+  shortcutBoxRec: { borderColor: 'var(--accent)', color: 'var(--accent)' },
+  shortcutHint: { fontSize: 11, flex: 1, minWidth: 0 },
   numInput: { width: 80, padding: '4px 8px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--bg)', color: 'var(--ink)' },
   btn: { padding: '6px 16px', border: '1px solid var(--line-strong)', borderRadius: 8, background: 'var(--card)', color: 'var(--ink)', cursor: 'pointer', fontSize: 13 },
   btnPrimary: { border: '1px solid var(--accent-soft)', background: 'var(--accent-soft)', color: 'var(--accent)' }

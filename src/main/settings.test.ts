@@ -105,6 +105,45 @@ describe('SettingsStore', () => {
     })
   })
 
+  describe('shortcutCapture', () => {
+    test('首次无文件 → 默认 F1', () => {
+      const s = new SettingsStore(mkdir())
+      expect(s.getShortcutCapture()).toBe('F1')
+    })
+
+    test('setShortcutCapture 持久化 + 重新加载可读', () => {
+      const dir = mkdir()
+      new SettingsStore(dir).setShortcutCapture('Command+Shift+A')
+      expect(new SettingsStore(dir).getShortcutCapture()).toBe('Command+Shift+A')
+    })
+
+    test('非法(空/非字符串)shortcutCapture 归一化为默认', () => {
+      const dir = mkdir()
+      writeFileSync(join(dir, 'settings.json'), JSON.stringify({ shortcutCapture: '   ' }))
+      expect(new SettingsStore(dir).getShortcutCapture()).toBe('F1')
+      const dir2 = mkdir()
+      writeFileSync(join(dir2, 'settings.json'), JSON.stringify({ shortcutCapture: 123 }))
+      expect(new SettingsStore(dir2).getShortcutCapture()).toBe('F1')
+    })
+
+    // 回归:改一个设置不能抹掉另一个(spread this.cache)
+    test('setShortcutCapture 不抹 theme/autoAccept', () => {
+      const s = new SettingsStore(mkdir())
+      s.setTheme('dark')
+      s.setAutoAccept({ enabled: true, maxBytes: 42 })
+      s.setShortcutCapture('Control+F2')
+      expect(s.getTheme()).toBe('dark')
+      expect(s.getAutoAccept()).toEqual({ enabled: true, maxBytes: 42 })
+    })
+    test('setTheme/setAutoAccept 不抹 shortcutCapture', () => {
+      const s = new SettingsStore(mkdir())
+      s.setShortcutCapture('Command+Shift+X')
+      s.setTheme('light')
+      s.setAutoAccept({ enabled: true })
+      expect(s.getShortcutCapture()).toBe('Command+Shift+X')
+    })
+  })
+
   test('持久化格式为可读 JSON', () => {
     const dir = mkdir()
     const s = new SettingsStore(dir)

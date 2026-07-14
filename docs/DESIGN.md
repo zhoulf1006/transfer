@@ -16,7 +16,7 @@
 | **传输加密** | **先 HTTP**(明文) | LocalSend 支持 http 模式;HTTPS 留待后续 |
 | **接收确认** | **弹框确认** | 收到 prepare-upload 时本机弹框,用户点了才收 |
 | 笔记存储 | 本地 Markdown 文件 | |
-| 截屏 | **F1 → 区域框选 + 全套标注 + 发聊天/复制/存文件(已实现)** | 详见 [screenshot-feature.md](./screenshot-feature.md);层级检测/多屏跨屏/滚动长图为后续 P2 |
+| 截屏 | **快捷键(默认 F1,可设置里自定义)→ 区域框选 + 全套标注 + 发聊天/复制/存文件(已实现)** | 详见 [screenshot-feature.md](./screenshot-feature.md) + [custom-shortcut.md](./custom-shortcut.md);层级检测/多屏跨屏/滚动长图为后续 P2 |
 | **MVP** | **文件传送优先** | 两台设备互相发现 + 传文件/文本 |
 
 ---

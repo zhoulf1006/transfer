@@ -42,6 +42,8 @@ export interface ScreenshotDeps {
   rendererUrl?: string
   /** preload 脚本路径(与主窗共用) */
   preload: string
+  /** 读当前截图快捷键(Electron accelerator);注入解耦 SettingsStore。 */
+  getShortcut: () => string
   /** 截图"发到聊天"的原图持久目录(userData/sent-images)。
    *  发送端消息 filePath 指向此处的持久副本 —— 发完不删,缩略图/看大图/另存为才可用。 */
   sentImagesDir: string
@@ -64,6 +66,8 @@ export class ScreenshotService {
   private dialogBusy = false
   /** 多屏时给"非光标屏"铺的纯压暗窗(吞点击防误触,§4.5);会话结束销毁 */
   private dimWindows: BrowserWindow[] = []
+  /** 当前已注册的截图快捷键(accelerator);rebind/stop 精确注销用,null=未注册 */
+  private currentAccel: string | null = null
 
   constructor(private readonly deps: ScreenshotDeps) {}
 
@@ -76,6 +80,7 @@ export class ScreenshotService {
   /** app 退出前调用:注销快捷键 + 销毁遮罩窗/压暗窗。 */
   stop(): void {
     globalShortcut.unregisterAll()
+    this.currentAccel = null
     for (const w of this.dimWindows) if (!w.isDestroyed()) w.destroy()
     this.dimWindows = []
     this.overlay?.destroy()
@@ -87,16 +92,39 @@ export class ScreenshotService {
     this.activePeer = peerFp
   }
 
-  // ── F1 快捷键(§4.5:幂等注册,绑 app 不绑窗) ──
+  // ── 截图快捷键(§4.5:注册绑 app 不绑窗;键来自设置,默认 F1) ──
   private registerShortcut(): void {
+    const accel = this.deps.getShortcut()
     // 幂等:重复 start / macOS activate 重入不叠加
-    if (globalShortcut.isRegistered('F1')) return
-    const ok = globalShortcut.register('F1', () => this.onShortcut())
-    if (!ok) {
-      // 被其他 app 占用会静默失败,只能靠返回值检测(§3.2)。
-      // TODO(阶段5+):暴露给设置页提示"F1 被占用,请改键"。
-      console.warn('[screenshot] F1 注册失败(可能被占用)')
+    if (this.currentAccel === accel && globalShortcut.isRegistered(accel)) return
+    const ok = globalShortcut.register(accel, () => this.onShortcut())
+    if (ok) {
+      this.currentAccel = accel
+    } else {
+      // 被其他 app 占用会静默失败,只能靠返回值检测(§3.2)。启动时用户无从改,只 warn。
+      console.warn(`[screenshot] 快捷键 ${accel} 注册失败(可能被占用)`)
     }
+  }
+
+  /**
+   * 重绑截图快捷键(设置页改键时调):注销旧键 → 注册新键。
+   * 新键注册失败(被占用)→ **回滚**重注册旧键,保证截图键不丢。
+   * @returns 新键是否注册成功。
+   */
+  rebindShortcut(accel: string): boolean {
+    const old = this.currentAccel
+    // 先注销旧键(若有),让新键(哪怕等于旧键)能干净注册
+    if (old) globalShortcut.unregister(old)
+    if (globalShortcut.register(accel, () => this.onShortcut())) {
+      this.currentAccel = accel
+      return true
+    }
+    // 新键失败:回滚旧键(尽力而为),currentAccel 保持旧值
+    this.currentAccel = null
+    if (old && globalShortcut.register(old, () => this.onShortcut())) {
+      this.currentAccel = old
+    }
+    return false
   }
 
   /** F1 回调:仅 idle 启动;非 idle 一律忽略(§4.2 F1 守卫)。 */

@@ -79,8 +79,16 @@ export const CMD = {
   openDownloadsDir: 'settings:openDownloadsDir',
   /** 主题偏好读写(存 main 侧,避开 file:// 下 localStorage 慢) */
   getTheme: 'settings:getTheme',
-  setTheme: 'settings:setTheme'
+  setTheme: 'settings:setTheme',
+  /** 截图快捷键:取当前值 / 设新值(设时试注册,冲突返 ok:false) */
+  getShortcut: 'settings:getShortcut',
+  setShortcut: 'settings:setShortcut'
 } as const
+
+/** setShortcut 结果:ok 时 accel 为已生效的键;失败给原因(conflict=被占用,invalid=格式非法) */
+export type SetShortcutResult =
+  | { ok: true; accel: string }
+  | { ok: false; reason: 'conflict' | 'invalid' }
 
 export type ThemePref = 'system' | 'light' | 'dark'
 

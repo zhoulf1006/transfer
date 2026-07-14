@@ -121,7 +121,7 @@
 ## 2. 截屏核心功能定稿(第一版)
 
 ### 2.1 触发 & 环境
-- **快捷键**:全局 `F1`。
+- **快捷键**:全局,**默认 `F1`,可在设置里自定义**(键盘录制,存 `settings.shortcutCapture`;改后即时 rebind 生效;冲突提示换键)。见 `docs/custom-shortcut.md`。
 - **多屏**:第一版只截**光标所在屏**。多屏跨屏 → P2。
 
 ### 2.2 会话流程
@@ -166,7 +166,7 @@
 - **透明遮罩窗**:`transparent:true`(Win 必须 `frame:false`)+ `resizable:false`(透明窗不可 resize,否则某些平台失效)+ `skipTaskbar` + `enableLargerThanScreen`。铺满用 `setBounds(display.bounds)`,**不能用 maximize()**(透明窗禁用)。[Electron custom-window-styles / base-window-options,verbatim]
   - ⚠️ **实现落地:不用 `type:'panel'`**(见 §4.9)。调研原建议用 panel 浮在全屏 app 上,但**实测 panel 会把 mac app 的 activation policy 降到 accessory → Dock 图标消失**。已改为不用 panel;代价是不能在别的 app 原生全屏上截图(普通截图不受影响)。
 - ⚠️ **盖 macOS Dock**:`setAlwaysOnTop(true, 'screen-saver')`(level 须 ≥ `pop-up-menu` 才在 Dock 之上)即可盖 Dock/任务栏,且**不改 activation policy**。**实现落地:去掉 `setVisibleOnAllWorkspaces`**(那是配合 panel/全屏用的,见 §4.9)。不用 kiosk/simpleFullscreen。[browser-window,verbatim + GitHub issue]
-- **F1 全局快捷键**:app ready 后 `globalShortcut.register('F1', cb)`,**返回 false = 被占用静默失败**,`will-quit` 时 `unregisterAll()`。⚠️ 需**提供可改键 + 返回值兜底**(F1 在 Win 常被前台 app 当帮助键)。[global-shortcut,verbatim]
+- **全局快捷键(可自定义)**:app ready 后 `globalShortcut.register(accel, cb)`,`accel` 来自设置(`getShortcut` 注入,默认 `F1`);**返回 false = 被占用静默失败**,`stop()` 时 `unregisterAll()`。改键走 `rebindShortcut`(注销旧→注册新,失败回滚旧键),IPC `setShortcut` 成功才持久化、冲突返 `{ok:false,reason:'conflict'}` 供 UI 提示。⚠️ `isRegistered` 探测不到别的 app 占用(OS 行为),故只能"注册试错";OS 禁止互抢,无法覆盖别 app 快捷键。详见 `docs/custom-shortcut.md`。[global-shortcut,verbatim + electron.d.ts:7971-7984]
 - **剪贴板写图**:`nativeImage.createFromDataURL(canvas.toDataURL())` → `clipboard.writeImage(img)`。微信/QQ/浏览器应能正常粘贴(需实测)。[clipboard / native-image]
 - **遮罩窗生命周期**:hide 复用而非 close(避免重建渲染进程);每次 show 前重设 bounds(光标可能换屏)+ 重设 alwaysOnTop/清上次框选。
 
