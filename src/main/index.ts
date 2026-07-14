@@ -11,7 +11,8 @@ import {
   type ListMessagesArgs,
   type AutoAcceptSettings,
   type IdentityInfo,
-  type ThemePref
+  type ThemePref,
+  type StorageDirs
 } from '@shared/ipc'
 import { loadOrCreateIdentity, saveAlias } from './device-identity'
 import { AppCore } from './app-core'
@@ -19,6 +20,12 @@ import { MessageStore } from './db/messages'
 import { SettingsStore } from './settings'
 import { ScreenshotService } from './screenshot-service'
 import { APP_HOST, registerAppProtocol } from './app-protocol'
+
+// 统一 userData 目录名:dev(未打包)默认读 package.json name='transfer'(小写),
+// 打包版读 productName='Transfer'(大写)→ 两者目录名不一致。显式 setName 统一为 'Transfer',
+// dev 与打包共用同一 userData。必须在任何 getPath('userData') / override / 单实例锁之前。
+// (mac 大小写不敏感,dev 原 'transfer' 数据即同目录,无缝复用,无需迁移。)
+app.setName('Transfer')
 
 // env 覆盖(多实例测试,DESIGN §6/M4)
 const userDataOverride = process.env['TRANSFER_USERDATA']
@@ -153,6 +160,11 @@ function registerIpc(): void {
     const msg = store?.get(messageId)
     if (msg?.filePath) shell.openPath(msg.filePath)
   })
+  // 在文件管理器中定位并高亮该文件(收到的文件"打开所在文件夹")。
+  ipcMain.handle(CMD.showInFolder, (_e, messageId: string) => {
+    const msg = store?.get(messageId)
+    if (msg?.filePath) shell.showItemInFolder(msg.filePath)
+  })
   // 图片缩略图:nativeImage 生成小图 dataURL(仅 PNG/JPEG 可靠;GIF/WEBP/非图片返回 null → UI 回退图标)
   ipcMain.handle(CMD.getThumbnail, (_e, messageId: string): string | null => {
     const msg = store?.get(messageId)
@@ -190,6 +202,14 @@ function registerIpc(): void {
   })
   ipcMain.handle(CMD.setAutoAccept, (_e, s: Partial<AutoAcceptSettings>): AutoAcceptSettings => {
     return settings!.setAutoAccept(s).autoAccept
+  })
+  // 取存储目录路径(设置页"存储"分区展示):接收文件的下载目录(收发文件/图片都落这)。
+  ipcMain.handle(CMD.getStorageDirs, (): StorageDirs => ({
+    downloads: app.getPath('downloads')
+  }))
+  // 打开接收文件的下载目录。
+  ipcMain.handle(CMD.openDownloadsDir, async (): Promise<void> => {
+    await shell.openPath(app.getPath('downloads'))
   })
   // 主题偏好:存 main 侧(避开 file:// 下 localStorage 慢)
   ipcMain.handle(CMD.getTheme, (): ThemePref => settings!.getTheme())

@@ -276,6 +276,7 @@ export const T_UPLOAD_MS = 5 * 60_000    // 单个 upload 超时(S4:防接收方
 - fingerprint 用于**防止发现到自己**:收到多播 announce **或** `/register` 请求时,若对端 fingerprint == 本机,忽略(H4:两条发现入口都要做此比对,不只多播)。
 - **为何同机也必需(②-a 事实层):** 多播 `IP_MULTICAST_LOOP` **默认开启**,本机会收到自己发的广告,同机另一实例也会收到——所以防自发现必须在应用层用 fingerprint 过滤;`setMulticastLoopback(false)` 只关本 socket 的回环,防不住同机另一进程,不能替代 fingerprint 过滤。
 - **多实例同机测试注意(M4)**:fingerprint 持久化在 userData,同机两实例默认共享 userData → 同 fingerprint → 互判为"自己"而互相隐藏。测试多实例时必须用**不同 userData 目录 / 不同 fingerprint**(通过 env 覆盖,见 §9 验收前置)。
+- **userData 目录名统一(`app.setName('Transfer')`)**:index.ts 顶部(override/单实例锁/首次读 userData 之前)显式 `app.setName('Transfer')`。否则 dev 未打包时 `getName()` 读 `package.json` name=`transfer`(小写)、打包版读 `productName='Transfer'`(大写),两者 userData 目录名不一致。统一后 dev 与打包共用同一目录(mac 大小写不敏感,dev 原数据无缝复用)。`TRANSFER_USERDATA` override 仍优先,不受影响。详见 `docs/userdata-dirname-and-settings.md`。
 
 ---
 
@@ -387,7 +388,7 @@ export const T_UPLOAD_MS = 5 * 60_000    // 单个 upload 超时(S4:防接收方
 | 持久化 | **node:sqlite**(Electron 35 内置,Node 22.16,零原生依赖;Electron 33=Node20 无此模块,故升级到 35) |
 | 接收模型 | 可配置自动接收:开关 + 大小阈值。默认**关**(全部弹确认);开启后 `size ≤ 阈值` 自动收,消息类**永不自动接收**(LocalSend 同) |
 | 确认方式 | 流内确认:文件作为消息气泡带"接收/拒绝"按钮;不阻塞——见 §11.2 |
-| 文件落地 | 自动存下载目录,聊天里点开(shell.openPath) |
+| 文件落地 | 自动存下载目录;聊天/下载列表的文件按钮为**"打开所在文件夹"**(`shell.showItemInFolder`,定位并高亮),非直接打开文件。图片右键"用系统程序打开"仍走 `openFile`(`shell.openPath`) |
 
 ### 11.1 事实层(真实源码坐实,来源见调研)
 
@@ -499,7 +500,8 @@ settings.ts            # 自动接收开关+阈值(持久化,复用 identity.jso
 - `message:sendFiles { peerFp, filePaths }` — 发文件(替代旧 transfer:send)
 - `message:respond { transferId, accept }` — 聊天流内接收/拒绝
 - `message:list { limit, before }` — 拉历史(分页)
-- `message:openFile { messageId }` — shell 打开已落盘文件
+- `message:openFile { messageId }` — `shell.openPath` 用默认程序打开已落盘文件(仅图片右键"用系统程序打开"用)
+- `message:showInFolder { messageId }` — `shell.showItemInFolder` 在文件管理器中定位并高亮该文件(聊天/下载列表文件按钮用)
 - `settings:getAutoAccept` / `settings:setAutoAccept { enabled, maxBytes }`
 
 ### 11.6 边界/失败(新增)
@@ -576,7 +578,7 @@ settings.ts            # 自动接收开关+阈值(持久化,复用 identity.jso
 
 - 新 IPC `message:listReceivedFiles { limit, before }` → 查 `direction='recv' AND type='file' AND status='done'`(即已落盘的接收文件),按 created_at **降序**(最新在前);`limit ≤ LIST_MAX_LIMIT`。
 - 复用 message 表(已有 fileName/fileSize/createdAt/peerAlias/filePath),无需新表。store 加 `listReceivedFiles` 方法。
-- UI:独立面板(sidebar "📥 已接收文件" 入口),列表项显示 文件名 / 大小 / 接收时间(MM-DD HH:mm)/ 发送人(peerAlias) / "打开"按钮(复用 openFile)。
+- UI:独立面板(sidebar "📥 已接收文件" 入口),列表项显示 文件名 / 大小 / 接收时间(MM-DD HH:mm)/ 发送人(peerAlias) / **"打开所在文件夹"**按钮(`showInFolder` → `shell.showItemInFolder`,定位并高亮该文件)。
 - **刷新精度(3-B 修复)**:面板只在收到 **recv+file+done** 的 `onMessageUpserted` 时重拉,避免任意消息 upsert(如文本收发、状态流转)刷爆 IPC+SQLite+重渲染。
 
 ### 12.6 边界/失败(新增)

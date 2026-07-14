@@ -1,7 +1,13 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import type { RemoteDevice } from '@shared/types'
 import { isImageFile } from '@shared/ipc'
-import type { IdentityInfo, UiMessage, AutoAcceptSettings, ProgressPayload } from '@shared/ipc'
+import type {
+  IdentityInfo,
+  UiMessage,
+  AutoAcceptSettings,
+  ProgressPayload,
+  StorageDirs
+} from '@shared/ipc'
 import { ErrorBoundary } from './ErrorBoundary'
 
 /** 传输进度快照:messageId → 已传/总字节(不落库,仅内存) */
@@ -369,8 +375,12 @@ function Downloads(): JSX.Element {
                 {fmtDateTime(f.createdAt)}
               </div>
             </div>
-            <button className="tf-btn" style={S.openBtn} onClick={() => window.transfer.openFile(f.id)}>
-              打开
+            <button
+              className="tf-btn"
+              style={S.openBtn}
+              onClick={() => window.transfer.showInFolder(f.id)}
+            >
+              打开所在文件夹
             </button>
           </div>
         ))}
@@ -471,8 +481,12 @@ function FileBubble({
         </div>
       )}
       {canOpen && !showThumb && (
-        <button className="tf-btn" style={S.openBtn} onClick={() => window.transfer.openFile(msg.id)}>
-          打开
+        <button
+          className="tf-btn"
+          style={S.openBtn}
+          onClick={() => window.transfer.showInFolder(msg.id)}
+        >
+          打开所在文件夹
         </button>
       )}
     </div>
@@ -597,10 +611,16 @@ function SettingsModal(props: {
 }): JSX.Element {
   const [enabled, setEnabled] = useState(props.value.enabled)
   const [mb, setMb] = useState(Math.round(props.value.maxBytes / (1024 * 1024)))
+  const [dirs, setDirs] = useState<StorageDirs | null>(null)
+  useEffect(() => {
+    window.transfer.getStorageDirs().then(setDirs)
+  }, [])
   return (
     <div style={S.modalMask} onClick={props.onClose}>
       <div style={S.modal} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginTop: 0 }}>接收设置</h3>
+        <h3 style={{ marginTop: 0 }}>设置</h3>
+
+        <div style={S.settingSectionTitle}>接收</div>
         <label style={S.settingRow}>
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
           启用自动接收(文本消息始终自动接收)
@@ -616,6 +636,23 @@ function SettingsModal(props: {
           />
           MB
         </label>
+
+        <div style={S.settingSectionTitle}>存储</div>
+        <div style={S.storageRow}>
+          <span style={S.storageLabel}>文件:</span>
+          <span style={S.storagePath} title={dirs?.downloads ?? ''}>
+            {dirs?.downloads ?? '…'}
+          </span>
+          <button
+            className="tf-icon-btn"
+            style={S.storageIconBtn}
+            title="打开文件夹"
+            onClick={() => window.transfer.openDownloadsDir()}
+          >
+            📂
+          </button>
+        </div>
+
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
           <button onClick={props.onClose} style={S.btn}>
             取消
@@ -776,6 +813,11 @@ const S: Record<string, React.CSSProperties> = {
   modalMask: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' },
   modal: { background: 'var(--card)', color: 'var(--ink)', borderRadius: 14, padding: 24, width: 380, border: '1px solid var(--line)', boxShadow: 'var(--shadow-md)' },
   settingRow: { display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0', fontSize: 13 },
+  settingSectionTitle: { fontSize: 12, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.03em', margin: '16px 0 4px' },
+  storageRow: { display: 'flex', alignItems: 'center', gap: 6, margin: '8px 0', fontSize: 12 },
+  storageLabel: { flexShrink: 0, color: 'var(--ink)' },
+  storagePath: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--muted)', direction: 'rtl', textAlign: 'left' },
+  storageIconBtn: { flexShrink: 0, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 15, padding: '2px 4px', lineHeight: 1 },
   numInput: { width: 80, padding: '4px 8px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--bg)', color: 'var(--ink)' },
   btn: { padding: '6px 16px', border: '1px solid var(--line-strong)', borderRadius: 8, background: 'var(--card)', color: 'var(--ink)', cursor: 'pointer', fontSize: 13 },
   btnPrimary: { border: '1px solid var(--accent-soft)', background: 'var(--accent-soft)', color: 'var(--accent)' }

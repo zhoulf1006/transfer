@@ -12,7 +12,8 @@ import {
   type UiMessage,
   type ProgressPayload,
   type ShotSource,
-  type ThemePref
+  type ThemePref,
+  type StorageDirs
 } from '@shared/ipc'
 import type { RemoteDevice } from '@shared/types'
 
@@ -52,6 +53,11 @@ const api = {
   /** 主题偏好读写(存 main 侧,避开 file:// 下 localStorage 慢) */
   getTheme: (): Promise<ThemePref> => ipcRenderer.invoke(CMD.getTheme),
   setTheme: (t: ThemePref): Promise<ThemePref> => ipcRenderer.invoke(CMD.setTheme, t),
+  /** 存储目录:取路径展示 + 打开(系统文件管理器) */
+  getStorageDirs: (): Promise<StorageDirs> => ipcRenderer.invoke(CMD.getStorageDirs),
+  openDownloadsDir: (): Promise<void> => ipcRenderer.invoke(CMD.openDownloadsDir),
+  /** 在文件管理器中定位并选中收到的文件 */
+  showInFolder: (messageId: string): Promise<void> => ipcRenderer.invoke(CMD.showInFolder, messageId),
 
   // 事件订阅(返回取消函数)
   onDevicesUpdated: (cb: (devices: RemoteDevice[]) => void) => subscribe(EVT.devicesUpdated, cb),

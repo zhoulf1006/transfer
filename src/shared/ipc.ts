@@ -63,6 +63,8 @@ export const CMD = {
   listMessages: 'message:list',
   listReceivedFiles: 'message:listReceivedFiles',
   openFile: 'message:openFile',
+  /** 在系统文件管理器中定位并高亮选中该文件(收到的文件"打开所在文件夹") */
+  showInFolder: 'message:showInFolder',
   /** 取图片消息缩略图 dataURL(png/jpg 可生成;拿不到返回 null → UI 回退文件图标) */
   getThumbnail: 'message:getThumbnail',
   /** 图片"另存为":弹系统对话框把原图复制到用户选定位置,返回保存路径或 null(取消) */
@@ -71,6 +73,10 @@ export const CMD = {
   getImageDataUrl: 'message:getImageDataUrl',
   getAutoAccept: 'settings:getAutoAccept',
   setAutoAccept: 'settings:setAutoAccept',
+  /** 取存储目录路径给设置页展示:{ downloads(接收文件), images(截图副本 sent-images) } */
+  getStorageDirs: 'settings:getStorageDirs',
+  /** 打开接收文件的下载目录 */
+  openDownloadsDir: 'settings:openDownloadsDir',
   /** 主题偏好读写(存 main 侧,避开 file:// 下 localStorage 慢) */
   getTheme: 'settings:getTheme',
   setTheme: 'settings:setTheme'
@@ -151,6 +157,12 @@ export interface ListMessagesArgs {
 export interface AutoAcceptSettings {
   enabled: boolean
   maxBytes: number
+}
+
+/** 存储目录路径(设置页展示用) */
+export interface StorageDirs {
+  /** 接收文件的下载目录(收发的文件/图片都落这) */
+  downloads: string
 }
 
 export type { RemoteDevice }
