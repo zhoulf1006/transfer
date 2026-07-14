@@ -23,11 +23,13 @@ win:
   signExecutable: false
   # icon: build/icon.ico       # 未提供图标时用 Electron 默认图标
 
-# NSIS:一键静默安装(体验接近免安装),装到用户目录、不弹安装向导
+# NSIS:标准安装向导 —— 用户能看到/选择安装目录、勾快捷方式(不再静默装到隐藏目录)
 nsis:
-  oneClick: true              # 双击即静默安装并启动,不弹向导
-  perMachine: false           # 装到当前用户目录(无需管理员)
-  allowToChangeInstallationDirectory: false
+  oneClick: false                        # 弹安装向导,不静默
+  perMachine: false                      # 默认当前用户目录(无需管理员;向导里仍可改)
+  allowToChangeInstallationDirectory: true # 允许用户选择安装目录
+  createDesktopShortcut: true            # 创建桌面快捷方式
+  createStartMenuShortcut: true          # 创建开始菜单快捷方式
   artifactName: ${productName}-${version}-setup.exe
 
 mac:
