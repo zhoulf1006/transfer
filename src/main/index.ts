@@ -1,6 +1,6 @@
 import { join, basename, extname } from 'node:path'
 import { copyFile, readFile } from 'node:fs/promises'
-import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, nativeTheme } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, nativeTheme, protocol } from 'electron'
 import {
   CMD,
   EVT,
@@ -10,18 +10,36 @@ import {
   type RespondArgs,
   type ListMessagesArgs,
   type AutoAcceptSettings,
-  type IdentityInfo
+  type IdentityInfo,
+  type ThemePref
 } from '@shared/ipc'
 import { loadOrCreateIdentity, saveAlias } from './device-identity'
 import { AppCore } from './app-core'
 import { MessageStore } from './db/messages'
 import { SettingsStore } from './settings'
 import { ScreenshotService } from './screenshot-service'
+import { APP_HOST, registerAppProtocol } from './app-protocol'
 
 // env 覆盖(多实例测试,DESIGN §6/M4)
 const userDataOverride = process.env['TRANSFER_USERDATA']
 if (userDataOverride) app.setPath('userData', userDataOverride)
 const portOverride = process.env['TRANSFER_PORT'] ? Number(process.env['TRANSFER_PORT']) : undefined
+
+// 自定义 app:// scheme 注册为 privileged —— **必须在 app ready 之前**(此处模块顶层)调用,否则无效。
+// standard:true 让渲染页拿到真正的非 opaque origin(app://bundle),Web Storage 走快路径,
+// 根治 file:// 下 localStorage 首访卡数秒的坑(#24441,见 docs/app-scheme-migration.md)。
+// dev 走 ELECTRON_RENDERER_URL(http://localhost),不加载 app://,注册也无副作用。
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app',
+    privileges: {
+      standard: true, // 非 opaque origin —— storage 快路径(核心开关)
+      secure: true, // 安全上下文(等价 https)
+      supportFetchAPI: true, // 允许 fetch(app://…)(modulepreload 需要)
+      codeCache: true // V8 code cache(需 standard:true),二次启动更快
+    }
+  }
+])
 
 // 聊天缩略图宽度(px):够清晰又小(几十KB)
 const THUMB_WIDTH = 180
@@ -67,14 +85,14 @@ const PRELOAD = join(__dirname, '../preload/index.cjs')
 /**
  * 按窗口加载 renderer 入口(§4.1)。
  * dev:主窗用裸 ELECTRON_RENDERER_URL(保持根路由不变),overlay 拼 /overlay.html。
- * prod:各自 loadFile。
+ * prod:走 app://bundle/<entry>.html(自定义 scheme,标准安全 origin;见 docs/app-scheme-migration.md)。
  */
 function loadRenderer(win: BrowserWindow, entry: 'index' | 'overlay'): void {
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   if (devUrl) {
     win.loadURL(entry === 'index' ? devUrl : `${devUrl}/${entry}.html`)
   } else {
-    win.loadFile(join(__dirname, `../renderer/${entry}.html`))
+    win.loadURL(`app://${APP_HOST}/${entry}.html`)
   }
 }
 
@@ -173,6 +191,9 @@ function registerIpc(): void {
   ipcMain.handle(CMD.setAutoAccept, (_e, s: Partial<AutoAcceptSettings>): AutoAcceptSettings => {
     return settings!.setAutoAccept(s).autoAccept
   })
+  // 主题偏好:存 main 侧(避开 file:// 下 localStorage 慢)
+  ipcMain.handle(CMD.getTheme, (): ThemePref => settings!.getTheme())
+  ipcMain.handle(CMD.setTheme, (_e, t: ThemePref): ThemePref => settings!.setTheme(t))
 
   // 截图:主窗同步当前聊天对象(决定"发聊天"可用性,§4.3 blocker#1)
   ipcMain.handle(SHOT_CMD.setActivePeer, (_e, peerFp: string | null) => {
@@ -194,6 +215,10 @@ if (gotTheLock) {
 app.whenReady().then(async () => {
   // 非首个实例:已 app.quit(),不初始化(whenReady 仍可能触发,这里兜住)。
   if (!gotTheLock) return
+
+  // app:// handler 必须在建窗(loadURL app://…)之前注册。dev 不加载 app://,注册也无害。
+  // rendererRoot = out/renderer(__dirname = out/main),与原 loadFile 路径一致。
+  registerAppProtocol(join(__dirname, '../renderer'))
 
   // 先注册 IPC + 建窗:让 renderer 尽早开始加载/绘制外壳,与下面的后端初始化并行,避免白屏。
   // IPC handler 全走 core?./store?. 短路,渲染层早期调用(getIdentity/listDevices)在 store/core
@@ -226,7 +251,6 @@ app.whenReady().then(async () => {
   // 截图服务:注册 F1 + 遮罩窗管理 + 三出口(§4.1)
   screenshot = new ScreenshotService({
     rendererUrl: process.env['ELECTRON_RENDERER_URL'],
-    overlayFile: join(__dirname, '../renderer/overlay.html'),
     preload: PRELOAD,
     tempDir: join(app.getPath('temp'), 'transfer-shot'),
     // 复用现有聊天发送链路(§3.4:必须走 core.chat.sendFiles 才入库/推 UI/串行化)

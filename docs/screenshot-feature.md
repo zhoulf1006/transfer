@@ -226,7 +226,7 @@
 
 **electron-vite 多入口**(现为单入口 `src/renderer/index.html`):新增 `src/renderer/overlay.html` + `src/renderer/src/overlay.tsx`;`renderer.build.rollupOptions.input` 显式列 `{ index, overlay }`。加载抽成 `loadRenderer(win, entry:'index'|'overlay')`:
 - **dev**:`index` → `loadURL(ELECTRON_RENDERER_URL)`(**裸 origin 不拼文件名,保持主窗现状**);`overlay` → `loadURL(\`${ELECTRON_RENDERER_URL}/overlay.html\`)`。
-- **prod**:`loadFile(join(__dirname, \`../renderer/${entry}.html\`))`。
+- **prod**:`loadURL(\`app://bundle/${entry}.html\`)`(自定义 `app://` scheme,非 `file://`;根治 opaque origin 下 web storage 卡首屏,见 DESIGN §2「渲染页加载」+ `docs/app-scheme-migration.md`)。~~原 `loadFile(join(__dirname, ...))`~~ 已弃用。
 - ⚠️ **主窗加载保持原样,只有遮罩窗拼 `/overlay.html`**,别把主窗 dev 改成拼 `/index.html`(会破坏根路由)。现有加载逻辑在 **index.ts:47-51**(方案早期误写 57-61)。
 
 **遮罩窗 webPreferences(必须与主窗一致,blocker#6)**:`preload: index.cjs`(复用同一 preload,见下)、`contextIsolation:true`、`nodeIntegration:false`、`sandbox:false`(desktopCapturer 在 main,但 preload 共用故一致)。

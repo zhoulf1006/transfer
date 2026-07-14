@@ -11,7 +11,8 @@ import {
   type IdentityInfo,
   type UiMessage,
   type ProgressPayload,
-  type ShotSource
+  type ShotSource,
+  type ThemePref
 } from '@shared/ipc'
 import type { RemoteDevice } from '@shared/types'
 
@@ -48,6 +49,9 @@ const api = {
   getAutoAccept: (): Promise<AutoAcceptSettings> => ipcRenderer.invoke(CMD.getAutoAccept),
   setAutoAccept: (s: Partial<AutoAcceptSettings>): Promise<AutoAcceptSettings> =>
     ipcRenderer.invoke(CMD.setAutoAccept, s),
+  /** 主题偏好读写(存 main 侧,避开 file:// 下 localStorage 慢) */
+  getTheme: (): Promise<ThemePref> => ipcRenderer.invoke(CMD.getTheme),
+  setTheme: (t: ThemePref): Promise<ThemePref> => ipcRenderer.invoke(CMD.setTheme, t),
 
   // 事件订阅(返回取消函数)
   onDevicesUpdated: (cb: (devices: RemoteDevice[]) => void) => subscribe(EVT.devicesUpdated, cb),

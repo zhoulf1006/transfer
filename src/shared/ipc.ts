@@ -70,8 +70,13 @@ export const CMD = {
   /** 取图片原图 dataURL(app 内居中弹层看大图用);拿不到返回 null */
   getImageDataUrl: 'message:getImageDataUrl',
   getAutoAccept: 'settings:getAutoAccept',
-  setAutoAccept: 'settings:setAutoAccept'
+  setAutoAccept: 'settings:setAutoAccept',
+  /** 主题偏好读写(存 main 侧,避开 file:// 下 localStorage 慢) */
+  getTheme: 'settings:getTheme',
+  setTheme: 'settings:setTheme'
 } as const
+
+export type ThemePref = 'system' | 'light' | 'dark'
 
 // ── 截图(overlay ↔ main)独立分组,避免 CMD 膨胀(见 docs/screenshot-feature §4.3)──
 export const SHOT_CMD = {

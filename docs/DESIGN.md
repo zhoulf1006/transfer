@@ -135,6 +135,7 @@
 - **主进程**:所有网络能力(UDP 发现、HTTP server/client)、文件读写、系统能力(截屏、快捷键、权限)。这些都需要 Node/系统权限,必须在主进程。
 - **渲染进程**:UI —— 设备列表、传输进度、接收弹框、笔记、截屏标注。通过 IPC 与主进程通信。
 - **preload**:用 `contextBridge` 暴露受限 IPC API(`contextIsolation: true`,不开 `nodeIntegration`)。
+- **渲染页加载(dev / prod)**:dev 走 `ELECTRON_RENDERER_URL`(`http://localhost`,HMR);**prod 走自定义 `app://bundle/<entry>.html`**,由 `src/main/app-protocol.ts` 的 `protocol.handle('app')` 映射到 `out/renderer/*`(读盘用 `net.fetch(file://)`,免维护 MIME 表;`resolveAppPath` 做目录穿越防护)。scheme 在模块顶层(app ready 前)`registerSchemesAsPrivileged` 为 `standard+secure`,让渲染页拿到**非 opaque origin** —— **不用 `file://`**,因为 `file://` 是 opaque origin,web storage(localStorage 等)首访阻塞数秒卡首屏(Electron #24441,主窗 + 截图 overlay 均走此机制)。详见 `docs/app-scheme-migration.md`。
 
 ---
 
@@ -609,6 +610,8 @@ settings.ts            # 自动接收开关+阈值(持久化,复用 identity.jso
   - 对方气泡(`--bubble-you`)与语义色(在线绿/危险红)仍沿用石墨中性体系,不跟紫走。
 - **token 化**:颜色全部走 CSS 变量,定义在 `src/renderer/src/theme.css` 的 `:root`;组件(`App.tsx`)只引用 `var(--token)`,不硬编码色值。基准字号 13px。
 - **三层生效**(深浅色):`:root` 浅色基线 → `@media (prefers-color-scheme: dark)` 跟随系统 → `:root[data-theme='light'|'dark']` **两个方向都完整覆盖** @media(手动 toggle 双向都能压过系统偏好)。
-- **切换**:`useTheme` 三态循环 `system→light→dark`;`system` 时移除 `data-theme` 属性(回落 @media),否则打在 `<html>` 上;偏好存 `localStorage['theme']`。侧栏图标 `◐/☀/☾`。
+- **切换**:`useTheme` 三态循环 `system→light→dark`;`system` 时移除 `data-theme` 属性(回落 @media),否则打在 `<html>` 上。侧栏图标 `◐/☀/☾`。
+- **偏好持久化(存 main 侧,不用 localStorage)**:偏好写 `SettingsStore`(userData/`settings.json` 的 `theme` 字段),经 IPC `settings:getTheme`/`settings:setTheme` 读写。`useTheme` 初值取默认 `system`(不阻塞首帧),挂载后异步 `getTheme()` 拉回真实偏好再应用。
+  - 历史根因:早期用 `localStorage` 存偏好,打包版渲染页走 `file://`(opaque origin),首次访问 web storage 阻塞数秒(实测 `getItem` 3.9s),卡首屏(Electron #24441)。**已双管根治**:①(速修)偏好挪 main,渲染层不碰 web storage;②(根治)渲染页改由 `app://` 加载(见 §2「渲染页加载」),origin 不再 opaque,web storage 回快路径。两者叠加,偏好挂 main 亦是更干净的分层(渲染层不担持久化职责),故保留。
 - **交互反馈**:内联样式无法表达 `:hover`,用 `.tf-row/.tf-btn/.tf-icon-btn` class 钩子在 theme.css 里补;选中态背景是内联样式(优先级高于 class),故 hover 不会盖掉高亮态。尊重 `prefers-reduced-motion`。
 - **文件图标**:`fileEmoji(name)` 按扩展名给贴切 emoji(图片/视频/音频/压缩包/文档…),纯装饰,识别不了回落 📄。

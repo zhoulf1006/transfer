@@ -72,6 +72,39 @@ describe('SettingsStore', () => {
     })
   })
 
+  describe('theme', () => {
+    test('首次无文件 → 默认 system', () => {
+      const s = new SettingsStore(mkdir())
+      expect(s.getTheme()).toBe('system')
+    })
+
+    test('setTheme 持久化 + 重新加载可读', () => {
+      const dir = mkdir()
+      new SettingsStore(dir).setTheme('dark')
+      expect(new SettingsStore(dir).getTheme()).toBe('dark')
+    })
+
+    test('非法 theme 被归一化为 system', () => {
+      const dir = mkdir()
+      writeFileSync(join(dir, 'settings.json'), JSON.stringify({ theme: 'neon' }))
+      expect(new SettingsStore(dir).getTheme()).toBe('system')
+    })
+
+    // 回归:setAutoAccept 曾丢掉 theme(未 spread this.cache)。改一个不能抹另一个。
+    test('setAutoAccept 不抹掉已设的 theme', () => {
+      const s = new SettingsStore(mkdir())
+      s.setTheme('light')
+      s.setAutoAccept({ enabled: true })
+      expect(s.getTheme()).toBe('light')
+    })
+    test('setTheme 不抹掉 autoAccept', () => {
+      const s = new SettingsStore(mkdir())
+      s.setAutoAccept({ enabled: true, maxBytes: 42 })
+      s.setTheme('dark')
+      expect(s.getAutoAccept()).toEqual({ enabled: true, maxBytes: 42 })
+    })
+  })
+
   test('持久化格式为可读 JSON', () => {
     const dir = mkdir()
     const s = new SettingsStore(dir)

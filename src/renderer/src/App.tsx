@@ -10,19 +10,27 @@ type ProgressMap = Record<string, { sent: number; total: number }>
 type ThemePref = 'system' | 'light' | 'dark'
 
 /**
- * 主题:跟随系统 / 手动浅 / 手动深,持久化到 localStorage。
+ * 主题:跟随系统 / 手动浅 / 手动深。持久化走 **main 侧**(settings.json + IPC),
+ * 不用 localStorage —— 打包版 file:// 下 localStorage 首次访问会卡数秒(阻塞首屏)。
  * 手动时在 <html> 上打 data-theme(CSS 里 :root[data-theme] 覆盖 @media)。
  */
 function useTheme(): { pref: ThemePref; cycle: () => void } {
-  const [pref, setPref] = useState<ThemePref>(
-    () => (localStorage.getItem('theme') as ThemePref) || 'system'
-  )
+  // 初值 system(默认):不阻塞首屏;真实偏好由 IPC 异步拉回后应用。
+  const [pref, setPref] = useState<ThemePref>('system')
+
+  // 首次:从 main 拉持久化的主题偏好
+  useEffect(() => {
+    window.transfer.getTheme().then((t) => setPref(t))
+  }, [])
+
+  // pref 变化 → 应用到 DOM + 写回 main 持久化
   useEffect(() => {
     const root = document.documentElement
     if (pref === 'system') root.removeAttribute('data-theme')
     else root.setAttribute('data-theme', pref)
-    localStorage.setItem('theme', pref)
+    void window.transfer.setTheme(pref)
   }, [pref])
+
   // 循环:system → light → dark → system
   const cycle = (): void =>
     setPref((p) => (p === 'system' ? 'light' : p === 'light' ? 'dark' : 'system'))

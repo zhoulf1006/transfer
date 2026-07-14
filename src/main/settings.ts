@@ -12,21 +12,28 @@ export interface AutoAcceptSettings {
   maxBytes: number
 }
 
+/** 主题偏好:跟随系统 / 强制浅 / 强制深。存 main 侧,避开 file:// 下 localStorage 慢(3.9s)。 */
+export type ThemePref = 'system' | 'light' | 'dark'
+
 export interface AppSettings {
   autoAccept: AutoAcceptSettings
+  theme: ThemePref
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   autoAccept: {
     enabled: false, // DESIGN §11.0:默认关,全部弹确认
     maxBytes: 100 * 1024 * 1024 // 100MB(启用后的默认阈值)
-  }
+  },
+  theme: 'system'
 }
 
 /** 归一化(容错旧/损坏字段),保证返回合法结构 */
 function normalize(raw: unknown): AppSettings {
   const r = (raw ?? {}) as Partial<AppSettings>
   const aa = (r.autoAccept ?? {}) as Partial<AutoAcceptSettings>
+  const theme: ThemePref =
+    r.theme === 'light' || r.theme === 'dark' || r.theme === 'system' ? r.theme : DEFAULT_SETTINGS.theme
   return {
     autoAccept: {
       enabled: typeof aa.enabled === 'boolean' ? aa.enabled : DEFAULT_SETTINGS.autoAccept.enabled,
@@ -34,7 +41,8 @@ function normalize(raw: unknown): AppSettings {
         typeof aa.maxBytes === 'number' && aa.maxBytes >= 0
           ? aa.maxBytes
           : DEFAULT_SETTINGS.autoAccept.maxBytes
-    }
+    },
+    theme
   }
 }
 
@@ -68,10 +76,21 @@ export class SettingsStore {
 
   setAutoAccept(next: Partial<AutoAcceptSettings>): AppSettings {
     this.cache = normalize({
+      ...this.cache,
       autoAccept: { ...this.cache.autoAccept, ...next }
     })
     this.persist()
     return this.cache
+  }
+
+  getTheme(): ThemePref {
+    return this.cache.theme
+  }
+
+  setTheme(theme: ThemePref): ThemePref {
+    this.cache = normalize({ ...this.cache, theme })
+    this.persist()
+    return this.cache.theme
   }
 
   private persist(): void {

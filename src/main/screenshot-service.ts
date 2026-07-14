@@ -16,6 +16,7 @@ import {
 } from 'electron'
 import { SHOT_CMD, EVT, type ShotSource } from '@shared/ipc'
 import { computeRatios } from '@shared/screenshot-geometry'
+import { APP_HOST } from './app-protocol'
 
 /**
  * 截图会话服务(见 docs/screenshot-feature §4)。
@@ -39,8 +40,6 @@ export function shouldStartSession(state: ShotState, capturing: boolean): boolea
 export interface ScreenshotDeps {
   /** dev 时的 renderer origin(ELECTRON_RENDERER_URL),prod 为 undefined */
   rendererUrl?: string
-  /** prod 时 overlay.html 的磁盘路径 */
-  overlayFile: string
   /** preload 脚本路径(与主窗共用) */
   preload: string
   /** 截图临时文件目录(app.getPath('temp')/transfer-shot) */
@@ -303,7 +302,7 @@ export class ScreenshotService {
     if (this.deps.rendererUrl) {
       void win.loadURL(`${this.deps.rendererUrl}/overlay.html`)
     } else {
-      void win.loadFile(this.deps.overlayFile)
+      void win.loadURL(`app://${APP_HOST}/overlay.html`)
     }
   }
 
