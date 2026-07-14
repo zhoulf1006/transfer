@@ -39,12 +39,14 @@ jobs:
           CSC_LINK: ''
           WIN_CSC_LINK: ''
 
-      # 只匹配 NSIS 安装包本身(-setup.exe);排除 win-unpacked 里的中间件 exe
-      - name: Upload setup exe (artifact)
+      # 匹配安装版(-setup.exe)与免安装版(-portable.exe);排除 win-unpacked 里的中间件 exe
+      - name: Upload win exe (artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: Transfer-windows-setup
-          path: release/*/*-setup.exe
+          name: Transfer-windows
+          path: |
+            release/*/*-setup.exe
+            release/*/*-portable.exe
           if-no-files-found: error
           retention-days: 7
 
@@ -53,7 +55,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*/*-setup.exe
+          files: |
+            release/*/*-setup.exe
+            release/*/*-portable.exe
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

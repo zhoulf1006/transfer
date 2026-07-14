@@ -15,13 +15,19 @@ asarUnpack:
 # 局域网直连需要网络权限;无签名(测试用,朋友端会有一次性安全提示)
 win:
   target:
-    - target: nsis            # 安装版:装到固定目录,启动不再每次解压(portable 每次解压慢,冷启动优化)
+    - target: nsis            # 安装版:装到固定目录,标准向导(可选目录+快捷方式)
+      arch: [x64]
+    - target: portable        # 免安装版:双击即用(每次解压到临时目录,冷启动略慢)
       arch: [x64]
   # 明确不签名:CI runner 无证书时 signtool 仍被调用会失败。用 signExecutable(不是
   # signAndEditExecutable——后者只管主 exe,漏了 NSIS 的 setup/uninstaller)。
   # signExecutable:false 在读证书前短路,对主exe/setup/uninstaller/elevate 全生效,且保留图标元数据。
   signExecutable: false
   # icon: build/icon.ico       # 未提供图标时用 Electron 默认图标
+
+# portable 产物名(与 nsis 的 -setup.exe 区分)
+portable:
+  artifactName: ${productName}-${version}-portable.exe
 
 # NSIS:标准安装向导 —— 用户能看到/选择安装目录、勾快捷方式(不再静默装到隐藏目录)
 nsis:
