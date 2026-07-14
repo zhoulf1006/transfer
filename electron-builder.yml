@@ -23,7 +23,7 @@ win:
   # signAndEditExecutable——后者只管主 exe,漏了 NSIS 的 setup/uninstaller)。
   # signExecutable:false 在读证书前短路,对主exe/setup/uninstaller/elevate 全生效,且保留图标元数据。
   signExecutable: false
-  # icon: build/icon.ico       # 未提供图标时用 Electron 默认图标
+  icon: build/icon.ico         # 应用图标(白底 + 紫色纸飞机,主色 #8a67ab)
 
 # portable 产物名(与 nsis 的 -setup.exe 区分)
 portable:
@@ -43,7 +43,7 @@ mac:
   target:
     - target: dmg
       arch: [arm64]           # 本机 M 芯片;需 Intel 再加 x64
-  # icon: build/icon.icns
+  icon: build/icon.icns       # 应用图标(白底 + 紫色纸飞机,主色 #8a67ab)
 
 dmg:
   artifactName: ${productName}-${version}.dmg
