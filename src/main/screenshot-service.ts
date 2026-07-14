@@ -42,8 +42,9 @@ export interface ScreenshotDeps {
   rendererUrl?: string
   /** preload 脚本路径(与主窗共用) */
   preload: string
-  /** 截图临时文件目录(app.getPath('temp')/transfer-shot) */
-  tempDir: string
+  /** 截图"发到聊天"的原图持久目录(userData/sent-images)。
+   *  发送端消息 filePath 指向此处的持久副本 —— 发完不删,缩略图/看大图/另存为才可用。 */
+  sentImagesDir: string
   /** 发文件到聊天(复用现有链路,注入解耦 AppCore)。fire-and-forget,内部管临时文件清理 */
   sendFiles: (peerFp: string, filePaths: string[]) => Promise<void>
 }
@@ -359,21 +360,41 @@ export class ScreenshotService {
   }
 
   /**
-   * 后台发送(fire-and-forget,§4.2):写唯一命名临时文件 → sendFiles → finally 清理。
-   * sendFiles 内部即使失败也复用现有聊天流展示状态,这里只保证临时文件不泄漏。
+   * 后台发送(fire-and-forget,§4.2):写唯一命名的**持久**副本 → sendFiles。
+   * 与普通发送一致,发送端消息 filePath 指向本机真实存在的原图,故缩略图/看大图/另存为都可用。
+   * **成功保留原图**(不删,否则发送端 getThumbnail 读空文件→回退文件图标,即此前的 bug);
+   * **失败才删**这张刚写的副本(消息已入失败态,原图无保留价值,免碎片堆积)。
    */
   private async sendToChatBackground(peer: string, png: Buffer): Promise<void> {
-    const path = join(this.deps.tempDir, `截图_${stamp()}_${randomUUID().slice(0, 8)}.png`)
-    try {
-      await mkdir(this.deps.tempDir, { recursive: true })
-      await writeFile(path, png)
-      await this.deps.sendFiles(peer, [path])
-    } catch (err) {
-      console.error('[screenshot] 发送失败', err)
-    } finally {
-      // 无论成败,sendFiles 这一 await 结束后一律删临时文件(流式读已完成,§4.5)。
-      await unlink(path).catch(() => {})
-    }
+    const fileName = `截图_${stamp()}_${randomUUID().slice(0, 8)}.png`
+    await persistAndSend(this.deps.sentImagesDir, fileName, png, (p) =>
+      this.deps.sendFiles(peer, [p])
+    )
+  }
+}
+
+/**
+ * 把截图 png 写入持久目录并发送(§4.2 的可测核心,抽出便于单测:不碰 electron/类状态)。
+ * 成功保留文件(发送端 filePath 指向真实原图→缩略图/看大图可用);失败删副本免碎片。
+ * @returns 成功=保留的绝对路径;失败=null(已删)。
+ */
+export async function persistAndSend(
+  dir: string,
+  fileName: string,
+  png: Buffer,
+  send: (path: string) => Promise<void>
+): Promise<string | null> {
+  const path = join(dir, fileName)
+  try {
+    await mkdir(dir, { recursive: true })
+    await writeFile(path, png)
+    await send(path)
+    return path
+  } catch (err) {
+    console.error('[screenshot] 发送失败', err)
+    // 失败:删掉刚写的副本(可能 writeFile 已成功但 send 抛),不留碎片。
+    await unlink(path).catch(() => {})
+    return null
   }
 }
 

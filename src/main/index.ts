@@ -252,7 +252,7 @@ app.whenReady().then(async () => {
   screenshot = new ScreenshotService({
     rendererUrl: process.env['ELECTRON_RENDERER_URL'],
     preload: PRELOAD,
-    tempDir: join(app.getPath('temp'), 'transfer-shot'),
+    sentImagesDir: join(userData, 'sent-images'),
     // 复用现有聊天发送链路(§3.4:必须走 core.chat.sendFiles 才入库/推 UI/串行化)
     sendFiles: async (peerFp, filePaths) => {
       await core!.chat.sendFiles(peerFp, filePaths)

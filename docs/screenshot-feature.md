@@ -184,8 +184,8 @@
 ### 3.4 ⚠️ 接入现有发送链路(关键约束,读项目源码坐实)
 - **消息类型**:截图归 **`type:'file'` 消息**,不需新消息类型(`MessageType = 'text'|'file'`)。[src/shared/ipc.ts:6]
 - ⚠️ **发送方只接受磁盘路径,无 buffer 入口**:`ChatService.sendFiles(peerFp, filePaths: string[])` [chat-service.ts:306] → http-client 全程用路径:`statSync(path).size` [http-client.ts:46/91]、`readFile(path)` 算 sha256 [http-client.ts:38]、`createReadStream(path)` 流式上传 [http-client.ts:102]。
-- **最小改动接入方案**:canvas 导 PNG buffer → **新增 `saveTempImage(buffer)` IPC 在 main 写临时文件**(`app.getPath('temp')`,命名如 `截图_yyyyMMdd_HHmmss.png`,接收端显示名来自 `basename(path)` [http-client.ts:45])→ 拿路径调现有 `sendFiles`。发送/接收/入库/进度/sha256/去重全部原样复用。
-- ⚠️ **临时文件清理必须等 `sendFiles` 的 Promise resolve 之后**(流式 `createReadStream` 读,删早了读到一半失败)。
+- **接入方案**:canvas 导 PNG buffer → main 写文件(命名 `截图_yyyyMMdd_HHmmss_<uuid8>.png`,接收端显示名来自 `basename(path)` [http-client.ts:45])→ 拿路径调现有 `sendFiles`。发送/接收/入库/进度/sha256/去重全部原样复用。见 `persistAndSend`(screenshot-service.ts)。
+- ⚠️ **落盘目录 = `userData/sent-images/`(持久),不是 temp;发送成功后不删原图**。原因(踩坑修复):发送方消息 `filePath` 指向此文件,UI 的缩略图/看大图/另存为(`getThumbnail`/`getImageDataUrl`/`saveImageAs`,均按 `filePath` 读盘)都靠它。早期写 `temp/transfer-shot` 且 `sendFiles` 一 resolve 就 `unlink` → 发送端 `getThumbnail` 读到已删文件 → `nativeImage.isEmpty()` → 回退成文件图标(**发送端不显示缩略图的 bug**)。**成功保留、失败才删**(失败消息无保留价值,删副本免碎片)。清理策略暂未做(截图副本会随发送累积,已知 tradeoff,后续可加 LRU)。
 
 ### 3.5 层级检测可行性(P2 前提,尚未调研)
 依赖 OS 无障碍/UIAutomation 拿控件树;跨进程、网页内部(Chromium DOM)很可能穿透不到,**能否 1:1 复刻 Snipaste 未坐实**。平台优先级(Win UIAutomation 更成熟且不需授权)待此调研后定。**第一版不做,故不阻塞**。
@@ -208,7 +208,7 @@
 │  · desktopCapturer 抓光标屏原生位图(并行,见时序)         │
 │  · 创建/复用透明遮罩 BrowserWindow(铺 display.bounds)    │
 │  · mac 屏幕录制权限检测/引导                              │
-│  · saveTempImage(buffer)→ 临时文件路径                   │
+│  · persistAndSend(buffer)→ 持久原图路径(sent-images)   │
 │  · 复制到剪贴板(clipboard.writeImage)                    │
 │  · 转发"发聊天"到现有 ChatService.sendFiles              │
 └────────────────────────────────────────────────────────┘
@@ -336,9 +336,9 @@ interface ShotSceneState {
 | 屏幕旋转 rotation≠0 | ShotSource 透传 rotation;第一版检测到旋转走 scaleFactor 兜底或明确提示不支持,别用单 ratio 掩盖 |
 | 自截(拍到本 app 窗) | **先抓屏拿干净位图、再 show 遮罩**;主聊天窗在会话期是否隐藏一并处理(抓屏瞬间屏上无本 app 可见窗) |
 | 选区为空/过小 | w 或 h < 有效阈值 → 不出工具条/不导出;锚点隐藏阈值独立(短边<40px 隐角锚、<20px 全隐但保留整块拖动),隐藏后仍可键盘微调 |
-| 临时文件命名撞名 | **randomUUID/自增序号后缀 或 mkdtemp 独立目录**,绝不用秒级时间戳做唯一键(防同秒连拍覆盖) |
-| 临时文件清理 | **fire-and-forget 的 Promise 上挂 `finally` 清理**:`try{ await sendFiles }finally{ unlink(path).catch(()=>{}) }`,覆盖 done/error/busy/rejected/throw 全分支(sendFiles 失败也 resolve,不能只 `.then`) |
-| 临时文件崩溃残留 | saveTemp 写专用子目录 `temp/transfer-shot/`;app ready 时扫描删残留(或 will-quit best-effort 清) |
+| 原图命名撞名 | 文件名 `截图_<stamp>_<randomUUID().slice(0,8)>.png`,uuid8 后缀保证唯一,绝不只用秒级时间戳(防同秒连拍覆盖) |
+| 原图落盘/清理 | 写 `userData/sent-images/`(**持久**,非 temp);`persistAndSend`:成功保留(发送端缩略图/看大图靠 `filePath` 读原图)、**仅失败** `unlink` 删副本。~~早期 `finally` 无条件删 → 发送端缩略图读空文件回退图标的 bug,已修~~ |
+| 副本累积 | 截图副本随发送在 `sent-images/` 累积(每张几十~上百 KB),暂未做自动清理(已知 tradeoff,后续可加按数量/大小/天数的 LRU) |
 | saveAs / copy 不落临时文件 | saveAs 直接 `fs.writeFile` 到选定路径;copy 用 `nativeImage.createFromBuffer` 直接进剪贴板;都不经临时文件 |
 | 大 PNG buffer 过 IPC | 传 Uint8Array/ArrayBuffer 二进制(structured clone 高效),非 base64/number[];评估最大图瞬时内存 |
 | 遮罩窗失焦 | selecting/editing blur → 自动取消 hide 回 idle;会话期注册全局 Esc 兜底、退出注销 |
