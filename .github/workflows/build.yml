@@ -66,6 +66,9 @@ jobs:
     runs-on: macos-latest     # dmg 必须在 macOS runner 上打;macos-latest 现为 Apple Silicon(arm64)
     permissions:
       contents: write
+    env:
+      # 把 secret 提升到 job env,供下面 step 的 if 条件判断(比在 if 里直接读 secrets 更稳、跨版本都支持)。
+      HAS_CSC: ${{ secrets.CSC_LINK != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -82,10 +85,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build (electron-vite) and package macOS dmg
+      # CI 签名(不公证):electron-builder 用 CSC_LINK(base64 .p12)+ CSC_KEY_PASSWORD
+      # 自动导入证书到临时钥匙串并签名。不公证(见 docs/mac-signing.md)。
+      # ⚠️ 分两个互斥 step:空 CSC_LINK="" 会被当成"空路径证书"→ 构建失败(实测),
+      # 故 secret 缺失(fork PR/未建 secret)时走"跳过签名"那个 step,根本不设 CSC_LINK。
+      - name: Package macOS dmg (signed)
+        if: env.HAS_CSC == 'true'
         run: pnpm run dist:mac
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false   # 无证书 → 跳过签名(与本地一致,朋友端右键打开)
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          # secret 名为 CSC_PASSWORD,映射到 electron-builder 认的 CSC_KEY_PASSWORD
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_PASSWORD }}
+
+      - name: Package macOS dmg (unsigned, no cert secret)
+        if: env.HAS_CSC != 'true'
+        run: pnpm run dist:mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload dmg (artifact)
         uses: actions/upload-artifact@v4
