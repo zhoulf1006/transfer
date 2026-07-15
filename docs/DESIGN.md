@@ -38,6 +38,7 @@
 - `announce: true` = 主动广播;收到后对方应回应,回应方式二选一:
   1. 回一个 `announce: false` 的 UDP 报文(同字段),或
   2. 向对方 `POST /api/localsend/v2/register`。
+- **发现走多播 + 子网广播双通道**(本项目):每次主动 announce **同时**发多播(224.0.0.167)+ 对每个真实网卡的**子网广播地址**(如 192.168.3.255)各发一份同内容报文。理由:多播依赖交换机 IGMP/AP 不过滤,常被限;广播是网络基础功能、不走代理隧道,互补覆盖(见 `docs/discovery-broadcast-fallback.md`)。用 `socket.setBroadcast(true)` + `pickBroadcastTargets`(排除隧道段,`broadcast=address|~netmask`)。收侧不区分来源(同一 handleMessage,幂等 upsert)。**只广播不扫网段**(扫网段像端口扫描,触发企业 EDR)。
 - **本项目实现选方式 2(HTTP 定向 register),不发方式 1(UDP 回应)**:多播回应常单向丢包,定向 TCP 更可靠(收到 announce=true → `registerTo` 对方,`multicast.ts` onRespond→`app-core.respondViaRegister`)。仍能**接收**别人发来的 announce=false(兼容官方客户端)。⚠️ **register 响应体省略 port,不能拿它刷新登记**(会用 DEFAULT_PORT 覆盖真实端口),对方登记只靠其 announce。详见 `docs/discovery-http-register-response.md`。
 - Fallback(用法 B,**本项目未实现**):多播完全不可用时,HTTP POST `/register` 到局域网各 IP 主动扫描发现。当前只做用法 A(定向回应),不扫网段。
 

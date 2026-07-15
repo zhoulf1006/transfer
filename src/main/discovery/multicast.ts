@@ -9,7 +9,7 @@ import { createSocket, type Socket } from 'node:dgram'
 import { networkInterfaces } from 'node:os'
 import { MULTICAST_ADDR, DEFAULT_PORT } from '@shared/protocol'
 import type { Announcement, DeviceInfo } from '@shared/types'
-import { pickMulticastInterface, pickAllLanInterfaces } from './pick-interface'
+import { pickMulticastInterface, pickAllLanInterfaces, pickBroadcastTargets } from './pick-interface'
 
 export interface MulticastOpts {
   /** 本机 fingerprint,用于过滤自己发的报文 */
@@ -41,6 +41,8 @@ export class MulticastDiscovery {
   private boundInterface: string | undefined
   /** 加入了多播组的所有接口(空 = 用 OS 默认接口) */
   private joinedInterfaces: string[] = []
+  /** 广播兜底目标:{网卡地址, 子网广播地址}(多播之外同发一份,提升发现成功率) */
+  private broadcastTargets: { address: string; broadcast: string }[] = []
 
   constructor(opts: MulticastOpts) {
     this.opts = {
@@ -109,6 +111,16 @@ export class MulticastDiscovery {
             return
           }
         }
+        // 广播兜底:开 SO_BROADCAST(不影响多播),算好各真实网卡的子网广播目标。
+        // interfaceAddr==='' 是测试隔离模式,不算广播目标(保持测试确定性)。
+        try {
+          socket.setBroadcast(true)
+          this.broadcastTargets =
+            this.opts.interfaceAddr === '' ? [] : pickBroadcastTargets(networkInterfaces())
+        } catch {
+          this.broadcastTargets = [] // setBroadcast 失败不致命,退化为纯多播
+        }
+
         // bind 成功后,后续 error 不应再 reject(promise 已 settle)
         socket.removeAllListeners('error')
         socket.on('error', () => {})
@@ -118,32 +130,44 @@ export class MulticastDiscovery {
     })
   }
 
-  /** 发送 announce 报文(announce=true 主动广播,false 为响应)。 */
+  /** 发送 announce 报文(announce=true 主动广播,false 为响应)。多播 + 子网广播双通道。 */
   announce(announce: boolean): void {
     const socket = this.socket
     if (!socket) return
     const payload = Buffer.from(JSON.stringify(this.opts.buildAnnouncement(announce)))
 
+    // ① 多播
     if (this.joinedInterfaces.length <= 1) {
       // 单接口或 OS 默认:直接发一次
       socket.send(payload, this.opts.port, this.opts.multicastAddr)
-      return
-    }
-    // 多接口:逐个切换出接口发送,确保每个真实网卡都广播到(多网卡下对端才收得到)
-    for (const iface of this.joinedInterfaces) {
-      try {
-        socket.setMulticastInterface(iface)
-        socket.send(payload, this.opts.port, this.opts.multicastAddr)
-      } catch {
-        // 某接口发送失败不影响其他接口
+    } else {
+      // 多接口:逐个切换出接口发送,确保每个真实网卡都广播到(多网卡下对端才收得到)
+      for (const iface of this.joinedInterfaces) {
+        try {
+          socket.setMulticastInterface(iface)
+          socket.send(payload, this.opts.port, this.opts.multicastAddr)
+        } catch {
+          // 某接口发送失败不影响其他接口
+        }
+      }
+      // 复位出接口为首选,避免影响后续
+      if (this.boundInterface) {
+        try {
+          socket.setMulticastInterface(this.boundInterface)
+        } catch {
+          // 忽略
+        }
       }
     }
-    // 复位出接口为首选,避免影响后续(如单播回应)
-    if (this.boundInterface) {
+
+    // ② 广播兜底:对每个真实网卡的子网广播地址各发一份(多播被过滤时救场)。
+    // 广播按**目标地址**路由到对应网段的网卡(实测:无需 setMulticastInterface,
+    // 那只管多播出接口),故直接 send 到子网广播地址即可。
+    for (const t of this.broadcastTargets) {
       try {
-        socket.setMulticastInterface(this.boundInterface)
+        socket.send(payload, this.opts.port, t.broadcast)
       } catch {
-        // 忽略
+        // 某网卡广播失败不影响其他网卡与多播
       }
     }
   }

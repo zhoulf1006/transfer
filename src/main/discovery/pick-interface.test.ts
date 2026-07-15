@@ -1,11 +1,16 @@
 import { test, expect, describe } from 'vitest'
-import { pickMulticastInterface, pickAllLanInterfaces } from './pick-interface'
+import {
+  pickMulticastInterface,
+  pickAllLanInterfaces,
+  subnetBroadcast,
+  pickBroadcastTargets
+} from './pick-interface'
 import type { NetworkInterfaceInfo } from 'node:os'
 
-function v4(address: string, internal = false): NetworkInterfaceInfo {
+function v4(address: string, internal = false, netmask = '255.255.255.0'): NetworkInterfaceInfo {
   return {
     address,
-    netmask: '255.255.255.0',
+    netmask,
     family: 'IPv4',
     mac: '00:00:00:00:00:00',
     internal,
@@ -82,5 +87,65 @@ describe('pickAllLanInterfaces', () => {
 
   test('无接口 → 空数组', () => {
     expect(pickAllLanInterfaces({})).toEqual([])
+  })
+})
+
+describe('subnetBroadcast', () => {
+  test('/24 → x.x.x.255', () => {
+    expect(subnetBroadcast('192.168.3.45', '255.255.255.0')).toBe('192.168.3.255')
+  })
+  test('/16 → x.x.255.255', () => {
+    expect(subnetBroadcast('10.0.5.12', '255.255.0.0')).toBe('10.0.255.255')
+  })
+  test('/25 非整字节掩码', () => {
+    expect(subnetBroadcast('172.16.8.3', '255.255.255.128')).toBe('172.16.8.127')
+  })
+  test('非法 netmask/address → null', () => {
+    expect(subnetBroadcast('192.168.3.45', '255.255.255')).toBeNull() // 段数不对
+    expect(subnetBroadcast('192.168.3.45', '')).toBeNull()
+    expect(subnetBroadcast('bad', '255.255.255.0')).toBeNull()
+    expect(subnetBroadcast('192.168.3.45', '255.255.999.0')).toBeNull() // 越界
+  })
+})
+
+describe('pickBroadcastTargets', () => {
+  test('真实网卡 → {address, 子网广播}', () => {
+    const ifaces = {
+      en0: [v4('192.168.3.45', false, '255.255.255.0')],
+      lo0: [v4('127.0.0.1', true)]
+    }
+    expect(pickBroadcastTargets(ifaces)).toEqual([
+      { address: '192.168.3.45', broadcast: '192.168.3.255' }
+    ])
+  })
+
+  test('排除隧道段(198.18)', () => {
+    const ifaces = {
+      en0: [v4('192.168.1.10', false, '255.255.255.0')],
+      utun4: [v4('198.18.0.1', false, '255.255.255.0')]
+    }
+    expect(pickBroadcastTargets(ifaces)).toEqual([
+      { address: '192.168.1.10', broadcast: '192.168.1.255' }
+    ])
+  })
+
+  test('多真实网卡各算各的广播', () => {
+    const ifaces = {
+      en0: [v4('192.168.3.45', false, '255.255.255.0')],
+      en1: [v4('10.0.5.12', false, '255.255.0.0')]
+    }
+    expect(pickBroadcastTargets(ifaces)).toEqual([
+      { address: '192.168.3.45', broadcast: '192.168.3.255' },
+      { address: '10.0.5.12', broadcast: '10.0.255.255' }
+    ])
+  })
+
+  test('netmask 非法的网卡被跳过', () => {
+    const ifaces = { en0: [v4('192.168.3.45', false, 'bad-mask')] }
+    expect(pickBroadcastTargets(ifaces)).toEqual([])
+  })
+
+  test('无接口 → 空数组', () => {
+    expect(pickBroadcastTargets({})).toEqual([])
   })
 })

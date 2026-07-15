@@ -76,3 +76,33 @@ export function pickAllLanInterfaces(
   }
   return result
 }
+
+/** 从 IPv4 address + netmask 算子网广播地址(broadcast = address | ~netmask)。
+ *  netmask 非法(段数不对/非数字/越界)返回 null。*/
+export function subnetBroadcast(address: string, netmask: string): string | null {
+  const a = address.split('.').map(Number)
+  const m = netmask.split('.').map(Number)
+  if (a.length !== 4 || m.length !== 4) return null
+  if (![...a, ...m].every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) return null
+  return a.map((o, i) => o | (~m[i] & 255)).join('.')
+}
+
+/**
+ * 返回所有真实局域网网卡的**子网广播目标**(排除回环/隧道),用于广播兜底(多播之外同发一份)。
+ * 每项 = { address: 网卡自身 IPv4(作发送出接口), broadcast: 该网段广播地址(如 192.168.3.255) }。
+ * netmask 缺失/非法的网卡跳过(算不出广播地址)。
+ */
+export function pickBroadcastTargets(
+  ifaces: NodeJS.Dict<NetworkInterfaceInfo[]>
+): { address: string; broadcast: string }[] {
+  const result: { address: string; broadcast: string }[] = []
+  for (const addrs of Object.values(ifaces)) {
+    for (const a of addrs || []) {
+      if (a.family !== 'IPv4' || a.internal) continue
+      if (isTunnelLikely(a.address)) continue
+      const broadcast = subnetBroadcast(a.address, a.netmask)
+      if (broadcast) result.push({ address: a.address, broadcast })
+    }
+  }
+  return result
+}

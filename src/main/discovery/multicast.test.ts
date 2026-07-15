@@ -116,6 +116,43 @@ describe('MulticastDiscovery(集成)', () => {
     expect(responded.some((r) => r.fp === 'FP_REPLY')).toBe(false)
   })
 
+  // 广播兜底:announce 时应对真实网卡的子网广播地址也发一份。
+  // 用一个 bind 到测试端口的接收 socket 监听广播;discovery 不传 interfaceAddr(算真实广播目标)。
+  // 无真实 LAN 网卡的环境(如某些 CI)自动跳过。
+  test('announce 会对子网广播地址发包(广播兜底)', async () => {
+    const { networkInterfaces } = await import('node:os')
+    const { pickBroadcastTargets } = await import('./pick-interface')
+    const targets = pickBroadcastTargets(networkInterfaces())
+    if (targets.length === 0) return // 无真实网卡,跳过(不算失败)
+
+    const { createSocket } = await import('node:dgram')
+    const rx = createSocket({ type: 'udp4', reuseAddr: true })
+    const gotBroadcast: string[] = []
+    rx.on('message', (buf) => {
+      try {
+        const m = JSON.parse(buf.toString())
+        if (m.fingerprint === 'FP_BC') gotBroadcast.push(m.fingerprint)
+      } catch {
+        /* ignore */
+      }
+    })
+    await new Promise<void>((r) => rx.bind(TEST_PORT, () => r()))
+
+    const d = new MulticastDiscovery({
+      selfFingerprint: 'FP_BC',
+      buildAnnouncement: announcementFactory('BC', 'FP_BC'),
+      onDevice: () => {},
+      port: TEST_PORT,
+      multicastAddr: TEST_ADDR
+      // 不传 interfaceAddr → 算真实广播目标
+    })
+    running.push(d)
+    await d.start() // start 内 announce(true) 会发多播 + 子网广播
+
+    await waitFor(() => (gotBroadcast.length > 0 ? true : undefined), 3000).finally(() => rx.close())
+    expect(gotBroadcast.length).toBeGreaterThan(0)
+  })
+
   // 防自发现强证:loopback 默认开,本实例发出的 announce 自己会收到;
   // 若 fingerprint 过滤失效,onDevice 会被自己的广播触发。用"另一个 socket 冒充
   // 相同 fingerprint 发包"来确认:相同 fingerprint 的报文一定被丢弃(而非碰巧没收到)。
