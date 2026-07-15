@@ -175,3 +175,34 @@ export async function cancelSession(target: SendTarget, sessionId: string): Prom
     // 尽力而为
   }
 }
+
+/** register 定向回应的超时(短:对方没起 HTTP 就快速放弃,不挂住发现) */
+const T_REGISTER_MS = 2000
+
+/**
+ * 双向发现"用法 A":收到对方多播 announce 后,向对方定向 `POST /register` 回应本机信息,
+ * 让对方也能发现我们(替代原 UDP 多播回应,定向 TCP 更可靠;见 docs/discovery-http-register-response.md)。
+ * **fire-and-forget**:超时/失败/解析异常一律静默返 null,绝不影响发现主流程。
+ * @returns 对方在响应体回的 DeviceInfo(可用于顺带刷新登记),失败返 null。
+ */
+export async function registerTo(
+  target: SendTarget,
+  selfInfo: DeviceInfo
+): Promise<DeviceInfo | null> {
+  try {
+    const res = await fetch(`${baseUrl(target)}${EP.register}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(selfInfo),
+      signal: AbortSignal.timeout(T_REGISTER_MS)
+    })
+    if (!res.ok) return null
+    const peer = (await res.json()) as DeviceInfo
+    // 校验最小字段,防对方回垃圾
+    return peer && typeof peer.fingerprint === 'string' && typeof peer.alias === 'string'
+      ? peer
+      : null
+  } catch {
+    return null // 对方没起 HTTP / 超时 / 网络错 / 响应非 JSON —— 静默
+  }
+}

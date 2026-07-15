@@ -38,7 +38,8 @@
 - `announce: true` = 主动广播;收到后对方应回应,回应方式二选一:
   1. 回一个 `announce: false` 的 UDP 报文(同字段),或
   2. 向对方 `POST /api/localsend/v2/register`。
-- Fallback:多播不可用时,HTTP POST `/api/localsend/v2/register` 到局域网各 IP。
+- **本项目实现选方式 2(HTTP 定向 register),不发方式 1(UDP 回应)**:多播回应常单向丢包,定向 TCP 更可靠(收到 announce=true → `registerTo` 对方,`multicast.ts` onRespond→`app-core.respondViaRegister`)。仍能**接收**别人发来的 announce=false(兼容官方客户端)。⚠️ **register 响应体省略 port,不能拿它刷新登记**(会用 DEFAULT_PORT 覆盖真实端口),对方登记只靠其 announce。详见 `docs/discovery-http-register-response.md`。
+- Fallback(用法 B,**本项目未实现**):多播完全不可用时,HTTP POST `/register` 到局域网各 IP 主动扫描发现。当前只做用法 A(定向回应),不扫网段。
 
 **传输握手(确认),端点前缀 `/api/localsend/v2/`:**
 1. `POST prepare-upload` — body = `{ info, files }`。`files` 是 `fileId -> 文件元数据` 的 map。

@@ -63,8 +63,11 @@ describe('MulticastDiscovery(集成)', () => {
     })
     running.push(a, b)
 
-    await a.start()
-    await b.start() // b 启动时 announce(true),a 应收到并回应
+    await a.start() // a announce(true) 一次(此时 b 未起,b 收不到)
+    await b.start() // b announce(true) → a 收到 → seenByA 得 FP_B
+    // 双向发现靠**双方各自的主动 announce**(真实运行时每 5s 心跳),不靠回应:
+    // 回应已改为 HTTP register(纯多播单测里不起 HTTP,故这里模拟 a 的下一次心跳)。
+    a.announce(true) // a 再广播一次 → b 收到 → seenByB 得 FP_A
 
     // A 应发现 B,B 应发现 A
     await waitFor(() => (seenByA.includes('FP_B') ? true : undefined))
@@ -73,6 +76,44 @@ describe('MulticastDiscovery(集成)', () => {
     // 防自发现:A 不应发现 FP_A,B 不应发现 FP_B(尽管 loopback 默认开)
     expect(seenByA).not.toContain('FP_A')
     expect(seenByB).not.toContain('FP_B')
+  })
+
+  test('收到 announce=true 触发 onRespond(用于 HTTP 定向回应);announce=false 不触发', async () => {
+    const responded: { fp: string; addr: string }[] = []
+    const a = new MulticastDiscovery({
+      selfFingerprint: 'FP_A',
+      buildAnnouncement: announcementFactory('Device-A', 'FP_A'),
+      onDevice: () => {},
+      onRespond: (info, address) => responded.push({ fp: info.fingerprint, addr: address }),
+      port: TEST_PORT,
+      multicastAddr: TEST_ADDR,
+      interfaceAddr: ''
+    })
+    running.push(a)
+    await a.start()
+
+    const { createSocket } = await import('node:dgram')
+    const s = createSocket({ type: 'udp4', reuseAddr: true })
+    await new Promise<void>((r) => s.bind(() => r()))
+    // 别人的主动广播(announce=true)→ 应触发 onRespond
+    s.send(
+      Buffer.from(JSON.stringify(announcementFactory('Peer', 'FP_PEER')(true))),
+      TEST_PORT,
+      TEST_ADDR
+    )
+    await waitFor(() => (responded.some((r) => r.fp === 'FP_PEER') ? true : undefined))
+
+    // 别人的回应(announce=false)→ 不应触发 onRespond(否则无限对回)
+    s.send(
+      Buffer.from(JSON.stringify(announcementFactory('PeerReply', 'FP_REPLY')(false))),
+      TEST_PORT,
+      TEST_ADDR
+    )
+    await new Promise((r) => setTimeout(r, 200))
+    s.close()
+
+    expect(responded.some((r) => r.fp === 'FP_PEER')).toBe(true)
+    expect(responded.some((r) => r.fp === 'FP_REPLY')).toBe(false)
   })
 
   // 防自发现强证:loopback 默认开,本实例发出的 announce 自己会收到;

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { randomBytes, createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { createHttpServer } from './http-server'
-import { sendFiles, sendText, cancelSession, type SendTarget } from './http-client'
+import { sendFiles, sendText, cancelSession, registerTo, type SendTarget } from './http-client'
 import { SessionManager } from './session'
 import type { DeviceInfo, PrepareUploadRequest } from '@shared/types'
 
@@ -326,5 +326,35 @@ describe('文件收发(集成)', () => {
     const f = makeFile('manual.bin', 1000)
     await sendFiles(target, selfInfo('S', 'FP'), [{ id: f.id, path: f.path }])
     expect(askCalled).toBe(true) // 关闭时必须询问
+  })
+
+  // 双向发现"用法 A":定向 POST /register 回应,拿回对方 info(替代 UDP 多播回应)
+  test('registerTo:定向 POST /register 成功 → 拿回对方 info,并触发对方 onRegister', async () => {
+    let registered: string | null = null
+    // 重建 server 以挂 onRegister(默认 setup 没挂)
+    await server.close()
+    server = createHttpServer({
+      sessions,
+      selfInfo: () => selfInfo('Receiver', 'FP_RECV'),
+      receiveDir: () => recvDir,
+      onPrepareAsk: (_id, req) => askImpl(req),
+      onSessionCancelled: () => cancelledCount++,
+      onTextMessage: (text) => receivedTexts.push(text),
+      shouldAutoAcceptFiles: (files) => autoAcceptImpl(files),
+      onRegister: (info) => (registered = info.fingerprint)
+    })
+    const address = await server.listen({ host: HOST, port: 0 })
+    target = { address: HOST, port: Number(new URL(address).port), protocol: 'http' }
+
+    const peer = await registerTo(target, selfInfo('Sender', 'FP_SEND'))
+    expect(peer?.fingerprint).toBe('FP_RECV') // 拿回对方(server)的 info
+    expect(registered).toBe('FP_SEND') // 对方 onRegister 收到我们的 fingerprint
+  })
+
+  test('registerTo:目标不可达 → 静默返 null,不抛', async () => {
+    // 连一个没人监听的端口(afterEach 会关真 server;这里直接指一个死端口)
+    const dead: SendTarget = { address: HOST, port: 1, protocol: 'http' }
+    const peer = await registerTo(dead, selfInfo('Sender', 'FP_SEND'))
+    expect(peer).toBeNull()
   })
 })

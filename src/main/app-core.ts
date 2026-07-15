@@ -12,7 +12,7 @@ import { MulticastDiscovery } from './discovery/multicast'
 import { DeviceRegistry } from './discovery/device-registry'
 import { SessionManager } from './transfer/session'
 import { createHttpServer } from './transfer/http-server'
-import { sendFiles, sendText, type SendTarget } from './transfer/http-client'
+import { sendFiles, sendText, registerTo, type SendTarget } from './transfer/http-client'
 import { ChatService } from './chat-service'
 import type { MessageStore } from './db/messages'
 import type { SettingsStore } from './settings'
@@ -98,6 +98,8 @@ export class AppCore {
         announce
       }),
       onDevice: (info, address) => this.handleDevice(info, address),
+      // 收到别人主动广播 → HTTP 定向 register 回应,让对方也发现我们(替代 UDP 多播回应)。
+      onRespond: (info, address) => this.respondViaRegister(info, address),
       port: this.multicastPort,
       interfaceAddr: opts.interfaceAddr
     })
@@ -126,6 +128,25 @@ export class AppCore {
       target: { address: dev.address, port: dev.port, protocol: dev.protocol },
       alias: dev.info.alias
     }
+  }
+
+  /**
+   * 收到对方主动广播时,向对方定向 `POST /register` 回应本机信息(替代 UDP 多播回应),
+   * 好让**对方**发现我们(对方的 server 收 /register 会登记我们)。fire-and-forget:失败静默
+   * (对方每 5s 还会 announce,天然有重试节奏)。
+   *
+   * ⚠️ **不用 register 响应体刷新我方登记**:LocalSend 协议规定 /register 响应体**省略 port**
+   * (http-server.ts 只回 alias/version/fingerprint…无 port)。若拿它 handleDevice,会用
+   * DEFAULT_PORT 覆盖掉我方已从 announce 拿到的对方真实端口 → 连错端口传输失败。
+   * 我方对对方的登记已由收到的 announce(onDevice→handleDevice,info 含正确 port)完成,无需再刷。
+   */
+  private respondViaRegister(info: DeviceInfo, address: string): void {
+    const target: SendTarget = {
+      address,
+      port: info.port ?? DEFAULT_PORT,
+      protocol: info.protocol ?? 'http'
+    }
+    void registerTo(target, this.selfInfo()) // 只为让对方发现我们;返回值忽略
   }
 
   private handleDevice(info: DeviceInfo, address: string): void {

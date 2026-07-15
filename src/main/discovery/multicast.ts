@@ -18,6 +18,12 @@ export interface MulticastOpts {
   buildAnnouncement: (announce: boolean) => Announcement
   /** 收到别的设备的报文(已过滤自己)。address 为报文来源 IP。 */
   onDevice: (info: DeviceInfo, address: string) => void
+  /**
+   * 收到别人的**主动广播**(announce=true)时触发,用于定向 HTTP register 回应,
+   * 让对方也能发现我们(替代原 UDP 多播回应)。address = 对方 IP。
+   * 只对 announce=true 触发(announce=false 是别人的回应,不再回,防无限对回)。
+   */
+  onRespond?: (info: DeviceInfo, address: string) => void
   /** 端口(默认 53317),测试可覆盖 */
   port?: number
   multicastAddr?: string
@@ -167,9 +173,11 @@ export class MulticastDiscovery {
     }
     this.opts.onDevice(info, address)
 
-    // 收到别人的主动广播 → 回应一次(announce:false),让对方也能发现我们(DESIGN §1.1)
+    // 收到别人的主动广播 → **HTTP 定向回应**(POST /register 到对方),让对方也能发现我们。
+    // 替代原 UDP 多播回应(announce:false):定向 TCP 比多播可靠。announce=false(别人的回应)
+    // 不再回,防无限对回。见 docs/discovery-http-register-response.md。
     if (msg.announce === true) {
-      this.announce(false)
+      this.opts.onRespond?.(info, address)
     }
   }
 
