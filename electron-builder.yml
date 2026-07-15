@@ -44,6 +44,15 @@ mac:
     - target: dmg
       arch: [arm64]           # 本机 M 芯片;需 Intel 再加 x64
   icon: build/icon.icns       # 应用图标(紫底 + 白色纸飞机,主色 #8a67ab)
+  # 加固运行时 + entitlements(签名时生效;Electron/V8 加固运行时必需)。
+  # 公证**不写在这里**(见下),避免 CI(无凭据)时误触发公证失败。
+  # CI:mac job 用 CSC_IDENTITY_AUTO_DISCOVERY:false → 无签名身份 → electron-builder 跳过签名,
+  # 这些字段对未签名构建无副作用。本地 pnpm dist:mac:钥匙串有 Developer ID → 自动签名。
+  hardenedRuntime: true                       # 公证前提:启用加固运行时
+  gatekeeperAssess: false                      # 打包时不本地跑 Gatekeeper 评估(交给公证)
+  entitlements: build/entitlements.mac.plist   # Electron/V8 加固运行时必需
+  entitlementsInherit: build/entitlements.mac.plist
+  # notarize:公证只在本地 dist:mac:sign 脚本里通过 env 开启(不硬编码,防 CI 误触发)
 
 dmg:
   artifactName: ${productName}-${version}.dmg

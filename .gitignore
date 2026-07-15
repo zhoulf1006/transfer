@@ -5,3 +5,6 @@ release/
 *.log
 .DS_Store
 *.tsbuildinfo
+# 本地签名/公证凭据(Apple ID、专用密码等),绝不提交
+.env.local
+.env.*.local
