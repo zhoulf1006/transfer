@@ -55,13 +55,19 @@ export function SendIcon(props: { size?: number }): JSX.Element {
   )
 }
 
-/** Lucide monitor(主题:跟随系统) */
-export function MonitorIcon(props: { size?: number }): JSX.Element {
+/** Lucide sun-moon(主题:跟随系统 —— 半太阳半月亮,表达随系统自动切换明暗) */
+export function SunMoonIcon(props: { size?: number }): JSX.Element {
   return (
     <Icon size={props.size}>
-      <rect width="20" height="14" x="2" y="3" rx="2" />
-      <line x1="8" x2="16" y1="21" y2="21" />
-      <line x1="12" x2="12" y1="17" y2="21" />
+      <path d="M12 2v2" />
+      <path d="M12 20v2" />
+      <path d="m4.9 4.9 1.4 1.4" />
+      <path d="m17.7 17.7 1.4 1.4" />
+      <path d="M2 12h2" />
+      <path d="M20 12h2" />
+      <path d="m6.3 17.7-1.4 1.4" />
+      <path d="m19.1 4.9-1.4 1.4" />
+      <path d="M12 8a2.83 2.83 0 0 0 4 4 4 4 0 1 1-4-4" />
     </Icon>
   )
 }
@@ -118,6 +124,16 @@ export function CameraIcon(props: { size?: number }): JSX.Element {
     <Icon size={props.size}>
       <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
       <circle cx="12" cy="13" r="3" />
+    </Icon>
+  )
+}
+
+/** Lucide inbox(已接收文件) */
+export function InboxIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
     </Icon>
   )
 }

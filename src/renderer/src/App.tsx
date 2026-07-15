@@ -12,7 +12,16 @@ import type {
   StorageDirs
 } from '@shared/ipc'
 import { ErrorBoundary } from './ErrorBoundary'
-import { MonitorIcon, SunIcon, MoonIcon, SettingsIcon, CameraIcon, PaperclipIcon } from './icons'
+import {
+  SunMoonIcon,
+  SunIcon,
+  MoonIcon,
+  SettingsIcon,
+  CameraIcon,
+  PaperclipIcon,
+  InboxIcon,
+  SendIcon
+} from './icons'
 
 /** 传输进度快照:messageId → 已传/总字节(不落库,仅内存) */
 type ProgressMap = Record<string, { sent: number; total: number }>
@@ -239,7 +248,7 @@ function Sidebar(props: {
   const online = devices.filter((d) => d.status !== 'offline')
   const offline = devices.filter((d) => d.status === 'offline')
   const themeIcon =
-    themePref === 'system' ? <MonitorIcon /> : themePref === 'light' ? <SunIcon /> : <MoonIcon />
+    themePref === 'system' ? <SunMoonIcon /> : themePref === 'light' ? <SunIcon /> : <MoonIcon />
   const themeLabel = themePref === 'system' ? '跟随系统' : themePref === 'light' ? '浅色' : '深色'
 
   const DeviceRow = (d: RemoteDevice): JSX.Element => {
@@ -294,7 +303,8 @@ function Sidebar(props: {
         onClick={onShowDownloads}
         style={{ ...S.downloadsEntry, ...(view === 'downloads' ? S.devItemActive : {}) }}
       >
-        📥 已接收文件
+        <InboxIcon size={16} />
+        已接收文件
       </div>
 
       <div style={S.devHeader}>在线 · {online.length}</div>
@@ -434,7 +444,7 @@ function Chat(props: {
           style={S.textarea}
         />
         <button className="tf-btn" onClick={sendText} disabled={!text.trim()} style={S.sendBtn}>
-          ➤
+          <SendIcon size={16} />
         </button>
       </div>
     </div>
