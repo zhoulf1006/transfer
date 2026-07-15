@@ -1,6 +1,6 @@
 # 发现回应改为 HTTP 定向 register(替代 UDP 多播回应)
 
-> 状态:**已实现**(typecheck/test 257/build 绿,待 dev 双机实测)。
+> 状态:**已实现并 dev 双机实测通过**(v0.5.1 发布;test 257/build 绿)。
 > 落地:`http-client.ts`(`registerTo`)、`multicast.ts`(deps.onRespond,去 UDP 回应)、`app-core.ts`(respondViaRegister)、测试(multicast onRespond + integration registerTo 成功/不可达)。
 > **实测/e2e 抓到的坑**:register 响应体省略 port,不能拿它刷新登记(见 §2.2 ⚠️)。
 > 背景:见复盘——纯多播发现脆弱,双向发现的"回应"跳走 UDP 多播,单向丢包/多播被过滤时对方发现不了我们。

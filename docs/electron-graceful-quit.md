@@ -96,8 +96,29 @@ taskkill /F /IM Transfer-x.x.x-portable.exe
 
 ---
 
+## 6. dev 模式的孤儿进程(另一类僵尸,机制/修法都不同)
+
+上面 §1–4 是**打包版退出**卡死变僵尸。**dev 模式**是另一条路径:`pnpm dev`(electron-vite dev)按 **Ctrl+C 后 electron app 不退、留在 Dock**,变孤儿,日积月累攒一堆(实测攒了 8 个,启动时间跨几天、父 PID 全被 launchd 收养成 1)。它们各自发心跳(多播/广播),干扰调试(抓包看到 N 份重复)。
+
+**根因**:electron-vite dev 用 `spawn(electron, {stdio:'inherit'})` 起 electron,只做 `ps.on('close', process.exit)`(electron 关→vite 退),**反向不成立**——vite 被 Ctrl+C 时**不 kill electron 子进程**。叠加 mac `window-all-closed` 不退出(打包版正确行为)→ electron 永留 Dock。
+
+**两个无效/有风险的弯路(别走)**:
+1. `process.on('SIGINT'/'SIGTERM', ()=>app.quit())` —— **无效**,Electron 吞信号,handler 根本不触发(实测)。
+2. 监听 `process.stdin` end/close 自杀 —— **有风险**,后台/无 tty 启动时 stdin 本就 end,electron 一起就自杀(实测复现)。
+
+**正解(`src/main/index.ts`,v0.5.3)**:dev 下(gated:`process.env['ELECTRON_RENDERER_URL']` 只有 dev 有)记 `process.ppid`(=vite),每秒 `process.kill(ppid, 0)`(信号0=只探测存活)探测;抛错=vite 没了 → `app.quit()`。仅 dev 生效,打包版不触发。
+```ts
+if (process.env['ELECTRON_RENDERER_URL']) {
+  const vitedPid = process.ppid
+  const w = setInterval(() => {
+    try { process.kill(vitedPid, 0) } catch { clearInterval(w); app.quit() }
+  }, 1000)
+}
+```
+验证:Ctrl+C 后 `ps aux | grep <app> | grep MacOS/Electron` 应清零。
+
 ## 5. 相关
 
-- 修复版本:v0.3.1(server.close 超时 + before-quit 兜底)、v0.3.2(第二实例 exit)
+- 修复版本:v0.3.1(server.close 超时 + before-quit 兜底)、v0.3.2(第二实例 exit)、**v0.5.3(dev 孤儿:父进程轮询)**
 - 单实例锁(v0.3.1):防重复启动堆积,但**治不了"关不掉"这个根因**,两者都需要。锁基于 userData 目录,`TRANSFER_USERDATA` 多实例测试因路径不同不受影响。
 - 退出竞态 `database is not open`:清理时先摘 store/core 引用置 null,让退出期到达的 IPC 走 `?.` 短路。

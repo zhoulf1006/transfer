@@ -12,7 +12,7 @@
 | 平台 | macOS + Windows | Electron 跨平台 |
 | 技术栈 | Electron + TypeScript + pnpm | |
 | 连接 | 局域网直连 | 无服务器/账号 |
-| **发现机制** | **UDP 多播,严格照 LocalSend 协议 v2** | `224.0.0.167:53317`,未来可与 LocalSend App 互通 |
+| **发现机制** | **UDP 多播 + 子网广播双通道**(LocalSend 协议 v2,回应用 HTTP 定向 register) | `224.0.0.167:53317` + 各网卡子网广播;可与 LocalSend App 互通;详见 §1.1 |
 | **传输加密** | **先 HTTP**(明文) | LocalSend 支持 http 模式;HTTPS 留待后续 |
 | **接收确认** | **弹框确认** | 收到 prepare-upload 时本机弹框,用户点了才收 |
 | 笔记存储 | 本地 Markdown 文件 | |

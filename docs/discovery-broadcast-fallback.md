@@ -1,6 +1,6 @@
 # 广播兜底(UDP broadcast,补多播之外的发现通道)
 
-> 状态:**已实现**(typecheck/test 267/build 绿,待 dev 实测)。
+> 状态:**已实现并实测生效**(v0.5.2 发布;test 267/build 绿)。tcpdump 抓到 `udp port 53317` 目标 `192.168.3.255`(子网广播)与 `224.0.0.167`(多播)交替发出,双通道确认工作。
 > 落地:`pick-interface.ts`(`subnetBroadcast`+`pickBroadcastTargets`,+10 测)、`multicast.ts`(start setBroadcast + 算 broadcastTargets;announce 发子网广播 + 广播发包测试)。
 > **实测坐实**:广播按目标地址路由,无需 setMulticastInterface(已去掉冗余);复用现有多播 socket 零冲突。
 > **已知小限制**:broadcastTargets 在 `start()` 时快照,运行中切换网络不更新(与既有 `joinedInterfaces` 同问题,非本次引入)。
