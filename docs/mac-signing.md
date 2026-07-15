@@ -1,9 +1,10 @@
 # macOS 签名 + 公证
 
-> 两条路径并存:
-> - **CI 签名(不公证)**:每次 push tag → CI 自动出**已签名**dmg(有开发者身份,但用户仍需右键打开)。见 §CI 签名。
-> - **本地签名 + 公证**:`pnpm dist:mac:sign` 出**已签名已公证**dmg(用户**双击即开**)。见 §本地公证。
-> 状态:两条都跑通实测(CI:codesign 有效 + `Unnotarized Developer ID`;本地:`Notarized Developer ID accepted`,quarantine 下仍 accepted)。
+> **CI 全自动,按 tag 名分两档**(都跑通实测):
+> - **普通 tag(如 `v0.5.5`)**→ CI 出**已签名**dmg(有开发者身份,用户仍需右键打开)。快。
+> - **`-release` 后缀 tag(如 `v0.5.5-release`)**→ CI 出**已签名已公证**dmg(用户**双击即开**)。慢(等 Apple 公证 2–30min)。
+> 本地 `pnpm dist:mac:sign` 也能出公证版(与 `-release` CI 等效)。
+> 实测:普通 tag `Unnotarized Developer ID`;`-release` tag / 本地 `Notarized Developer ID accepted`,quarantine 下仍 accepted。
 
 ## 签名 vs 公证(关键区别,决定用哪条)
 
@@ -11,15 +12,21 @@
 - **公证**:上传 Apple 审核盖章。**只有公证后**,从网络下载(带 quarantine)的 app 才双击即开。
 - macOS 10.15+ Gatekeeper 对下载的 app **只认公证**:没公证 = 拦,不管签没签名。所以"只签名不公证"用户体验 ≈ 不签名(都要右键)——签名带来的是内在身份,不是打开体验。
 
-## CI 签名(不公证)
+## CI 签名 / 公证(按 tag 分档)
 
-CI 的 mac job 用 GitHub Secrets 里的证书签名(electron-builder 自动导入 base64 证书)。**不公证**(公证要上传 Apple、耗时不可控 2min~30min,拖慢 CI)。
+CI mac job 用 GitHub Secrets 里的凭据,**按 tag 名分三档互斥**(build.yml):
+- **普通 tag** → `pnpm dist:mac`,只签名(用 CSC_LINK 自动导入证书)。
+- **`-release` 后缀 tag** → `pnpm dist:mac:sign`,签名+公证(额外传 Apple 凭据,开 `-c.mac.notarize=true`)。公证慢(2–30min),故只在正式版 tag 做。
+- **无证书 secret**(fork PR) → 未签名(`CSC_IDENTITY_AUTO_DISCOVERY: false`)。
 
-**GitHub Secrets**(仓库 Settings → Secrets and variables → Actions):
-| Secret | 值 |
+**GitHub Secrets**(5 个):
+| Secret | 用途 |
 |---|---|
-| `CSC_LINK` | Developer ID 证书 `.p12` 的 base64 |
-| `CSC_KEY_PASSWORD` | 导出 `.p12` 时设的密码 |
+| `CSC_LINK` | Developer ID 证书 `.p12` 的 base64(签名) |
+| `CSC_KEY_PASSWORD` | 导出 `.p12` 时设的密码(签名) |
+| `APPLE_ID` | Apple ID 邮箱(公证) |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App 专用密码(公证) |
+| `APPLE_TEAM_ID` | `RHQ28XS7D9`(公证) |
 
 **导出证书生成 base64**(一次性):
 ```bash
@@ -28,9 +35,16 @@ base64 -i /tmp/cert.p12 | pbcopy                            # → 存 CSC_LINK
 rm /tmp/cert.p12                                           # 用完删私钥!
 ```
 
-**workflow 关键坑(build.yml)**:空 `CSC_LINK=""`(fork PR/未建 secret)会被当"空路径证书"→ **构建失败**(实测)。故分**两个互斥 step**(job env `HAS_CSC` 判断):有 secret 走 signed step;无则走 unsigned step(`CSC_IDENTITY_AUTO_DISCOVERY: false`),根本不设 CSC_LINK。
+**发布用法**:
+- 快速迭代:`git tag v0.5.5 && git push origin v0.5.5` → CI 出**已签名**dmg。
+- 正式发布(双击即开):`git tag v0.5.5-release && git push origin v0.5.5-release` → CI 出**已签名已公证**dmg。
 
-**安全**:证书私钥(base64)上了 GitHub Secrets(加密,fork PR 读不到)。用个人 Apple ID 的**专用密码**非主密码,风险可控。要更安全可用专用 Apple ID。
+**workflow 关键坑(build.yml,均实测)**:
+1. 空 `CSC_LINK=""`(fork PR/未建 secret)会被当"空路径证书"→ **构建失败**。故三档互斥 step,无证书时根本不设 CSC_LINK。
+2. secret 不能在 step `if` 里直接读,提升到 **job env**(`HAS_CSC`/`HAS_APPLE`/`IS_RELEASE`)再判断。`IS_RELEASE = endsWith(github.ref, '-release')`。
+3. 三档 `if` 互斥且完备:缺 Apple 凭据 + `-release` tag → 降级到只签名(不崩)。
+
+**安全**:证书私钥(base64)+ Apple 凭据上了 GitHub Secrets(加密,fork PR 读不到)。用个人 Apple ID 的**专用密码**非主密码,风险可控。要更安全可用专用 Apple ID。
 
 ## 本地公证
 
