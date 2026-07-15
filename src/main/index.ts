@@ -336,6 +336,23 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
+// dev 下防僵尸:electron-vite 用 stdio:inherit 启动 electron,vite(Ctrl+C)退出后**不 kill**
+// electron → electron 变孤儿留 Dock(mac window-all-closed 不退)、累积僵尸。Electron 吞
+// SIGINT/SIGTERM(process.on 不触发,已实测),stdin 监听在后台/重定向启动时会误触发。故用
+// **轮询父进程存活**:vite 死 → 父进程(ppid)消失 → 本进程 quit。仅 dev(有 ELECTRON_RENDERER_URL)。
+if (process.env['ELECTRON_RENDERER_URL']) {
+  const vitedPid = process.ppid // 启动时的父进程 = electron-vite
+  const parentWatch = setInterval(() => {
+    try {
+      process.kill(vitedPid, 0) // 信号0:只探测存活,不真发信号;父在则不抛
+    } catch {
+      // 父进程(vite)没了 → 我们是孤儿 → 退出,避免留 Dock 变僵尸
+      clearInterval(parentWatch)
+      app.quit()
+    }
+  }, 1000)
+}
+
 // ④-C:Electron 不 await before-quit 的 async 回调,必须 preventDefault + 手动 quit,
 // 否则 stop()(含挂起 resolver reject/标 expired)和 store.close() 可能来不及执行。
 let quitting = false
