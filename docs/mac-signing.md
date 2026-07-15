@@ -1,10 +1,13 @@
 # macOS 签名 + 公证
 
-> **CI 全自动,按 tag 名分两档**(都跑通实测):
-> - **普通 tag(如 `v0.5.5`)**→ CI 出**已签名**dmg(有开发者身份,用户仍需右键打开)。快。
-> - **`-release` 后缀 tag(如 `v0.5.5-release`)**→ CI 出**已签名已公证**dmg(用户**双击即开**)。慢(等 Apple 公证 2–30min)。
-> 本地 `pnpm dist:mac:sign` 也能出公证版(与 `-release` CI 等效)。
-> 实测:普通 tag `Unnotarized Developer ID`;`-release` tag / 本地 `Notarized Developer ID accepted`,quarantine 下仍 accepted。
+> **CI 全自动,按 tag 名分档**(都跑通实测,一眼区分正式/迭代):
+> - **正式版 = 干净 tag(如 `v0.6.0`)**→ CI 出**已签名已公证**dmg(用户**双击即开**)+ GitHub **Latest**。慢(等 Apple 公证 2–30min)。
+> - **迭代版 = 预发布后缀 tag(`-beta`/`-rc`/`-alpha`/`-dev`,如 `v0.6.0-beta`)**→ CI 出**已签名未公证**dmg(右键打开)+ GitHub **Pre-release** 灰标。快。
+> 本地 `pnpm dist:mac:sign` 也能出公证版(与正式 tag CI 等效)。
+> 实测:干净 tag `Notarized Developer ID accepted`(quarantine 下仍 accepted)+ Latest;预发布 tag `Unnotarized`+ Pre-release。
+>
+> **发布用法**:正式版 `git tag v0.6.0 && git push origin v0.6.0`;迭代版 `git tag v0.6.0-beta && git push origin v0.6.0-beta`。
+> ⚠️ 干净 tag 会公证 → 每次正式发版 CI 变慢(等 Apple)。快速迭代请用预发布后缀。
 
 ## 签名 vs 公证(关键区别,决定用哪条)
 
@@ -15,8 +18,8 @@
 ## CI 签名 / 公证(按 tag 分档)
 
 CI mac job 用 GitHub Secrets 里的凭据,**按 tag 名分三档互斥**(build.yml):
-- **普通 tag** → `pnpm dist:mac`,只签名(用 CSC_LINK 自动导入证书)。
-- **`-release` 后缀 tag** → `pnpm dist:mac:sign`,签名+公证(额外传 Apple 凭据,开 `-c.mac.notarize=true`)。公证慢(2–30min),故只在正式版 tag 做。
+- **干净 tag(正式版)** → `pnpm dist:mac:sign`,签名+公证(传 Apple 凭据,开 `-c.mac.notarize=true`)+ Latest。公证慢(2–30min)。
+- **预发布后缀 tag(`-beta`/`-rc`/`-alpha`/`-dev`,迭代版)** → `pnpm dist:mac`,只签名 + GitHub Pre-release。快。
 - **无证书 secret**(fork PR) → 未签名(`CSC_IDENTITY_AUTO_DISCOVERY: false`)。
 
 **GitHub Secrets**(5 个):
@@ -36,13 +39,14 @@ rm /tmp/cert.p12                                           # 用完删私钥!
 ```
 
 **发布用法**:
-- 快速迭代:`git tag v0.5.5 && git push origin v0.5.5` → CI 出**已签名**dmg。
-- 正式发布(双击即开):`git tag v0.5.5-release && git push origin v0.5.5-release` → CI 出**已签名已公证**dmg。
+- 正式版(双击即开 + Latest):`git tag v0.6.0 && git push origin v0.6.0` → CI 出**已签名已公证**dmg。
+- 迭代版(右键打开 + Pre-release):`git tag v0.6.0-beta && git push origin v0.6.0-beta`(或 `-rc`/`-alpha`/`-dev`)→ **已签名未公证**dmg。
 
 **workflow 关键坑(build.yml,均实测)**:
 1. 空 `CSC_LINK=""`(fork PR/未建 secret)会被当"空路径证书"→ **构建失败**。故三档互斥 step,无证书时根本不设 CSC_LINK。
-2. secret 不能在 step `if` 里直接读,提升到 **job env**(`HAS_CSC`/`HAS_APPLE`/`IS_RELEASE`)再判断。`IS_RELEASE = endsWith(github.ref, '-release')`。
-3. 三档 `if` 互斥且完备:缺 Apple 凭据 + `-release` tag → 降级到只签名(不崩)。
+2. secret 不能在 step `if` 里直接读,提升到 **job env**(`HAS_CSC`/`HAS_APPLE`/`IS_PRERELEASE`)再判断。`IS_PRERELEASE = endsWith(github.ref, '-beta'|'-rc'|'-alpha'|'-dev')`。
+3. 三档 `if` 互斥且完备:缺 Apple 凭据 + 干净 tag → 降级到只签名(不崩)。
+4. Pre-release 标记:两个 publish step(win/mac)的 `prerelease:` 字段同一表达式,对同 tag 一致。
 
 **安全**:证书私钥(base64)+ Apple 凭据上了 GitHub Secrets(加密,fork PR 读不到)。用个人 Apple ID 的**专用密码**非主密码,风险可控。要更安全可用专用 Apple ID。
 
