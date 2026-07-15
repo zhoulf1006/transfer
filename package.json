@@ -1,6 +1,6 @@
 {
   "name": "transfer",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "跨平台局域网工具:文件传送 + 截屏 + 笔记(MVP:文件传送)",
   "main": "./out/main/index.js",
   "type": "module",
