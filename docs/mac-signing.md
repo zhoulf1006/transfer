@@ -87,7 +87,7 @@ pnpm dist:mac:sign
 ## 验证(每次打完可跑一遍)
 
 ```bash
-APP="release/<version>/mac-arm64/Transfer.app"
+APP="release/<version>/mac-universal/Transfer.app"    # universal(arm64+x64);lipo -info 应见 x86_64 arm64
 codesign --verify --deep --strict --verbose=2 "$APP"        # valid on disk
 codesign -dv --verbose=4 "$APP" 2>&1 | grep Authority        # Developer ID: Longfei Zhou
 spctl --assess --type execute --verbose "$APP"               # accepted / Notarized Developer ID ← 最关键
@@ -106,4 +106,4 @@ rm -rf /tmp/t.app
 - **dmg 外壳本身未装订公证票据**(`stapler validate <dmg>` 会 rejected),这**正常**:公证的是里面的 `.app`。用户拖 app 到 Applications 双击即可,Gatekeeper 检查 app 不检查 dmg。若要 dmg 也装订,可加 `afterAllArtifactBuild` staple 步骤(非必需)。
 - **每个版本都要单独公证**(Apple 盖章绑定该版本二进制),没有"一次公证全版本通用"。
 - 公证偶尔慢(Apple 侧排队),`dist:mac:sign` 会等到 `notarization successful` 才继续。
-- 只出 arm64(Apple Silicon)。需 Intel 用户则 mac.target 加 x64,分别签名公证。
+- 出 **universal** dmg(`arch: [universal]`):单个胖二进制同时含 arm64+x64,Apple Silicon 与 Intel 都原生运行(无 Rosetta),用户下唯一一个包双击即开。合并成一个 `.app` → 只签名公证**一次**(不翻倍)。dmg 名 `Transfer-<version>-universal.dmg`(`${arch}` 占位符必需,否则多架构同名覆盖)。

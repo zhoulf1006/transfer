@@ -42,7 +42,7 @@ mac:
   category: public.app-category.utilities
   target:
     - target: dmg
-      arch: [arm64]           # 本机 M 芯片;需 Intel 再加 x64
+      arch: [universal]       # 单个胖二进制:arm64+x64 通吃,用户下唯一一个包双击即开
   icon: build/icon.icns       # 应用图标(紫底 + 白色纸飞机,主色 #8a67ab)
   # 加固运行时 + entitlements(签名时生效;Electron/V8 加固运行时必需)。
   # 公证**不写在这里**(见下),避免 CI(无凭据)时误触发公证失败。
@@ -55,4 +55,5 @@ mac:
   # notarize:公证只在本地 dist:mac:sign 脚本里通过 env 开启(不硬编码,防 CI 误触发)
 
 dmg:
-  artifactName: ${productName}-${version}.dmg
+  # ${arch} 必需:多架构时无它会同名互相覆盖(electron-builder 不自动加后缀)。universal → -universal 后缀
+  artifactName: ${productName}-${version}-${arch}.dmg
