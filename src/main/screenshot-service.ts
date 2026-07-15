@@ -37,6 +37,15 @@ export function shouldStartSession(state: ShotState, capturing: boolean): boolea
   return state === 'idle' && !capturing
 }
 
+/**
+ * endSession 是否应恢复(showInactive)主窗(§4.5,纯函数便于单测)。
+ * 仅当本次会话隐过主窗(mainHidden)、主窗仍存在、且当前处于隐藏态时才恢复——
+ * 避免把从未隐过/已被用户/其它路径显示的主窗错误地再 show 一次。
+ */
+export function shouldRestoreMain(mainHidden: boolean, winExists: boolean, winVisible: boolean): boolean {
+  return mainHidden && winExists && !winVisible
+}
+
 export interface ScreenshotDeps {
   /** dev 时的 renderer origin(ELECTRON_RENDERER_URL),prod 为 undefined */
   rendererUrl?: string
@@ -49,7 +58,13 @@ export interface ScreenshotDeps {
   sentImagesDir: string
   /** 发文件到聊天(复用现有链路,注入解耦 AppCore)。fire-and-forget,内部管临时文件清理 */
   sendFiles: (peerFp: string, filePaths: string[]) => Promise<void>
+  /** 取主窗引用(聊天区截图按钮触发时,截图前隐藏、截完恢复);无主窗返回 null。 */
+  getMainWindow: () => BrowserWindow | null
 }
+
+/** hide→抓屏之间等合成器出一帧的毫秒数(§4.5)。hide() 同步返回但窗口异步消失,
+ *  同 tick 立刻抓屏会截到残影(macOS 尤甚,走 occlusion 路径),故等一帧。实测 200ms 足够。 */
+const HIDE_SETTLE_MS = 200
 
 export class ScreenshotService {
   private overlay: BrowserWindow | null = null
@@ -68,6 +83,8 @@ export class ScreenshotService {
   private dimWindows: BrowserWindow[] = []
   /** 当前已注册的截图快捷键(accelerator);rebind/stop 精确注销用,null=未注册 */
   private currentAccel: string | null = null
+  /** 本次会话是否为"截图按钮触发"而隐藏了主窗(仅此时 endSession 才 showInactive 恢复) */
+  private mainHidden = false
 
   constructor(private readonly deps: ScreenshotDeps) {}
 
@@ -127,14 +144,20 @@ export class ScreenshotService {
     return false
   }
 
-  /** F1 回调:仅 idle 启动;非 idle 一律忽略(§4.2 F1 守卫)。 */
+  /** F1 回调:仅 idle 启动;非 idle 一律忽略(§4.2 F1 守卫)。F1 不隐主窗(主窗本就可能不在前台)。 */
   private onShortcut(): void {
     if (!shouldStartSession(this.state, this.capturing)) return
-    void this.beginSession()
+    void this.beginSession(false)
   }
 
-  // ── 会话开始(§4.2:先查权限 → 先抓屏 → setBounds → show)──
-  private async beginSession(): Promise<void> {
+  /** 聊天区截图按钮回调:与 F1 同守卫,但截图前隐藏主窗、截完恢复。 */
+  private onButtonCapture(): void {
+    if (!shouldStartSession(this.state, this.capturing)) return
+    void this.beginSession(true)
+  }
+
+  // ── 会话开始(§4.2:先查权限 →[隐主窗]→ 先抓屏 → setBounds → show)──
+  private async beginSession(hideMain: boolean): Promise<void> {
     this.capturing = true
     this.state = 'capturing'
     try {
@@ -143,6 +166,8 @@ export class ScreenshotService {
         this.endSession()
         return
       }
+      // ①.5 截图按钮触发:抓屏前隐藏主窗,等一帧让它真正从屏幕消失(否则截到残影,§4.5)。
+      if (hideMain) await this.hideMainWindow()
       // ② 选光标屏 → 先抓屏拿干净位图(此时屏上无本 app 可见窗,防自截,§4.5)。
       const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
       const source = await this.capture(display)
@@ -162,6 +187,19 @@ export class ScreenshotService {
     } finally {
       this.capturing = false
     }
+  }
+
+  /**
+   * 截图前隐藏主窗(§4.5):hide() 同步返回但窗口异步从屏幕消失,故等 HIDE_SETTLE_MS
+   * 让合成器出一帧,再由调用方抓屏,避免截到主窗残影。仅当主窗存在且可见时才隐;
+   * 置 mainHidden 让 endSession 据此恢复。
+   */
+  private async hideMainWindow(): Promise<void> {
+    const win = this.deps.getMainWindow()
+    if (!win || win.isDestroyed() || !win.isVisible()) return
+    win.hide()
+    this.mainHidden = true
+    await new Promise((resolve) => setTimeout(resolve, HIDE_SETTLE_MS))
   }
 
   /**
@@ -233,7 +271,15 @@ export class ScreenshotService {
     }
     for (const w of this.dimWindows) if (!w.isDestroyed()) w.destroy()
     this.dimWindows = []
-    // 注:不主动 hide/focus 主窗——从头到尾不碰主窗层叠,它本在哪层就还在哪层,自然"不抢最前"。
+    // 截图按钮触发时隐过主窗:统一在此恢复(正常出口/取消/异常/权限失败都经 endSession,
+    // 保证隐过的主窗必被恢复,不会永久消失)。showInactive 不抢焦点(§4.5,用户所选)。
+    const win = this.deps.getMainWindow()
+    const winExists = win !== null && !win.isDestroyed()
+    if (shouldRestoreMain(this.mainHidden, winExists, winExists && win!.isVisible())) {
+      win!.showInactive()
+    }
+    this.mainHidden = false
+    // 注:F1 路径不隐主窗——从头到尾不碰主窗层叠,它本在哪层就还在哪层,自然"不抢最前"。
     // (macOS 无法精确记录/恢复窗口全局层叠顺序,故不做"回到原位置",只保证不主动扰动。)
   }
 
@@ -348,6 +394,8 @@ export class ScreenshotService {
   // ── IPC(overlay → main)──
   private registerIpc(): void {
     ipcMain.handle(SHOT_CMD.cancel, () => this.endSession())
+    // 聊天区截图按钮触发:隐主窗再截图(与 F1 同守卫,防重入)。
+    ipcMain.handle(SHOT_CMD.beginFromMain, () => this.onButtonCapture())
     // overlay 进会话后拉背景 + display 信息(§4.3)。
     ipcMain.handle(SHOT_CMD.getShot, () => this.pending)
 

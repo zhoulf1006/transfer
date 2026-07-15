@@ -2,7 +2,12 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { shouldStartSession, persistAndSend, type ShotState } from './screenshot-service'
+import {
+  shouldStartSession,
+  shouldRestoreMain,
+  persistAndSend,
+  type ShotState
+} from './screenshot-service'
 
 // F1 守卫(§4.2):仅 idle 且无抓屏 in-flight 才启动新截图会话。
 describe('shouldStartSession — F1 守卫', () => {
@@ -22,6 +27,26 @@ describe('shouldStartSession — F1 守卫', () => {
       expect(shouldStartSession(state, true)).toBe(false)
     }
   )
+})
+
+// 隐主窗恢复守卫(§4.5):截图按钮触发时隐过主窗,endSession 才恢复。
+// 覆盖:未隐过不恢复、隐过且当前隐藏才恢复、主窗已被其它路径显示则不再 show、无主窗不崩。
+describe('shouldRestoreMain — 隐主窗恢复守卫', () => {
+  it('本次隐过主窗 + 主窗存在 + 当前隐藏 → 恢复', () => {
+    expect(shouldRestoreMain(true, true, false)).toBe(true)
+  })
+
+  it('本次未隐主窗(F1 路径)→ 不恢复(即使主窗恰好隐藏,也不是我们隐的)', () => {
+    expect(shouldRestoreMain(false, true, false)).toBe(false)
+  })
+
+  it('隐过但主窗已不存在(被关闭)→ 不恢复(避免访问已销毁窗口)', () => {
+    expect(shouldRestoreMain(true, false, false)).toBe(false)
+  })
+
+  it('隐过但主窗当前已可见(已被别的路径显示)→ 不重复 show', () => {
+    expect(shouldRestoreMain(true, true, true)).toBe(false)
+  })
 })
 
 // 截图"发到聊天"的原图落盘策略(§4.2):成功保留原图(否则发送端缩略图读空文件→回退图标,

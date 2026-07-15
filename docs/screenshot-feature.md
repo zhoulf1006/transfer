@@ -334,7 +334,7 @@ interface ShotSceneState {
 | 高 DPI 裁剪贴边越界 | **角点取整+作差**:sx=round(x·ratioX)、ex=round((x+w)·ratioX)、sw=ex-sx(y 同理),再 clamp `sw=min(sw,bitmapW-sx)`,保证不越界;裁剪原点 floor、右下 ceil 确保完整包含选区。列为可单测纯函数 |
 | 单一缩放真源 | 所有逻辑↔物理换算只认 ShotSource.ratioX/Y;渲染层**不用 `window.devicePixelRatio` 做几何/采样**(仅标注层线条锐化用);每次 shotShow 以本次 ShotSource 重建 canvas 尺寸,不留旧屏 dpr |
 | 屏幕旋转 rotation≠0 | ShotSource 透传 rotation;第一版检测到旋转走 scaleFactor 兜底或明确提示不支持,别用单 ratio 掩盖 |
-| 自截(拍到本 app 窗) | **先抓屏拿干净位图、再 show 遮罩**;主聊天窗在会话期是否隐藏一并处理(抓屏瞬间屏上无本 app 可见窗) |
+| 自截(拍到本 app 窗) | **先抓屏拿干净位图、再 show 遮罩**(抓屏瞬间屏上无本 app 可见窗)。**F1 路径不隐主窗**(主窗本就可能不在前台);**聊天区截图按钮路径隐主窗**:`beginSession(hideMain=true)` 抓屏前 `win.hide()` + 等 `HIDE_SETTLE_MS`(200ms,实测足够;hide 异步生效,同 tick 抓屏会截到残影,macOS 尤甚),截完 endSession 用 `showInactive` 恢复(不抢焦点) |
 | 选区为空/过小 | w 或 h < 有效阈值 → 不出工具条/不导出;锚点隐藏阈值独立(短边<40px 隐角锚、<20px 全隐但保留整块拖动),隐藏后仍可键盘微调 |
 | 原图命名撞名 | 文件名 `截图_<stamp>_<randomUUID().slice(0,8)>.png`,uuid8 后缀保证唯一,绝不只用秒级时间戳(防同秒连拍覆盖) |
 | 原图落盘/清理 | 写 `userData/sent-images/`(**持久**,非 temp);`persistAndSend`:成功保留(发送端缩略图/看大图靠 `filePath` 读原图)、**仅失败** `unlink` 删副本。~~早期 `finally` 无条件删 → 发送端缩略图读空文件回退图标的 bug,已修~~ |
@@ -393,7 +393,7 @@ interface ShotSceneState {
 |---|------|--------|-------------------|
 | 1 | **遮罩窗不用 `type:'panel'`** | §3.2 建议 panel 浮在全屏 app 上 | panel 会把 mac activation policy 降到 accessory → **Dock 图标消失且不回来**。去掉 panel + `setVisibleOnAllWorkspaces`;保留 `screen-saver` level 盖 Dock。代价:不能在别 app 原生全屏上截图 |
 | 2 | **保存对话框 `dialogBusy` 抑制失焦取消** | §4 未涉及 | 遮罩 blur→endSession 会在对话框弹出瞬间把遮罩收掉、对话框随之消失。加 `dialogBusy` 标志:对话框期间 blur 不触发 endSession。对话框以遮罩窗为父级、`finally` 里 endSession |
-| 3 | **完成后不主动 hide/focus 主窗** | §4 未涉及 | 一致性:截图前 app 在后台,复制/保存/发聊天完成后不该把主窗抢到最前。从头到尾不碰主窗层叠(macOS 无 API 精确恢复 z-order,只保证不主动扰动)。**去掉了曾试的 `app.focus({steal})` 和 `app.hide()`** |
+| 3 | **F1 路径完成后不主动 hide/focus 主窗** | §4 未涉及 | 一致性:F1 截图前 app 可能在后台,复制/保存/发聊天完成后不该把主窗抢到最前。F1 路径从头到尾不碰主窗层叠(macOS 无 API 精确恢复 z-order,只保证不主动扰动)。**去掉了曾试的 `app.focus({steal})`**。注:**聊天区截图按钮路径**是例外——它主动 `hide()` 主窗(用户从聊天界面点截图,期望界面让开),截完 `showInactive` 恢复(不抢焦点)。判定见纯函数 `shouldRestoreMain` |
 | 4 | **`EVT.shotHide` 复位信号** | §4.7 只提 shotId remount | 遮罩窗 hide 复用,overlay 的 `shot` 状态不清 → 下次 F1 先闪上次选区框。endSession 里 hide 前发 `shotHide`→overlay `setShot(null)`;onShow 里也先清 |
 | 5 | **浮层 UI 必须 `stopPropagation`** | §4.7 未写 | 工具条/颜色板贴在选区外,pointerdown 冒泡到 root 的框选处理 → 清空选区(复制/保存失效、遮罩不收)。所有浮层容器 `onPointerDown/onContextMenu` stopPropagation |
 | 6 | **文字 textarea 聚焦机制** | §3.3 只说"叠加 textarea" | ① `onBlur` 提交会被"框刚现的假失焦"误触发→空提交关框:去掉 blur 提交,改 Enter/Esc/pointerdown 提交。② 聚焦 effect 依赖 boolean 时连续开框不重跑:引入 `textEditKey` 自增 + rAF 聚焦 |

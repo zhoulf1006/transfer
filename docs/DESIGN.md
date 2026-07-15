@@ -500,6 +500,7 @@ settings.ts            # 自动接收开关+阈值(持久化,复用 identity.jso
 渲染→主:
 - `message:sendText { peerFp, text }` — 发文本
 - `message:sendFiles { peerFp, filePaths }` — 发文件(替代旧 transfer:send)
+- `message:sendImage { peerFp, png }` — 发内存图片(png 字节):main 落盘为 `sent-images/图片_<ts>_<uuid8>.png` 持久副本后复用 `persistAndSend`+`sendFiles`(与截图发聊天同链路)。粘贴发图用
 - `message:respond { transferId, accept }` — 聊天流内接收/拒绝
 - `message:list { limit, before }` — 拉历史(分页)
 - `message:openFile { messageId }` — `shell.openPath` 用默认程序打开已落盘文件(仅图片右键"用系统程序打开"用)
@@ -587,6 +588,7 @@ settings.ts            # 自动接收开关+阈值(持久化,复用 identity.jso
 - preload:`getDroppedPaths(files: File[]): string[]` = `files.map(webUtils.getPathForFile).filter(非空串)`。
 - **关键坑(实测坐实)**:`File.path` 在 Electron 32 已移除;`webUtils.getPathForFile` **必须在 preload 对原始 `e.dataTransfer.files` 的 File 调用**——重建/克隆/过 IPC 传 File 会丢磁盘背书 → 返回空串。故 preload 当场把 File[]→string[],只过 string[]。`dragover` **必须 `preventDefault()`** 否则 drop 不触发。
 - renderer:Chat 聊天流区 `onDragOver`(preventDefault + 高亮)+ `onDragLeave`(`currentTarget===target` 才取消高亮,避免子元素间移动误清)+ `onDrop`(`Array.from(dataTransfer.files)` → `getDroppedPaths` → `sendFiles`)。
+- renderer:输入框 textarea `onPaste` 粘贴图片直接发送:`pickImageItemIndices`(纯函数,`@shared/clipboard-image`,判 `kind==='file' && type` 以 `image/` 开头)挑出图片项 → `getAsFile` → `arrayBuffer` → `Uint8Array` → `sendImage`。含图片才 `preventDefault`(否则放行正常文本粘贴);多图全发。
 
 ### 12.5 需求3:下载列表
 
@@ -609,7 +611,7 @@ settings.ts            # 自动接收开关+阈值(持久化,复用 identity.jso
 ### 12.7 验收
 
 1. 设备离线后变灰置底,`OFFLINE_KEEP_MS` 后消失;重新上线回到在线组。
-2. 拖文件到聊天区 → 发送(等价于点📎选文件)。
+2. 拖文件到聊天区 → 发送(等价于点附件按钮选文件)。
 3. 传输中文件气泡显示递增百分比进度条,done 后隐藏。
 4. 下载列表面板列出所有已接收文件(名/大小/时间/发送人),点"打开"能打开。
 

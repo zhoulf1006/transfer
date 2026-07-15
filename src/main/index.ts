@@ -1,5 +1,6 @@
 import { join, basename, extname } from 'node:path'
 import { copyFile, readFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, nativeTheme, protocol } from 'electron'
 import {
   CMD,
@@ -7,6 +8,7 @@ import {
   SHOT_CMD,
   type SendTextArgs,
   type SendFilesArgs,
+  type SendImageArgs,
   type RespondArgs,
   type ListMessagesArgs,
   type AutoAcceptSettings,
@@ -20,7 +22,7 @@ import { loadOrCreateIdentity, saveAlias } from './device-identity'
 import { AppCore } from './app-core'
 import { MessageStore } from './db/messages'
 import { SettingsStore } from './settings'
-import { ScreenshotService } from './screenshot-service'
+import { ScreenshotService, persistAndSend } from './screenshot-service'
 import { APP_HOST, registerAppProtocol } from './app-protocol'
 
 // 统一 userData 目录名:dev(未打包)默认读 package.json name='transfer'(小写),
@@ -153,6 +155,16 @@ function registerIpc(): void {
   })
   ipcMain.handle(CMD.sendFiles, async (_e, args: SendFilesArgs) => {
     await core?.chat.sendFiles(args.peerFp, args.filePaths)
+  })
+  // 粘贴/内存图片发送:落盘为持久 png 副本(命名唯一,防撞名)后走 sendFiles 链路(入库/推 UI/串行化)。
+  // 复用截图那套 persistAndSend:成功保留原图(缩略图/看大图靠 filePath 读盘)、失败删副本。
+  ipcMain.handle(CMD.sendImage, async (_e, args: SendImageArgs) => {
+    if (!core) return
+    const fileName = `图片_${Date.now()}_${randomUUID().slice(0, 8)}.png`
+    const dir = join(app.getPath('userData'), 'sent-images') // 与截图 sentImagesDir 同源(index.ts 处)
+    await persistAndSend(dir, fileName, Buffer.from(args.png), async (p) => {
+      await core!.chat.sendFiles(args.peerFp, [p])
+    })
   })
   ipcMain.handle(CMD.respond, (_e, args: RespondArgs) => {
     core?.chat.respond(args.transferId, args.accept)
@@ -309,6 +321,8 @@ app.whenReady().then(async () => {
     preload: PRELOAD,
     sentImagesDir: join(userData, 'sent-images'),
     getShortcut: () => settings!.getShortcutCapture(),
+    // 聊天区截图按钮触发时,截图前隐藏主窗、截完恢复(F1 路径不用,主窗本就可能不在前台)
+    getMainWindow: () => mainWindow,
     // 复用现有聊天发送链路(§3.4:必须走 core.chat.sendFiles 才入库/推 UI/串行化)
     sendFiles: async (peerFp, filePaths) => {
       await core!.chat.sendFiles(peerFp, filePaths)

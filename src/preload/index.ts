@@ -5,6 +5,7 @@ import {
   SHOT_CMD,
   type SendTextArgs,
   type SendFilesArgs,
+  type SendImageArgs,
   type RespondArgs,
   type ListMessagesArgs,
   type AutoAcceptSettings,
@@ -33,6 +34,8 @@ const api = {
   // 聊天
   sendText: (args: SendTextArgs): Promise<void> => ipcRenderer.invoke(CMD.sendText, args),
   sendFiles: (args: SendFilesArgs): Promise<void> => ipcRenderer.invoke(CMD.sendFiles, args),
+  /** 发送剪贴板/内存里的图片(png 字节):main 落盘持久副本后走 sendFiles 链路 */
+  sendImage: (args: SendImageArgs): Promise<void> => ipcRenderer.invoke(CMD.sendImage, args),
   respond: (args: RespondArgs): Promise<void> => ipcRenderer.invoke(CMD.respond, args),
   listMessages: (args?: ListMessagesArgs): Promise<UiMessage[]> =>
     ipcRenderer.invoke(CMD.listMessages, args),
@@ -77,6 +80,9 @@ const api = {
   /** 主窗当前聊天对象变化时同步给 main(决定截图"发聊天"可用性) */
   setShotActivePeer: (peerFp: string | null): Promise<void> =>
     ipcRenderer.invoke(SHOT_CMD.setActivePeer, peerFp),
+
+  /** 聊天区截图按钮:触发一次截图会话(main 隐藏主窗再抓屏,与 F1 等效) */
+  beginShot: (): Promise<void> => ipcRenderer.invoke(SHOT_CMD.beginFromMain),
 
   shot: {
     /** overlay 拉背景位图 + display 信息 + 有无 peer(会话未就绪时为 null) */

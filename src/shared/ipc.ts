@@ -61,6 +61,8 @@ export const CMD = {
   // 聊天
   sendText: 'message:sendText',
   sendFiles: 'message:sendFiles',
+  /** 发送剪贴板/内存里的图片(png buffer):main 落盘持久副本后走 sendFiles 链路 */
+  sendImage: 'message:sendImage',
   respond: 'message:respond',
   listMessages: 'message:list',
   listReceivedFiles: 'message:listReceivedFiles',
@@ -100,6 +102,8 @@ export type ThemePref = 'system' | 'light' | 'dark'
 export const SHOT_CMD = {
   /** 主窗 setPeer 时同步当前 peerFp|null 给 main 缓存(决定"发聊天"可用性) */
   setActivePeer: 'shot:setActivePeer',
+  /** 主窗 → main:从聊天区截图按钮触发一次会话(隐藏主窗再抓屏,与 F1 走同一守卫) */
+  beginFromMain: 'shot:beginFromMain',
   /** overlay 拉背景位图 + display 信息 + 有无当前 peer(返回 ShotSource) */
   getShot: 'shot:getShot',
   /** (pngBuffer) → void;写进系统剪贴板(不落盘) */
@@ -154,6 +158,12 @@ export interface SendTextArgs {
 export interface SendFilesArgs {
   peerFp: string
   filePaths: string[]
+}
+
+export interface SendImageArgs {
+  peerFp: string
+  /** PNG 字节(结构化克隆过 IPC);main 落盘为持久 png 副本后走 sendFiles 发送 */
+  png: Uint8Array
 }
 
 export interface RespondArgs {

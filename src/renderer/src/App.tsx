@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import type { RemoteDevice } from '@shared/types'
 import { isImageFile } from '@shared/ipc'
+import { pickImageItemIndices } from '@shared/clipboard-image'
 import { eventToAccelerator, acceleratorRejectReason } from '@shared/accelerator'
 import { shouldCountUnread } from '@shared/unread'
 import type {
@@ -11,6 +12,7 @@ import type {
   StorageDirs
 } from '@shared/ipc'
 import { ErrorBoundary } from './ErrorBoundary'
+import { MonitorIcon, SunIcon, MoonIcon, SettingsIcon, CameraIcon, PaperclipIcon } from './icons'
 
 /** 传输进度快照:messageId → 已传/总字节(不落库,仅内存) */
 type ProgressMap = Record<string, { sent: number; total: number }>
@@ -236,7 +238,8 @@ function Sidebar(props: {
   const { identity, devices, peer, view, unread, themePref, onCycleTheme, onPick, onShowDownloads, onOpenSettings } = props
   const online = devices.filter((d) => d.status !== 'offline')
   const offline = devices.filter((d) => d.status === 'offline')
-  const themeIcon = themePref === 'system' ? '◐' : themePref === 'light' ? '☀' : '☾'
+  const themeIcon =
+    themePref === 'system' ? <MonitorIcon /> : themePref === 'light' ? <SunIcon /> : <MoonIcon />
   const themeLabel = themePref === 'system' ? '跟随系统' : themePref === 'light' ? '浅色' : '深色'
 
   const DeviceRow = (d: RemoteDevice): JSX.Element => {
@@ -280,7 +283,7 @@ function Sidebar(props: {
             {themeIcon}
           </button>
           <button className="tf-icon-btn" onClick={onOpenSettings} title="设置" style={S.iconBtn}>
-            ⚙
+            <SettingsIcon />
           </button>
         </div>
       </div>
@@ -362,6 +365,26 @@ function Chat(props: {
     [sendPaths]
   )
 
+  // 粘贴剪贴板图片直接发送:仅当粘贴内容含图片时接管(preventDefault),否则放行正常文本粘贴。
+  // 剪贴板可能含多张图 → 全部发送。图片经 File→ArrayBuffer→Uint8Array 过 IPC(同 overlay 导出范例)。
+  const onPaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const items = Array.from(e.clipboardData.items)
+      const imgs = pickImageItemIndices(items)
+        .map((i) => items[i].getAsFile())
+        .filter((f): f is File => f !== null)
+      if (imgs.length === 0) return // 非图片:放行默认文本粘贴
+      e.preventDefault()
+      for (const file of imgs) {
+        void file
+          .arrayBuffer()
+          .then((buf) => window.transfer.sendImage({ peerFp: peer, png: new Uint8Array(buf) }))
+          .catch((err) => console.error('[paste] 发送粘贴图片失败', err))
+      }
+    },
+    [peer]
+  )
+
   return (
     <div style={S.chat}>
       <div style={S.chatHeader}>
@@ -388,12 +411,16 @@ function Chat(props: {
         {dragging && <div style={S.dropHint}>松开发送文件</div>}
       </div>
       <div style={S.inputBar}>
-        <button onClick={pickAndSend} style={S.attachBtn} title="发送文件">
-          📎
+        <button onClick={() => window.transfer.beginShot()} style={S.inputIconBtn} title="截图">
+          <CameraIcon size={19} />
+        </button>
+        <button onClick={pickAndSend} style={{ ...S.inputIconBtn, marginLeft: -6 }} title="发送文件">
+          <PaperclipIcon size={19} />
         </button>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onPaste={onPaste}
           onKeyDown={(e) => {
             // 中文输入法组字中按 Enter 是"确认选词",不是发送。
             // e.nativeEvent.isComposing 在 IME 组字期间为 true,此时不发送。
@@ -975,7 +1002,9 @@ const S: Record<string, React.CSSProperties> = {
   rejectBtn: { padding: '4px 13px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--card)', color: 'var(--ink)', cursor: 'pointer', fontSize: 11.5 },
   openBtn: { marginTop: 8, padding: '4px 13px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--card)', color: 'var(--ink)', cursor: 'pointer', fontSize: 11.5 },
   inputBar: { display: 'flex', gap: 8, padding: '11px 14px', borderTop: '1px solid var(--line)', alignItems: 'flex-end' },
-  attachBtn: { border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', opacity: 0.6 },
+  // 截图/附件按钮:固定 34×34 盒子与输入框首行等高,grid 居中 SVG。inputBar 的 flex-end 下
+  // 按钮盒底与 textarea 底对齐,图标又在盒内垂直居中 → 视觉上与输入框首行对齐。
+  inputIconBtn: { width: 34, height: 34, border: 'none', background: 'none', cursor: 'pointer', opacity: 0.55, display: 'grid', placeItems: 'center', padding: 0, color: 'var(--ink)', flexShrink: 0 },
   textarea: { flex: 1, border: '1px solid var(--line-strong)', borderRadius: 10, padding: '8px 12px', fontSize: 13, resize: 'none', fontFamily: 'inherit', maxHeight: 120, background: 'var(--bg)', color: 'var(--ink)', outline: 'none' },
   sendBtn: { width: 34, height: 34, border: 'none', borderRadius: '50%', background: 'var(--accent-soft)', color: 'var(--accent)', cursor: 'pointer', fontSize: 14, display: 'grid', placeItems: 'center', flexShrink: 0 },
   modalMask: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' },
