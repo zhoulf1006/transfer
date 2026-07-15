@@ -68,7 +68,9 @@ jobs:
       contents: write
     env:
       # 把 secret 提升到 job env,供下面 step 的 if 条件判断(比在 if 里直接读 secrets 更稳、跨版本都支持)。
-      HAS_CSC: ${{ secrets.CSC_LINK != '' }}
+      HAS_CSC: ${{ secrets.CSC_LINK != '' }}                              # 有签名证书
+      HAS_APPLE: ${{ secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' }}  # 有公证凭据
+      IS_RELEASE: ${{ endsWith(github.ref, '-release') }}                # tag 名以 -release 结尾 → 要公证
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -85,17 +87,32 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # CI 签名(不公证):electron-builder 用 CSC_LINK(base64 .p12)+ CSC_KEY_PASSWORD
-      # 自动导入证书到临时钥匙串并签名。不公证(见 docs/mac-signing.md)。
-      # ⚠️ 分两个互斥 step:空 CSC_LINK="" 会被当成"空路径证书"→ 构建失败(实测),
-      # 故 secret 缺失(fork PR/未建 secret)时走"跳过签名"那个 step,根本不设 CSC_LINK。
-      - name: Package macOS dmg (signed)
-        if: env.HAS_CSC == 'true'
+      # mac 打包分三档互斥(见 docs/mac-signing.md):
+      #  ① 未签名:无签名证书 secret(fork PR/未建)→ 跳过签名(空 CSC_LINK="" 会被当空路径证书→失败,故这里不设它)。
+      #  ② 只签名:有证书 + 普通 tag → 已签名未公证(用户右键打开)。
+      #  ③ 签名+公证:有证书+Apple 凭据 + tag 名带 -release → 公证(用户双击即开,dist:mac:sign 开 notarize)。
+      #     公证耗时不可控(2–30min),故只在 -release tag 才做。
+
+      # ③ 签名 + 公证(-release tag,且有全部凭据)
+      - name: Package macOS dmg (signed + notarized)
+        if: env.HAS_CSC == 'true' && env.HAS_APPLE == 'true' && env.IS_RELEASE == 'true'
+        run: pnpm run dist:mac:sign
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      # ② 只签名(有证书,但普通 tag 或缺 Apple 凭据)
+      - name: Package macOS dmg (signed only)
+        if: env.HAS_CSC == 'true' && !(env.HAS_APPLE == 'true' && env.IS_RELEASE == 'true')
         run: pnpm run dist:mac
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
 
+      # ① 未签名(无证书 secret)
       - name: Package macOS dmg (unsigned, no cert secret)
         if: env.HAS_CSC != 'true'
         run: pnpm run dist:mac
