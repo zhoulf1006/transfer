@@ -1,13 +1,38 @@
-# macOS 签名 + 公证(本地打包)
+# macOS 签名 + 公证
 
-> 目的:mac 用户**双击即开**(无 Gatekeeper 警告、无需右键/xattr)。签名+公证在**本地** `pnpm dist:mac:sign` 做,证书私钥不上云。
-> 状态:已跑通(v0.5.3 实测:codesign/spctl/stapler 全绿,quarantine 下仍 accepted)。
+> 两条路径并存:
+> - **CI 签名(不公证)**:每次 push tag → CI 自动出**已签名**dmg(有开发者身份,但用户仍需右键打开)。见 §CI 签名。
+> - **本地签名 + 公证**:`pnpm dist:mac:sign` 出**已签名已公证**dmg(用户**双击即开**)。见 §本地公证。
+> 状态:两条都跑通实测(CI:codesign 有效 + `Unnotarized Developer ID`;本地:`Notarized Developer ID accepted`,quarantine 下仍 accepted)。
 
-## 为什么本地签、CI 不签
+## 签名 vs 公证(关键区别,决定用哪条)
 
-- **本地签**:证书私钥只在你 mac 钥匙串,不导出、不上 GitHub Secrets,最安全。
-- **CI 不签**:CI 的 mac job 保持 `CSC_IDENTITY_AUTO_DISCOVERY: false` → electron-builder 检测不到签名身份 → **优雅跳过签名与公证**,仍出未签名 dmg(供快速迭代/内部用)。**已实测:签名配置不破坏 CI 构建**。
-- 分工:平时快速迭代走 CI(未签名,右键打开);要给外部用户的**正式版**本地 `dist:mac:sign`(签名+公证,双击即开)。
+- **签名**:app 嵌开发者身份(`Developer ID: Longfei Zhou`),可追溯、防篡改。**但不解决"双击即开"**。
+- **公证**:上传 Apple 审核盖章。**只有公证后**,从网络下载(带 quarantine)的 app 才双击即开。
+- macOS 10.15+ Gatekeeper 对下载的 app **只认公证**:没公证 = 拦,不管签没签名。所以"只签名不公证"用户体验 ≈ 不签名(都要右键)——签名带来的是内在身份,不是打开体验。
+
+## CI 签名(不公证)
+
+CI 的 mac job 用 GitHub Secrets 里的证书签名(electron-builder 自动导入 base64 证书)。**不公证**(公证要上传 Apple、耗时不可控 2min~30min,拖慢 CI)。
+
+**GitHub Secrets**(仓库 Settings → Secrets and variables → Actions):
+| Secret | 值 |
+|---|---|
+| `CSC_LINK` | Developer ID 证书 `.p12` 的 base64 |
+| `CSC_KEY_PASSWORD` | 导出 `.p12` 时设的密码 |
+
+**导出证书生成 base64**(一次性):
+```bash
+security export -t identities -f pkcs12 -o /tmp/cert.p12   # 设导出密码 → 存 CSC_KEY_PASSWORD
+base64 -i /tmp/cert.p12 | pbcopy                            # → 存 CSC_LINK
+rm /tmp/cert.p12                                           # 用完删私钥!
+```
+
+**workflow 关键坑(build.yml)**:空 `CSC_LINK=""`(fork PR/未建 secret)会被当"空路径证书"→ **构建失败**(实测)。故分**两个互斥 step**(job env `HAS_CSC` 判断):有 secret 走 signed step;无则走 unsigned step(`CSC_IDENTITY_AUTO_DISCOVERY: false`),根本不设 CSC_LINK。
+
+**安全**:证书私钥(base64)上了 GitHub Secrets(加密,fork PR 读不到)。用个人 Apple ID 的**专用密码**非主密码,风险可控。要更安全可用专用 Apple ID。
+
+## 本地公证
 
 ## 前置(一次性)
 
