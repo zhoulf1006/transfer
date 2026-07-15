@@ -121,6 +121,12 @@ function createWindow(): void {
   })
   mainWindow.on('ready-to-show', () => mainWindow?.show())
   mainWindow.on('closed', () => (mainWindow = null))
+  // 聚焦/失焦:聚焦时停止任务栏闪烁(仅 Windows,mac 未 flash)并告知 renderer(用于"正在看→不计未读")。
+  mainWindow.on('focus', () => {
+    if (process.platform === 'win32') mainWindow?.flashFrame(false)
+    send(EVT.windowFocus, true)
+  })
+  mainWindow.on('blur', () => send(EVT.windowFocus, false))
   loadRenderer(mainWindow, 'index')
 }
 
@@ -225,6 +231,11 @@ function registerIpc(): void {
     settings!.setShortcutCapture(accel)
     return { ok: true, accel }
   })
+  // 同步总未读数(renderer 算好后传来)→ mac Dock 数字角标(0 隐藏)。
+  // Windows setBadgeCount 无效(返 false),无害;Windows 提醒靠 flashFrame。
+  ipcMain.handle(CMD.setUnread, (_e, total: number) => {
+    app.setBadgeCount(Math.max(0, Math.floor(total)))
+  })
 
   // 截图:主窗同步当前聊天对象(决定"发聊天"可用性,§4.3 blocker#1)
   ipcMain.handle(SHOT_CMD.setActivePeer, (_e, peerFp: string | null) => {
@@ -271,7 +282,20 @@ app.whenReady().then(async () => {
     settings,
     events: {
       onDevicesUpdated: (devices) => send(EVT.devicesUpdated, devices),
-      onMessageUpserted: (msg) => send(EVT.messageUpserted, msg),
+      onMessageUpserted: (msg) => {
+        send(EVT.messageUpserted, msg)
+        // 收到的消息且窗口未聚焦 → 闪烁任务栏。**仅 Windows**:mac 上 flashFrame 会让 Dock
+        // 图标持续跳动(bounce),与"mac 只用数字角标、不跳"的决策冲突,故 mac 不调。
+        // mac 数字角标由 renderer 的 setUnread 驱动(它才知道"是否正在看该会话")。
+        if (
+          process.platform === 'win32' &&
+          msg.direction === 'recv' &&
+          mainWindow &&
+          !mainWindow.isFocused()
+        ) {
+          mainWindow.flashFrame(true)
+        }
+      },
       onProgress: (p) => send(EVT.progress, p)
     }
   })

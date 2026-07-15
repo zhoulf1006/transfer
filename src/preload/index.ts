@@ -63,11 +63,15 @@ const api = {
   openDownloadsDir: (): Promise<void> => ipcRenderer.invoke(CMD.openDownloadsDir),
   /** 在文件管理器中定位并选中收到的文件 */
   showInFolder: (messageId: string): Promise<void> => ipcRenderer.invoke(CMD.showInFolder, messageId),
+  /** 同步总未读数给 main(驱动 mac Dock 数字角标) */
+  setUnread: (total: number): Promise<void> => ipcRenderer.invoke(CMD.setUnread, total),
 
   // 事件订阅(返回取消函数)
   onDevicesUpdated: (cb: (devices: RemoteDevice[]) => void) => subscribe(EVT.devicesUpdated, cb),
   onMessageUpserted: (cb: (msg: UiMessage) => void) => subscribe(EVT.messageUpserted, cb),
   onProgress: (cb: (p: ProgressPayload) => void) => subscribe(EVT.progress, cb),
+  /** 主窗聚焦态变化(用于"正在看→不计未读") */
+  onWindowFocus: (cb: (focused: boolean) => void) => subscribe(EVT.windowFocus, cb),
 
   // ── 截图(主窗同步 peer;overlay 用 shot 子分组,见 docs/screenshot-feature §4.1)──
   /** 主窗当前聊天对象变化时同步给 main(决定截图"发聊天"可用性) */

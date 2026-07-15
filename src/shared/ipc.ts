@@ -40,7 +40,9 @@ export const EVT = {
   /** 截图:main → overlay,进入会话(带 shotId),overlay 按复位清单复位并拉背景 */
   shotShow: 'shot:show',
   /** 截图:main → overlay,会话结束,overlay 清空状态(回等待态,防下次 show 闪旧框) */
-  shotHide: 'shot:hide'
+  shotHide: 'shot:hide',
+  /** 主窗聚焦态变化(focus→true / blur→false):renderer 据此决定新消息是否计未读 */
+  windowFocus: 'window:focus'
 } as const
 
 export interface ProgressPayload {
@@ -82,7 +84,9 @@ export const CMD = {
   setTheme: 'settings:setTheme',
   /** 截图快捷键:取当前值 / 设新值(设时试注册,冲突返 ok:false) */
   getShortcut: 'settings:getShortcut',
-  setShortcut: 'settings:setShortcut'
+  setShortcut: 'settings:setShortcut',
+  /** 同步总未读数给 main(驱动 mac Dock 数字角标;0=隐藏) */
+  setUnread: 'notify:setUnread'
 } as const
 
 /** setShortcut 结果:ok 时 accel 为已生效的键;失败给原因(conflict=被占用,invalid=格式非法) */

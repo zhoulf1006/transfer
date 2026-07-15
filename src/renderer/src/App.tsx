@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import type { RemoteDevice } from '@shared/types'
 import { isImageFile } from '@shared/ipc'
 import { eventToAccelerator, acceleratorRejectReason } from '@shared/accelerator'
+import { shouldCountUnread } from '@shared/unread'
 import type {
   IdentityInfo,
   UiMessage,
@@ -54,17 +55,55 @@ export function App(): JSX.Element {
   const [showSettings, setShowSettings] = useState(false)
   const [view, setView] = useState<'chat' | 'downloads'>('chat')
   const [auto, setAuto] = useState<AutoAcceptSettings>({ enabled: false, maxBytes: 100 * 1024 * 1024 })
+  // 每个对端的未读数(app 内角标 + 总数驱动 Dock)。正在看该会话时清零。
+  const [unread, setUnread] = useState<Record<string, number>>({})
+  // 窗口聚焦态用 **state**(驱动清零 effect),同时镜像到 ref(供消息回调闭包读最新值)。
+  const [focused, setFocused] = useState(true)
+
+  // 消息订阅 effect 依赖数组为空(见下),闭包会捕获初始 peer/view/focused。
+  // 用 ref 存最新值,effect 内读 ref.current 判断"是否正在看该会话"。
+  const peerRef = useRef(peer)
+  const viewRef = useRef(view)
+  const focusedRef = useRef(focused)
+  peerRef.current = peer
+  viewRef.current = view
+  focusedRef.current = focused
+  // 已见过的消息 id(幂等判定"是否新消息",用于未读累加;不受 StrictMode 双调影响)
+  const seenIdsRef = useRef<Set<string>>(new Set())
 
   // 初始化
   useEffect(() => {
     window.transfer.getIdentity().then(setIdentity)
     window.transfer.listDevices().then(setDevices)
-    window.transfer.listMessages().then(setMessages)
+    // 历史消息入列并登记 id,避免后续同 id upsert 被误判为"新消息"计未读
+    window.transfer.listMessages().then((ms) => {
+      ms.forEach((m) => seenIdsRef.current.add(m.id))
+      setMessages(ms)
+    })
     window.transfer.getAutoAccept().then(setAuto)
 
     const unsubs = [
       window.transfer.onDevicesUpdated((d) => setDevices(d)),
       window.transfer.onMessageUpserted((m) => {
+        // 未读累加放在 updater **之外**:updater 必须是纯函数,React(尤其 StrictMode)会
+        // 双调它 → 若在里面 setUnread 会累加两次("发 1 条显示 2"的 bug)。
+        // 用 seenIdsRef 幂等判定"是否首次见到该 id",不受调用次数影响。
+        const isNew = !seenIdsRef.current.has(m.id)
+        if (isNew) {
+          seenIdsRef.current.add(m.id)
+          if (
+            shouldCountUnread({
+              direction: m.direction,
+              isNew: true,
+              windowFocused: focusedRef.current,
+              view: viewRef.current,
+              currentPeer: peerRef.current,
+              msgPeer: m.peerFp
+            })
+          ) {
+            setUnread((u) => ({ ...u, [m.peerFp]: (u[m.peerFp] ?? 0) + 1 }))
+          }
+        }
         setMessages((prev) => {
           const i = prev.findIndex((x) => x.id === m.id)
           if (i >= 0) {
@@ -92,7 +131,11 @@ export function App(): JSX.Element {
           }
           return { ...prev, [p.messageId]: { sent: p.sent, total: p.total } }
         })
-      )
+      ),
+      window.transfer.onWindowFocus((f) => {
+        focusedRef.current = f // 立即更新 ref(供消息回调读)
+        setFocused(f) // 驱动清零 effect(聚焦到正在看的会话时清未读)
+      })
     ]
     return () => unsubs.forEach((u) => u())
   }, [])
@@ -102,6 +145,22 @@ export function App(): JSX.Element {
   useEffect(() => {
     window.transfer.setShotActivePeer(view === 'chat' ? peer : null)
   }, [peer, view])
+
+  // 正在看某会话(chat 视图 + 选中 peer + 窗口聚焦)→ 清该 peer 未读。
+  // 依赖含 focused 和该 peer 未读数:覆盖"切进会话""聚焦回来""已在会话上又来新未读"三种情形
+  // ——只靠 [peer,view] 会漏掉后两种(后台收消息时已停在该会话,呼出后 peer/view 不变,不清零的 bug)。
+  const peerUnread = peer ? (unread[peer] ?? 0) : 0
+  useEffect(() => {
+    if (view === 'chat' && peer && focused && peerUnread > 0) {
+      setUnread((u) => (u[peer] ? { ...u, [peer]: 0 } : u))
+    }
+  }, [peer, view, focused, peerUnread])
+
+  // 未读变化 → 把总未读同步给 main(驱动 mac Dock 数字角标)。
+  useEffect(() => {
+    const total = Object.values(unread).reduce((a, b) => a + b, 0)
+    window.transfer.setUnread(total)
+  }, [unread])
 
   // 选中对端的消息(按对端 fingerprint 过滤)
   const peerMessages = peer ? messages.filter((m) => m.peerFp === peer) : []
@@ -115,6 +174,7 @@ export function App(): JSX.Element {
           devices={devices}
           peer={peer}
           view={view}
+          unread={unread}
           themePref={themePref}
           onCycleTheme={cycleTheme}
           onPick={(fp) => {
@@ -166,13 +226,14 @@ function Sidebar(props: {
   devices: RemoteDevice[]
   peer: string | null
   view: 'chat' | 'downloads'
+  unread: Record<string, number>
   themePref: ThemePref
   onCycleTheme: () => void
   onPick: (fp: string) => void
   onShowDownloads: () => void
   onOpenSettings: () => void
 }): JSX.Element {
-  const { identity, devices, peer, view, themePref, onCycleTheme, onPick, onShowDownloads, onOpenSettings } = props
+  const { identity, devices, peer, view, unread, themePref, onCycleTheme, onPick, onShowDownloads, onOpenSettings } = props
   const online = devices.filter((d) => d.status !== 'offline')
   const offline = devices.filter((d) => d.status === 'offline')
   const themeIcon = themePref === 'system' ? '◐' : themePref === 'light' ? '☀' : '☾'
@@ -181,6 +242,7 @@ function Sidebar(props: {
   const DeviceRow = (d: RemoteDevice): JSX.Element => {
     const off = d.status === 'offline'
     const active = view === 'chat' && peer === d.info.fingerprint
+    const n = unread[d.info.fingerprint] ?? 0
     return (
       <div
         key={d.info.fingerprint}
@@ -188,12 +250,17 @@ function Sidebar(props: {
         onClick={() => onPick(d.info.fingerprint)}
         style={{ ...S.devItem, ...(active ? S.devItemActive : {}), ...(off ? S.devItemOffline : {}) }}
       >
-        <div style={{ fontWeight: 550, display: 'flex', alignItems: 'center', gap: 7 }}>
-          <span style={{ ...S.dot, background: off ? 'var(--offline)' : 'var(--online)' }} />
-          {d.info.alias}
-        </div>
-        <div style={S.devSub}>
-          {d.info.deviceModel} · {off ? '离线' : d.address}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontWeight: 550, display: 'flex', alignItems: 'center', gap: 7 }}>
+              <span style={{ ...S.dot, background: off ? 'var(--offline)' : 'var(--online)' }} />
+              {d.info.alias}
+            </div>
+            <div style={S.devSub}>
+              {d.info.deviceModel} · {off ? '离线' : d.address}
+            </div>
+          </div>
+          {n > 0 && <span style={S.unreadBadge}>{n > 99 ? '99+' : n}</span>}
         </div>
       </div>
     )
@@ -819,6 +886,7 @@ const S: Record<string, React.CSSProperties> = {
   devItemOffline: { opacity: 0.5 },
   devSub: { fontSize: 10.5, color: 'var(--muted)', marginTop: 1, paddingLeft: 14 },
   dot: { width: 7, height: 7, borderRadius: '50%', display: 'inline-block', flexShrink: 0 },
+  unreadBadge: { flexShrink: 0, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: 'var(--danger)', color: '#fff', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', fontVariantNumeric: 'tabular-nums' },
   downloadsEntry: { padding: '7px 9px', borderRadius: 8, cursor: 'pointer', marginBottom: 8, fontSize: 12.5, fontWeight: 550, display: 'flex', alignItems: 'center', gap: 7 },
   main: { flex: 1, display: 'flex', minWidth: 0, background: 'var(--card)' },
   empty: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', gap: 8 },
