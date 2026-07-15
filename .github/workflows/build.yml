@@ -59,6 +59,8 @@ jobs:
             release/*/*-setup.exe
             release/*/*-portable.exe
           fail_on_unmatched_files: true
+          # 预发布 tag(-beta/-rc/-alpha/-dev)标 Pre-release;干净 tag = 正式版(Latest)
+          prerelease: ${{ endsWith(github.ref, '-beta') || endsWith(github.ref, '-rc') || endsWith(github.ref, '-alpha') || endsWith(github.ref, '-dev') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -70,7 +72,8 @@ jobs:
       # 把 secret 提升到 job env,供下面 step 的 if 条件判断(比在 if 里直接读 secrets 更稳、跨版本都支持)。
       HAS_CSC: ${{ secrets.CSC_LINK != '' }}                              # 有签名证书
       HAS_APPLE: ${{ secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' }}  # 有公证凭据
-      IS_RELEASE: ${{ endsWith(github.ref, '-release') }}                # tag 名以 -release 结尾 → 要公证
+      # 预发布(迭代版):tag 以 -beta/-rc/-alpha/-dev 结尾 → 只签名不公证。干净 tag = 正式版 → 公证。
+      IS_PRERELEASE: ${{ endsWith(github.ref, '-beta') || endsWith(github.ref, '-rc') || endsWith(github.ref, '-alpha') || endsWith(github.ref, '-dev') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -89,13 +92,13 @@ jobs:
 
       # mac 打包分三档互斥(见 docs/mac-signing.md):
       #  ① 未签名:无签名证书 secret(fork PR/未建)→ 跳过签名(空 CSC_LINK="" 会被当空路径证书→失败,故这里不设它)。
-      #  ② 只签名:有证书 + 普通 tag → 已签名未公证(用户右键打开)。
-      #  ③ 签名+公证:有证书+Apple 凭据 + tag 名带 -release → 公证(用户双击即开,dist:mac:sign 开 notarize)。
-      #     公证耗时不可控(2–30min),故只在 -release tag 才做。
+      #  ② 只签名:有证书 + **预发布 tag**(-beta/-rc/-alpha/-dev)或缺 Apple 凭据 → 已签名未公证(右键打开)。
+      #  ③ 签名+公证:有证书+Apple 凭据 + **干净 tag(正式版)** → 公证(双击即开,dist:mac:sign 开 notarize)。
+      #     公证耗时不可控(2–30min),故只在正式版(非预发布)才做。
 
-      # ③ 签名 + 公证(-release tag,且有全部凭据)
+      # ③ 签名 + 公证(干净 tag = 正式版,且有全部凭据)
       - name: Package macOS dmg (signed + notarized)
-        if: env.HAS_CSC == 'true' && env.HAS_APPLE == 'true' && env.IS_RELEASE == 'true'
+        if: env.HAS_CSC == 'true' && env.HAS_APPLE == 'true' && env.IS_PRERELEASE != 'true'
         run: pnpm run dist:mac:sign
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -104,9 +107,9 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-      # ② 只签名(有证书,但普通 tag 或缺 Apple 凭据)
+      # ② 只签名(有证书,但预发布 tag 或缺 Apple 凭据)
       - name: Package macOS dmg (signed only)
-        if: env.HAS_CSC == 'true' && !(env.HAS_APPLE == 'true' && env.IS_RELEASE == 'true')
+        if: env.HAS_CSC == 'true' && !(env.HAS_APPLE == 'true' && env.IS_PRERELEASE != 'true')
         run: pnpm run dist:mac
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -134,5 +137,6 @@ jobs:
         with:
           files: release/*/*.dmg
           fail_on_unmatched_files: true
+          prerelease: ${{ endsWith(github.ref, '-beta') || endsWith(github.ref, '-rc') || endsWith(github.ref, '-alpha') || endsWith(github.ref, '-dev') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
