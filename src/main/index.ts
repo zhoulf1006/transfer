@@ -140,6 +140,11 @@ function registerIpc(): void {
   ipcMain.handle(CMD.setAlias, async (_e, alias: string) => {
     await saveAlias(app.getPath('userData'), alias)
   })
+  ipcMain.handle(
+    CMD.setRemoteAlias,
+    (_e, a: { fingerprint: string; alias: string }): { ok: boolean } =>
+      core?.setRemoteAlias(a.fingerprint, a.alias) ?? { ok: false }
+  )
   ipcMain.handle(CMD.listDevices, () => core?.listDevices() ?? [])
   ipcMain.handle(CMD.pickFiles, async () => {
     if (!mainWindow) return []

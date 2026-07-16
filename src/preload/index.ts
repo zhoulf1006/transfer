@@ -22,6 +22,9 @@ import type { RemoteDevice } from '@shared/types'
 const api = {
   getIdentity: (): Promise<IdentityInfo> => ipcRenderer.invoke(CMD.getIdentity),
   setAlias: (alias: string): Promise<void> => ipcRenderer.invoke(CMD.setAlias, alias),
+  /** 设置远端设备备注(fingerprint→备注)。空串=删备注恢复默认名。返回 {ok} 供失败反馈。 */
+  setRemoteAlias: (fingerprint: string, alias: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(CMD.setRemoteAlias, { fingerprint, alias }),
   listDevices: (): Promise<RemoteDevice[]> => ipcRenderer.invoke(CMD.listDevices),
   pickFiles: (): Promise<string[]> => ipcRenderer.invoke(CMD.pickFiles),
   /**

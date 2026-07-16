@@ -23,6 +23,8 @@ export interface AppSettings {
   theme: ThemePref
   /** 截图快捷键(Electron accelerator 字符串,如 'F1' / 'Command+Shift+A') */
   shortcutCapture: string
+  /** 远端设备备注:key = 设备 fingerprint,value = 备注(非空;空即删除该键)。见 docs/device-alias.md */
+  deviceAliases: Record<string, string>
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -31,7 +33,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     maxBytes: 100 * 1024 * 1024 // 100MB(启用后的默认阈值)
   },
   theme: 'system',
-  shortcutCapture: DEFAULT_SHORTCUT_CAPTURE
+  shortcutCapture: DEFAULT_SHORTCUT_CAPTURE,
+  deviceAliases: {}
 }
 
 /** 归一化(容错旧/损坏字段),保证返回合法结构 */
@@ -45,6 +48,14 @@ function normalize(raw: unknown): AppSettings {
     typeof r.shortcutCapture === 'string' && r.shortcutCapture.trim()
       ? r.shortcutCapture
       : DEFAULT_SETTINGS.shortcutCapture
+  // 设备备注:非 object → {};逐项过滤,保证 value 恒为非空字符串(消费端不用再判空)。
+  const deviceAliases: Record<string, string> = {}
+  const rawMap = r.deviceAliases as unknown
+  if (rawMap && typeof rawMap === 'object' && !Array.isArray(rawMap)) {
+    for (const [fp, name] of Object.entries(rawMap as Record<string, unknown>)) {
+      if (fp && typeof name === 'string' && name.trim()) deviceAliases[fp] = name
+    }
+  }
   return {
     autoAccept: {
       enabled: typeof aa.enabled === 'boolean' ? aa.enabled : DEFAULT_SETTINGS.autoAccept.enabled,
@@ -54,7 +65,8 @@ function normalize(raw: unknown): AppSettings {
           : DEFAULT_SETTINGS.autoAccept.maxBytes
     },
     theme,
-    shortcutCapture
+    shortcutCapture,
+    deviceAliases
   }
 }
 
@@ -113,6 +125,32 @@ export class SettingsStore {
     this.cache = normalize({ ...this.cache, shortcutCapture: accel })
     this.persist()
     return this.cache.shortcutCapture
+  }
+
+  getDeviceAliases(): Record<string, string> {
+    return this.cache.deviceAliases
+  }
+
+  /**
+   * 设置设备备注(key = fingerprint)。空串(trim 后)→ 删除该键(恢复默认名)。
+   * 返回是否持久化成功:失败则**回滚 cache**并返回 false(不留"内存改了盘没存"的假成功),
+   * 供 renderer 就地反馈失败。⚠️ 与 setTheme/setAutoAccept 的"不 catch 抛异常"有意不同(见 docs/device-alias.md §2.2)。
+   */
+  setDeviceAlias(fingerprint: string, alias: string): boolean {
+    const trimmed = alias.trim()
+    const next = { ...this.cache.deviceAliases }
+    if (trimmed) next[fingerprint] = trimmed
+    else delete next[fingerprint]
+    const prevCache = this.cache
+    this.cache = normalize({ ...this.cache, deviceAliases: next })
+    try {
+      this.persist()
+      return true
+    } catch (e) {
+      this.cache = prevCache
+      console.error('[settings] persist deviceAlias failed:', e)
+      return false
+    }
   }
 
   private persist(): void {

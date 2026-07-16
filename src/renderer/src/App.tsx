@@ -251,28 +251,126 @@ function Sidebar(props: {
     themePref === 'system' ? <SunMoonIcon /> : themePref === 'light' ? <SunIcon /> : <MoonIcon />
   const themeLabel = themePref === 'system' ? '跟随系统' : themePref === 'light' ? '浅色' : '深色'
 
+  // ── 设备备注:右键菜单 + 行内编辑(见 docs/device-alias.md §4)──
+  const [menuFp, setMenuFp] = useState<string | null>(null)
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  const [menuClearError, setMenuClearError] = useState(false) // 「清除备注」失败(Bug#2)
+  const [editingFp, setEditingFp] = useState<string | null>(null)
+  const [draft, setDraft] = useState('')
+  const [saveError, setSaveError] = useState(false)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const openMenu = (e: React.MouseEvent, fp: string): void => {
+    e.preventDefault() // 阻原生右键菜单
+    e.stopPropagation() // 不冒泡到行 onClick(选中)——memory 冒泡坑
+    setMenuPos({ x: e.clientX, y: e.clientY })
+    setMenuFp(fp)
+    setMenuClearError(false)
+  }
+  const closeMenu = (): void => {
+    setMenuFp(null)
+    setMenuClearError(false)
+  }
+  const startEdit = (fp: string, currentAlias: string): void => {
+    // Bug#2 修:若正在编辑**另一台**设备 → 先用其当前草稿提交它(不丢输入),再切到新设备。
+    // 传显式 value(而非依赖 draft 闭包),避免下面 setDraft 覆盖后提交到错的值。
+    if (editingFp && editingFp !== fp) void commitEdit(editingFp, draft)
+    setEditingFp(fp)
+    setDraft(currentAlias)
+    setSaveError(false)
+    closeMenu()
+  }
+  const commitEdit = async (fp: string, value: string): Promise<void> => {
+    const { ok } = await window.transfer.setRemoteAlias(fp, value) // main 侧 trim+空判删
+    if (ok) {
+      // 只在"仍在编辑刚提交的这台"时才关编辑态:防切换设备后,旧提交的 await 迟到清掉新编辑(race)
+      setEditingFp((cur) => (cur === fp ? null : cur))
+      setSaveError(false)
+    } else {
+      setSaveError(true) // 失败:编辑态不关,标红
+    }
+  }
+  const cancelEdit = (): void => {
+    setEditingFp(null)
+    setSaveError(false)
+  }
+  const clearAlias = async (fp: string): Promise<void> => {
+    const { ok } = await window.transfer.setRemoteAlias(fp, '') // 空串=删备注
+    if (ok) closeMenu()
+    else setMenuClearError(true) // 失败:不关菜单+红字
+  }
+
+  // 编辑框自动 focus+全选
+  useEffect(() => {
+    if (editingFp && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
+    }
+  }, [editingFp])
+
+  // 兜底:正在编辑的设备从列表消失(offline 超 keep 真删)→ 提交(不丢输入,§5.4)
+  useEffect(() => {
+    if (editingFp && !devices.some((d) => d.info.fingerprint === editingFp)) {
+      void commitEdit(editingFp, draft)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [devices])
+
+  // Bug#1 修:右键菜单针对的设备从列表消失 → 关菜单(否则悬挂,指向已不存在的设备)
+  useEffect(() => {
+    if (menuFp && !devices.some((d) => d.info.fingerprint === menuFp)) closeMenu()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [devices])
+
   const DeviceRow = (d: RemoteDevice): JSX.Element => {
     const off = d.status === 'offline'
     const active = view === 'chat' && peer === d.info.fingerprint
     const n = unread[d.info.fingerprint] ?? 0
+    const editing = editingFp === d.info.fingerprint
     return (
       <div
         key={d.info.fingerprint}
         className="tf-row"
-        onClick={() => onPick(d.info.fingerprint)}
+        onClick={() => !editing && onPick(d.info.fingerprint)}
+        onContextMenu={(e) => openMenu(e, d.info.fingerprint)}
         style={{ ...S.devItem, ...(active ? S.devItemActive : {}), ...(off ? S.devItemOffline : {}) }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontWeight: 550, display: 'flex', alignItems: 'center', gap: 7 }}>
               <span style={{ ...S.dot, background: off ? 'var(--offline)' : 'var(--online)' }} />
-              {d.info.alias}
+              {editing ? (
+                <input
+                  ref={inputRef}
+                  value={draft}
+                  onChange={(e) => {
+                    setDraft(e.target.value)
+                    setSaveError(false)
+                  }}
+                  onClick={(e) => e.stopPropagation()} // 点输入框不触发行选中
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void commitEdit(d.info.fingerprint, draft)
+                    else if (e.key === 'Escape') cancelEdit()
+                  }}
+                  onBlur={() => {
+                    // 仅当仍在编辑该行才提交:Esc 已置 null → blur 被忽略(§5.2)
+                    if (editingFp === d.info.fingerprint) void commitEdit(d.info.fingerprint, draft)
+                  }}
+                  style={{ ...S.aliasInput, ...(saveError ? S.aliasInputError : {}) }}
+                />
+              ) : (
+                d.info.alias
+              )}
             </div>
-            <div style={S.devSub}>
-              {d.info.deviceModel} · {off ? '离线' : d.address}
-            </div>
+            {editing && saveError ? (
+              <div style={S.aliasErr}>保存失败,请重试</div>
+            ) : (
+              <div style={S.devSub}>
+                {d.info.deviceModel} · {off ? '离线' : d.address}
+              </div>
+            )}
           </div>
-          {n > 0 && <span style={S.unreadBadge}>{n > 99 ? '99+' : n}</span>}
+          {n > 0 && !editing && <span style={S.unreadBadge}>{n > 99 ? '99+' : n}</span>}
         </div>
       </div>
     )
@@ -317,6 +415,82 @@ function Sidebar(props: {
           {offline.map(DeviceRow)}
         </>
       )}
+
+      {menuFp && (
+        <DeviceContextMenu
+          pos={menuPos}
+          hasCustomAlias={
+            devices.find((d) => d.info.fingerprint === menuFp)?.info.hasCustomAlias ?? false
+          }
+          clearError={menuClearError}
+          onEdit={() => {
+            const dev = devices.find((d) => d.info.fingerprint === menuFp)
+            if (dev) startEdit(menuFp, dev.info.alias)
+          }}
+          onClear={() => void clearAlias(menuFp)}
+          onClose={closeMenu}
+        />
+      )}
+    </div>
+  )
+}
+
+/** 自绘右键菜单:改/清除备注。定位在鼠标处,超出视口回弹;点外/Esc 关闭。见 docs/device-alias.md §4.2。 */
+function DeviceContextMenu(props: {
+  pos: { x: number; y: number }
+  hasCustomAlias: boolean
+  clearError: boolean
+  onEdit: () => void
+  onClear: () => void
+  onClose: () => void
+}): JSX.Element {
+  const { pos, hasCustomAlias, clearError, onEdit, onClear, onClose } = props
+  const ref = useRef<HTMLDivElement | null>(null)
+  const [adj, setAdj] = useState(pos)
+
+  // 定位回弹:渲染后测量,超出右/下边则回移
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    let { x, y } = pos
+    if (x + r.width > window.innerWidth) x = Math.max(4, window.innerWidth - r.width - 4)
+    if (y + r.height > window.innerHeight) y = Math.max(4, window.innerHeight - r.height - 4)
+    setAdj({ x, y })
+  }, [pos])
+
+  // 点菜单外 / Esc 关闭
+  useEffect(() => {
+    const onDown = (e: MouseEvent): void => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  return (
+    <div
+      ref={ref}
+      style={{ ...S.ctxMenu, left: adj.x, top: adj.y }}
+      onClick={(e) => e.stopPropagation()} // 不冒泡到行/root(memory 冒泡坑)
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <div className="tf-row" style={S.ctxItem} onClick={onEdit}>
+        修改备注
+      </div>
+      {hasCustomAlias && (
+        <div className="tf-row" style={S.ctxItem} onClick={onClear}>
+          清除备注
+        </div>
+      )}
+      {clearError && <div style={S.ctxErr}>清除失败,请重试</div>}
     </div>
   )
 }
@@ -924,6 +1098,13 @@ const S: Record<string, React.CSSProperties> = {
   devSub: { fontSize: 10.5, color: 'var(--muted)', marginTop: 1, paddingLeft: 14 },
   dot: { width: 7, height: 7, borderRadius: '50%', display: 'inline-block', flexShrink: 0 },
   unreadBadge: { flexShrink: 0, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: 'var(--danger)', color: '#fff', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', fontVariantNumeric: 'tabular-nums' },
+  // 设备备注:行内编辑输入框 + 右键菜单(theme.css 变量,深浅色自适配)
+  aliasInput: { flex: 1, minWidth: 0, font: 'inherit', fontWeight: 550, color: 'var(--ink)', background: 'var(--card)', border: '1px solid var(--line-strong)', borderRadius: 5, padding: '1px 5px', outline: 'none' },
+  aliasInputError: { borderColor: 'var(--danger)' },
+  aliasErr: { fontSize: 10.5, color: 'var(--danger)', marginTop: 2, paddingLeft: 14 },
+  ctxMenu: { position: 'fixed', zIndex: 50, minWidth: 120, background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 8, boxShadow: 'var(--shadow-md)', padding: 4 },
+  ctxItem: { padding: '6px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 13, color: 'var(--ink)' },
+  ctxErr: { padding: '4px 10px', fontSize: 11, color: 'var(--danger)' },
   downloadsEntry: { padding: '7px 9px', borderRadius: 8, cursor: 'pointer', marginBottom: 8, fontSize: 12.5, fontWeight: 550, display: 'flex', alignItems: 'center', gap: 7 },
   main: { flex: 1, display: 'flex', minWidth: 0, background: 'var(--card)' },
   empty: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', gap: 8 },

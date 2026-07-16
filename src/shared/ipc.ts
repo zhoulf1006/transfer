@@ -56,6 +56,7 @@ export interface ProgressPayload {
 export const CMD = {
   getIdentity: 'device:getIdentity',
   setAlias: 'device:setAlias',
+  setRemoteAlias: 'device:setRemoteAlias',
   listDevices: 'devices:list',
   pickFiles: 'dialog:pickFiles',
   // 聊天

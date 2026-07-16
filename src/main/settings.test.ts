@@ -1,5 +1,5 @@
 import { test, expect, describe, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SettingsStore, DEFAULT_SETTINGS } from './settings'
@@ -150,5 +150,93 @@ describe('SettingsStore', () => {
     s.setAutoAccept({ enabled: true })
     const raw = readFileSync(join(dir, 'settings.json'), 'utf8')
     expect(JSON.parse(raw).autoAccept.enabled).toBe(true)
+  })
+
+  describe('deviceAliases', () => {
+    test('首次无文件 → 空 map', () => {
+      const s = new SettingsStore(mkdir())
+      expect(s.getDeviceAliases()).toEqual({})
+    })
+
+    test('setDeviceAlias 持久化 + 重新加载可读', () => {
+      const dir = mkdir()
+      const ok = new SettingsStore(dir).setDeviceAlias('fp1', '老张的电脑')
+      expect(ok).toBe(true)
+      expect(new SettingsStore(dir).getDeviceAliases()).toEqual({ fp1: '老张的电脑' })
+    })
+
+    test('trim 后存储(去首尾空白)', () => {
+      const s = new SettingsStore(mkdir())
+      s.setDeviceAlias('fp1', '  备注  ')
+      expect(s.getDeviceAliases().fp1).toBe('备注')
+    })
+
+    test('空串(或纯空白)→ 删除该键(恢复默认名)', () => {
+      const dir = mkdir()
+      const s = new SettingsStore(dir)
+      s.setDeviceAlias('fp1', '备注A')
+      s.setDeviceAlias('fp2', '备注B')
+      s.setDeviceAlias('fp1', '') // 删 fp1
+      expect(s.getDeviceAliases()).toEqual({ fp2: '备注B' })
+      s.setDeviceAlias('fp2', '   ') // 纯空白也删
+      expect(s.getDeviceAliases()).toEqual({})
+      // 持久化后重载确认 fp1/fp2 均已删
+      expect(new SettingsStore(dir).getDeviceAliases()).toEqual({})
+    })
+
+    test('删不存在的键 → 幂等无副作用', () => {
+      const s = new SettingsStore(mkdir())
+      expect(s.setDeviceAlias('nope', '')).toBe(true)
+      expect(s.getDeviceAliases()).toEqual({})
+    })
+
+    test('normalize 过滤脏数据(非 object / 空 value / 非字符串 value)', () => {
+      const dir = mkdir()
+      writeFileSync(
+        join(dir, 'settings.json'),
+        JSON.stringify({ deviceAliases: { good: '有效', empty: '', blank: '   ', num: 123, '': '空key' } })
+      )
+      // 只保留 good;empty/blank(空)、num(非串)、''(空key)全滤掉
+      expect(new SettingsStore(dir).getDeviceAliases()).toEqual({ good: '有效' })
+    })
+
+    test('deviceAliases 为数组 → 归一化为 {}', () => {
+      const dir = mkdir()
+      writeFileSync(join(dir, 'settings.json'), JSON.stringify({ deviceAliases: ['a', 'b'] }))
+      expect(new SettingsStore(dir).getDeviceAliases()).toEqual({})
+    })
+
+    // 回归:改一个设置不能抹另一个(spread this.cache)
+    test('setDeviceAlias 不抹 theme/autoAccept/shortcut', () => {
+      const s = new SettingsStore(mkdir())
+      s.setTheme('dark')
+      s.setAutoAccept({ enabled: true, maxBytes: 42 })
+      s.setShortcutCapture('Control+F2')
+      s.setDeviceAlias('fp1', '备注')
+      expect(s.getTheme()).toBe('dark')
+      expect(s.getAutoAccept()).toEqual({ enabled: true, maxBytes: 42 })
+      expect(s.getShortcutCapture()).toBe('Control+F2')
+    })
+    test('setTheme/setShortcut 不抹 deviceAliases', () => {
+      const s = new SettingsStore(mkdir())
+      s.setDeviceAlias('fp1', '备注')
+      s.setTheme('light')
+      s.setShortcutCapture('Command+Shift+X')
+      expect(s.getDeviceAliases()).toEqual({ fp1: '备注' })
+    })
+
+    // 失败回滚:持久化失败(目录被删/不可写)→ 返回 false 且 cache 不变(不留假成功)
+    test('persist 失败 → 返回 false 且 cache 回滚', () => {
+      const dir = mkdir()
+      const s = new SettingsStore(dir)
+      s.setDeviceAlias('fp1', '原备注') // 先成功存一次
+      // 删掉目录使后续 writeFileSync 失败(父目录不存在;persist 的 mkdir 只建 dirname 自身失败路径较难,
+      // 改用只读文件:把 settings.json 变目录,writeFileSync 会 EISDIR)
+      rmSync(join(dir, 'settings.json'))
+      mkdirSync(join(dir, 'settings.json')) // 同名占位为目录 → 写文件必 EISDIR 失败
+      const ok = s.setDeviceAlias('fp1', '新备注')
+      expect(ok).toBe(false)
+      expect(s.getDeviceAliases().fp1).toBe('原备注') // 回滚:仍是旧值,不是"新备注"
+    })
   })
 })

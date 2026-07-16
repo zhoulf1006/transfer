@@ -165,7 +165,7 @@ export class AppCore {
       info.port ?? DEFAULT_PORT,
       info.protocol ?? 'https'
     )
-    if (changed) this.opts.events.onDevicesUpdated(this.registry.list())
+    if (changed) this.emitDevices()
   }
 
   async start(): Promise<void> {
@@ -197,7 +197,7 @@ export class AppCore {
       this.pruneTimer = setInterval(() => {
         this.discovery.announce(true)
         const { changed } = this.registry.prune()
-        if (changed) this.opts.events.onDevicesUpdated(this.registry.list())
+        if (changed) this.emitDevices()
       }, 5_000)
       this.sweepTimer = setInterval(() => this.sessions.sweep(), 5_000)
     } catch (err) {
@@ -236,7 +236,42 @@ export class AppCore {
   }
 
   listDevices(): RemoteDevice[] {
-    return this.registry.list()
+    return this.applyAliases(this.registry.list())
+  }
+
+  /**
+   * 把用户自定义备注合并进设备列表(发给 renderer 前)。见 docs/device-alias.md §3.1。
+   * 只产出新对象,不写回 registry(registry 恒存对端原始 info)。
+   */
+  private applyAliases(devices: RemoteDevice[]): RemoteDevice[] {
+    const aliases = this.opts.settings.getDeviceAliases()
+    return devices.map((d) => {
+      const custom = aliases[d.info.fingerprint] // 恒非空或 undefined(SettingsStore normalize 已滤空)
+      return {
+        ...d,
+        info: {
+          ...d.info,
+          defaultAlias: d.info.alias, // 原名恒保留
+          alias: custom || d.info.alias, // 备注优先
+          hasCustomAlias: !!custom // 菜单据此判定,不靠字符串比对(Bug#1)
+        }
+      }
+    })
+  }
+
+  /** 合并备注后推一次 devices:updated(统一出口,三处发现层变化都走它)。 */
+  private emitDevices(): void {
+    this.opts.events.onDevicesUpdated(this.applyAliases(this.registry.list()))
+  }
+
+  /**
+   * 设置远端设备备注 + 立即刷新列表。返回 {ok}(持久化失败为 false,供 renderer 反馈)。
+   * 见 docs/device-alias.md §3.2。不校验 fingerprint 是否在线:允许给离线/已删设备写(永久保留)。
+   */
+  setRemoteAlias(fingerprint: string, alias: string): { ok: boolean } {
+    const ok = this.opts.settings.setDeviceAlias(fingerprint, alias)
+    if (ok) this.emitDevices() // 不等下次多播,立即可见
+    return { ok }
   }
 
   // 发送/接收/确认由 this.chat(ChatService)承载,见 index.ts IPC 接线。

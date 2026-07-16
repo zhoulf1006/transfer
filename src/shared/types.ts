@@ -15,6 +15,14 @@ export interface DeviceInfo {
   port?: number
   protocol?: 'http' | 'https'
   download?: boolean
+  /**
+   * 以下两字段仅由 main 侧 applyAliases 在发给 renderer 前填充(见 docs/device-alias.md §3.1),
+   * 不参与协议报文收发。原始 announce/register 的 info 里没有它们。
+   */
+  /** 对端广播的原始默认名(有备注时,alias 已被备注覆盖,原名存这里) */
+  defaultAlias?: string
+  /** 是否有自定义备注(菜单据此决定显不显示「清除备注」;不靠 alias≠defaultAlias 比对,见 Bug#1) */
+  hasCustomAlias?: boolean
 }
 
 /** 多播报文 = DeviceInfo(含 port/protocol) + announce 标志 */
