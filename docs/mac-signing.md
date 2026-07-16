@@ -86,8 +86,10 @@ pnpm dist:mac:sign
 
 ## 验证(每次打完可跑一遍)
 
+多架构:每个架构落在各自子目录(实际名以 `ls release/<version>/` 为准):`mac-universal/` = universal、`mac-arm64/` = arm64、`mac/` = x64(默认目录无后缀)。**三个包都要各验一遍**——下面以 universal 为例,arm64/x64 把 `APP` 换成对应目录即可。
+
 ```bash
-APP="release/<version>/mac-universal/Transfer.app"    # universal(arm64+x64);lipo -info 应见 x86_64 arm64
+APP="release/<version>/mac-universal/Transfer.app"    # 换成 mac-arm64 / mac 可验其余两个;lipo -info 确认架构
 codesign --verify --deep --strict --verbose=2 "$APP"        # valid on disk
 codesign -dv --verbose=4 "$APP" 2>&1 | grep Authority        # Developer ID: Longfei Zhou
 spctl --assess --type execute --verbose "$APP"               # accepted / Notarized Developer ID ← 最关键
@@ -106,4 +108,7 @@ rm -rf /tmp/t.app
 - **dmg 外壳本身未装订公证票据**(`stapler validate <dmg>` 会 rejected),这**正常**:公证的是里面的 `.app`。用户拖 app 到 Applications 双击即可,Gatekeeper 检查 app 不检查 dmg。若要 dmg 也装订,可加 `afterAllArtifactBuild` staple 步骤(非必需)。
 - **每个版本都要单独公证**(Apple 盖章绑定该版本二进制),没有"一次公证全版本通用"。
 - 公证偶尔慢(Apple 侧排队),`dist:mac:sign` 会等到 `notarization successful` 才继续。
-- 出 **universal** dmg(`arch: [universal]`):单个胖二进制同时含 arm64+x64,Apple Silicon 与 Intel 都原生运行(无 Rosetta),用户下唯一一个包双击即开。合并成一个 `.app` → 只签名公证**一次**(不翻倍)。dmg 名 `Transfer-<version>-universal.dmg`(`${arch}` 占位符必需,否则多架构同名覆盖)。
+- **三架构产物**(`arch: [universal, arm64, x64]`,见 [electron-slimming.md](./electron-slimming.md)):出 3 个 DMG——`Transfer-<version>-universal.dmg`(通吃,~410M)、`-arm64.dmg`(Apple 芯片专用,~230M)、`-x64.dmg`(Intel 专用,~230M)。`${arch}` 占位符必需,否则同名覆盖。
+  - **签名/公证按包各跑一次**:三个是独立 `.app`,各自签名、各自公证(正式版公证等待 **×3**,CI 更久)。这与"只出 universal 时公证一次"不同——多打两个架构的代价就在这里。
+  - universal 仍是单胖二进制(arm64+x64 经 lipo 合并),Apple Silicon 与 Intel 都原生运行无 Rosetta;arm64/x64 单架构包体积小但只跑对应芯片(装错芯片:arm64 包在 Intel 上跑不了;x64 包在 Apple 芯片上走 Rosetta 能跑但更重)。
+  - locale 裁剪(`electronLanguages`)对三者对称生效,不破坏 universal 的 lipo 合并(合并只校验 Mach-O 二进制,locale.pak 是普通资源)。
