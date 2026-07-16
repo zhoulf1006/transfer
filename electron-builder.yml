@@ -25,9 +25,9 @@ win:
   signExecutable: false
   icon: build/icon.ico         # 应用图标(紫底 + 白色纸飞机,主色 #8a67ab)
 
-# portable 产物名(与 nsis 的 -setup.exe 区分)
+# portable 产物名(win 标识 + 与 nsis 的 -win-setup.exe 区分)
 portable:
-  artifactName: ${productName}-${version}-portable.exe
+  artifactName: ${productName}-${version}-win-portable.exe
 
 # NSIS:标准安装向导 —— 用户能看到/选择安装目录、勾快捷方式(不再静默装到隐藏目录)
 nsis:
@@ -36,7 +36,7 @@ nsis:
   allowToChangeInstallationDirectory: true # 允许用户选择安装目录
   createDesktopShortcut: true            # 创建桌面快捷方式
   createStartMenuShortcut: true          # 创建开始菜单快捷方式
-  artifactName: ${productName}-${version}-setup.exe
+  artifactName: ${productName}-${version}-win-setup.exe
 
 mac:
   category: public.app-category.utilities
@@ -66,6 +66,6 @@ mac:
   # notarize:公证只在本地 dist:mac:sign 脚本里通过 env 开启(不硬编码,防 CI 误触发)
 
 dmg:
-  # ${arch} 必需:多架构时无它会同名互相覆盖(electron-builder 不自动加后缀)。
-  # 三产物解析为 -universal / -arm64 / -x64 后缀(dmg 上 x64 保持 x64,不变 x86_64)。
-  artifactName: ${productName}-${version}-${arch}.dmg
+  # mac- 系统标识 + ${arch} 架构后缀。${arch} 必需:多架构时无它会同名互相覆盖。
+  # 三产物解析为 -mac-universal / -mac-arm64 / -mac-x64(dmg 上 x64 保持 x64,不变 x86_64)。
+  artifactName: ${productName}-${version}-mac-${arch}.dmg

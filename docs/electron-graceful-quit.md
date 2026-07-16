@@ -85,13 +85,13 @@ if (!gotTheLock) {
 ⚠️ **别把"多个同名进程"直接当僵尸！** 一个正常运行的 Electron app，`tasklist`/活动监视器里**本就有多个同名进程**：主进程 + GPU 进程 + 渲染进程 + 工具(utility)进程。一个 app 有 3-5 个 `Transfer.exe` 是**正常架构**。
 
 **正确判断方法**：
-1. **portable 启动器**（`Transfer-x.x.x-portable.exe`）应只有 **1 个**（当前运行 app 的启动器）。多余的才是僵尸。
+1. **portable 启动器**（`Transfer-x.x.x-win-portable.exe`）应只有 **1 个**（当前运行 app 的启动器）。多余的才是僵尸。
 2. **完全关闭 app 后**，`tasklist | findstr transfer`（mac: `ps aux | grep -i transfer`）应**清零**。关了还残留才是真僵尸。
 
 **Windows 清残留**：
 ```
 taskkill /F /IM Transfer.exe
-taskkill /F /IM Transfer-x.x.x-portable.exe
+taskkill /F /IM Transfer-x.x.x-win-portable.exe
 ```
 
 ---
