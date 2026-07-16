@@ -12,6 +12,8 @@ import { isTextMessage, extractText } from './text-message'
 
 export interface HttpServerDeps {
   sessions: SessionManager
+  /** 本机 TLS 证书(PEM):HTTPS server 用(docs/https-migration.md §3.5) */
+  tls: { key: string; cert: string }
   /** 本机设备信息(GET /info 用) */
   selfInfo: () => DeviceInfo
   /** 接收目录 */
@@ -48,7 +50,11 @@ export interface HttpServerDeps {
 }
 
 export function createHttpServer(deps: HttpServerDeps): FastifyInstance {
-  const app = Fastify({ bodyLimit: 1024 * 1024 * 1024 }) // 1GB 兜底,upload 路由实际走流
+  // HTTPS:自签名证书(PEM 字符串直传,免写盘)。https 字段透传给 Node tls.createServer。
+  const app = Fastify({
+    https: { key: deps.tls.key, cert: deps.tls.cert },
+    bodyLimit: 1024 * 1024 * 1024 // 1GB 兜底,upload 路由实际走流
+  })
 
   // upload 是裸二进制:注册一个不解析的 parser,交出 request.raw(DESIGN §1.4)
   app.addContentTypeParser('*', (_req, _payload, done) => done(null, undefined))

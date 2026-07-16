@@ -1,15 +1,27 @@
 import { test, expect, describe, afterEach, beforeEach } from 'vitest'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes, createHash } from 'node:crypto'
+import selfsigned from 'selfsigned'
 import type { FastifyInstance } from 'fastify'
 import { createHttpServer } from './http-server'
 import { sendFiles, sendText, cancelSession, registerTo, type SendTarget } from './http-client'
 import { SessionManager } from './session'
+import { certFingerprint } from '@shared/identity'
 import type { DeviceInfo, PrepareUploadRequest } from '@shared/types'
 
 const HOST = '127.0.0.1'
+
+/** 接收方证书(EC 自签名)+ 其指纹:发送方 target.fingerprint 必须 = 它,pinning 才通过 */
+async function makeReceiverTls(): Promise<{ tls: { key: string; cert: string }; fingerprint: string }> {
+  const pems = await selfsigned.generate([{ name: 'commonName', value: 'Transfer' }], {
+    keyType: 'ec',
+    curve: 'P-256',
+    algorithm: 'sha256'
+  })
+  return { tls: { key: pems.private, cert: pems.cert }, fingerprint: certFingerprint(pems.cert) }
+}
 
 function selfInfo(alias: string, fp: string): DeviceInfo {
   return {
@@ -19,13 +31,77 @@ function selfInfo(alias: string, fp: string): DeviceInfo {
     deviceType: 'desktop',
     fingerprint: fp,
     port: 0,
-    protocol: 'http',
+    protocol: 'https',
     download: false
   }
 }
 
 function sha256(buf: Buffer): string {
   return createHash('sha256').update(buf).digest('hex')
+}
+
+/** POST JSON 到 https(接受自签名)。返回响应 JSON。测试直连 server 用。 */
+async function httpsPostJson(
+  url: string,
+  body: unknown
+): Promise<{ status: number; json: () => Promise<Record<string, unknown>> }> {
+  const https = await import('node:https')
+  const payload = Buffer.from(JSON.stringify(body))
+  const u = new URL(url)
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        host: u.hostname,
+        port: u.port,
+        path: u.pathname,
+        method: 'POST',
+        rejectUnauthorized: false,
+        headers: { 'content-type': 'application/json', 'content-length': String(payload.length) }
+      },
+      (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (c) => chunks.push(c as Buffer))
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8')
+          resolve({
+            status: res.statusCode ?? 0,
+            json: async () => JSON.parse(text) as Record<string, unknown>
+          })
+        })
+      }
+    )
+    req.on('error', reject)
+    req.write(payload)
+    req.end()
+  })
+}
+
+/** 发起 https POST 但返回可主动 abort 的句柄(模拟发送方中途断开)。接受自签名。 */
+async function httpsPostAbortable(
+  url: string,
+  body: unknown
+): Promise<{ done: Promise<void>; abort: () => void }> {
+  const https = await import('node:https')
+  const payload = Buffer.from(JSON.stringify(body))
+  const u = new URL(url)
+  const req = https.request({
+    host: u.hostname,
+    port: u.port,
+    path: u.pathname,
+    method: 'POST',
+    rejectUnauthorized: false,
+    headers: { 'content-type': 'application/json', 'content-length': String(payload.length) }
+  })
+  const done = new Promise<void>((resolve) => {
+    req.on('response', (res) => {
+      res.on('data', () => {})
+      res.on('end', () => resolve())
+    })
+    req.on('error', () => resolve()) // abort 触发的 error 也算结束
+  })
+  req.write(payload)
+  req.end()
+  return { done, abort: () => req.destroy() }
 }
 
 /** 轮询直到条件成立(替代固定 sleep 猜时序,避免 flaky) */
@@ -59,9 +135,11 @@ describe('文件收发(集成)', () => {
     autoAcceptImpl = () => false // 默认不自动接收
     askImpl = async (req) => Object.keys(req.files) // 默认全接受
 
+    const receiver = await makeReceiverTls()
     server = createHttpServer({
       sessions,
-      selfInfo: () => selfInfo('Receiver', 'FP_RECV'),
+      tls: receiver.tls,
+      selfInfo: () => selfInfo('Receiver', receiver.fingerprint),
       receiveDir: () => recvDir,
       onPrepareAsk: (_id, req) => askImpl(req),
       onSessionCancelled: () => cancelledCount++,
@@ -75,7 +153,8 @@ describe('文件收发(集成)', () => {
     })
     const address = await server.listen({ host: HOST, port: 0 })
     const port = Number(new URL(address).port)
-    target = { address: HOST, port, protocol: 'http' }
+    // target.fingerprint = 接收方证书指纹 → pinning 通过
+    target = { address: HOST, port, protocol: 'https', fingerprint: receiver.fingerprint }
   })
 
   afterEach(async () => {
@@ -183,22 +262,16 @@ describe('文件收发(集成)', () => {
     askImpl = () => new Promise<string[]>((resolve) => (releaseAsk = resolve))
 
     // 发起 prepare 后立即 abort(模拟发送方超时断开)
-    const ctrl = new AbortController()
-    const prepareUrl = `http://${HOST}:${target.port}/api/localsend/v2/prepare-upload`
-    const p = fetch(prepareUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        info: selfInfo('S', 'FP'),
-        files: { f1: { id: 'f1', fileName: 'a.bin', size: 1, fileType: 'application/octet-stream' } }
-      }),
-      signal: ctrl.signal
-    }).catch(() => undefined)
+    const prepareUrl = `https://${HOST}:${target.port}/api/localsend/v2/prepare-upload`
+    const { done, abort } = await httpsPostAbortable(prepareUrl, {
+      info: selfInfo('S', 'FP'),
+      files: { f1: { id: 'f1', fileName: 'a.bin', size: 1, fileType: 'application/octet-stream' } }
+    })
 
     // 等会话进入 pending,再断开连接
     await waitUntil(() => sessions.current?.phase === 'pending')
-    ctrl.abort()
-    await p
+    abort()
+    await done
     await new Promise((r) => setTimeout(r, 50)) // 让 abort 传播到 server socket
 
     // 用户此时才"接受" → respond 推进 ACTIVE,但连接已断 → server 应 onCancel 回滚
@@ -225,15 +298,14 @@ describe('文件收发(集成)', () => {
     askImpl = async (req) => Object.keys(req.files)
     const g = makeFile('d.bin', 1000)
     // 手动走 prepare 拿 sessionId
-    const prep = await fetch(`http://${HOST}:${target.port}/api/localsend/v2/prepare-upload`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
+    const prep = await httpsPostJson(
+      `https://${HOST}:${target.port}/api/localsend/v2/prepare-upload`,
+      {
         info: selfInfo('S', 'FP'),
         files: { [g.id]: { id: g.id, fileName: 'd.bin', size: 1000, fileType: 'application/octet-stream' } }
-      })
-    })
-    sid = (await prep.json()).sessionId
+      }
+    )
+    sid = (await prep.json()).sessionId as string
     expect(sessions.current?.phase).toBe('active')
     await cancelSession(target, sid)
     expect(sessions.current).toBeNull()
@@ -333,9 +405,11 @@ describe('文件收发(集成)', () => {
     let registered: string | null = null
     // 重建 server 以挂 onRegister(默认 setup 没挂)
     await server.close()
+    const rx = await makeReceiverTls()
     server = createHttpServer({
       sessions,
-      selfInfo: () => selfInfo('Receiver', 'FP_RECV'),
+      tls: rx.tls,
+      selfInfo: () => selfInfo('Receiver', rx.fingerprint),
       receiveDir: () => recvDir,
       onPrepareAsk: (_id, req) => askImpl(req),
       onSessionCancelled: () => cancelledCount++,
@@ -344,17 +418,85 @@ describe('文件收发(集成)', () => {
       onRegister: (info) => (registered = info.fingerprint)
     })
     const address = await server.listen({ host: HOST, port: 0 })
-    target = { address: HOST, port: Number(new URL(address).port), protocol: 'http' }
+    // register 走不 pin 的 discoveryAgent(B1),fingerprint 占位即可
+    target = {
+      address: HOST,
+      port: Number(new URL(address).port),
+      protocol: 'https',
+      fingerprint: rx.fingerprint
+    }
 
     const peer = await registerTo(target, selfInfo('Sender', 'FP_SEND'))
-    expect(peer?.fingerprint).toBe('FP_RECV') // 拿回对方(server)的 info
+    expect(peer?.fingerprint).toBe(rx.fingerprint) // 拿回对方(server)的 info
     expect(registered).toBe('FP_SEND') // 对方 onRegister 收到我们的 fingerprint
   })
 
   test('registerTo:目标不可达 → 静默返 null,不抛', async () => {
     // 连一个没人监听的端口(afterEach 会关真 server;这里直接指一个死端口)
-    const dead: SendTarget = { address: HOST, port: 1, protocol: 'http' }
+    const dead: SendTarget = { address: HOST, port: 1, protocol: 'https', fingerprint: 'x' }
     const peer = await registerTo(dead, selfInfo('Sender', 'FP_SEND'))
     expect(peer).toBeNull()
+  })
+})
+
+// TLS 指纹 pinning(HTTPS 改造核心安全断言,docs/https-migration.md §3.6)。
+// 独立 describe:各自起 server,精确控制 target.fingerprint。
+describe('TLS 指纹 pinning', () => {
+  let server: FastifyInstance
+  let recvDir: string
+  let sendDir: string
+  let port: number
+  let realFp: string
+
+  beforeEach(async () => {
+    recvDir = mkdtempSync(join(tmpdir(), 'pin-recv-'))
+    sendDir = mkdtempSync(join(tmpdir(), 'pin-send-'))
+    const rx = await makeReceiverTls()
+    realFp = rx.fingerprint
+    server = createHttpServer({
+      sessions: new SessionManager({ now: () => Date.now() }),
+      tls: rx.tls,
+      selfInfo: () => selfInfo('Receiver', rx.fingerprint),
+      receiveDir: () => recvDir,
+      onPrepareAsk: async (_id, req) => Object.keys(req.files), // 全接受
+      onSessionCancelled: () => {},
+      onTextMessage: () => {},
+      shouldAutoAcceptFiles: () => false
+    })
+    const address = await server.listen({ host: HOST, port: 0 })
+    port = Number(new URL(address).port)
+  })
+
+  afterEach(async () => {
+    await server.close()
+    rmSync(recvDir, { recursive: true, force: true })
+    rmSync(sendDir, { recursive: true, force: true })
+  })
+
+  function file(): { id: string; path: string } {
+    const p = join(sendDir, 'x.bin')
+    writeFileSync(p, randomBytes(500))
+    return { id: 'x.bin', path: p }
+  }
+
+  test('指纹匹配 → 传输成功', async () => {
+    const target: SendTarget = { address: HOST, port, protocol: 'https', fingerprint: realFp }
+    const res = await sendFiles(target, selfInfo('S', 'FP_S'), [file()])
+    expect(res.kind).toBe('done')
+  })
+
+  test('指纹不匹配 → pinning 拒绝,传输失败(不落盘)', async () => {
+    const wrong = realFp.replace(/[0-9A-F]/, (c) => (c === 'A' ? 'B' : 'A')) // 改一位
+    const target: SendTarget = { address: HOST, port, protocol: 'https', fingerprint: wrong }
+    const res = await sendFiles(target, selfInfo('S', 'FP_S'), [file()])
+    expect(res.kind).toBe('error')
+    // 未落盘
+    expect(existsSync(join(recvDir, 'x.bin'))).toBe(false)
+  })
+
+  test('空指纹 → fail-closed,传输失败(B3)', async () => {
+    const target: SendTarget = { address: HOST, port, protocol: 'https', fingerprint: '' }
+    const res = await sendFiles(target, selfInfo('S', 'FP_S'), [file()])
+    expect(res.kind).toBe('error')
   })
 })
