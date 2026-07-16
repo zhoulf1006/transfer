@@ -1,6 +1,6 @@
 {
   "name": "transfer",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "description": "跨平台局域网工具:文件传送 + 截屏 + 笔记(MVP:文件传送)",
   "license": "MIT",
   "main": "./out/main/index.js",
