@@ -3,10 +3,41 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import selfsigned from 'selfsigned'
 import { AppCore } from './app-core'
 import { MessageStore, type Message } from './db/messages'
 import { SettingsStore } from './settings'
+import { certFingerprint } from '@shared/identity'
 import type { RemoteDevice } from '@shared/types'
+
+/** GET 一个 https URL 并解析 JSON,接受自签名证书(测试用) */
+async function httpsGetJson(url: string): Promise<{ port: number }> {
+  const https = await import('node:https')
+  return new Promise((resolve, reject) => {
+    https
+      .get(url, { rejectUnauthorized: false }, (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (c) => chunks.push(c as Buffer))
+        res.on('end', () => resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))))
+      })
+      .on('error', reject)
+  })
+}
+
+/** 生成一份真实身份(EC 证书 + 证书指纹),HTTPS pinning 端到端必须用真证书,不能用假 fingerprint 串 */
+async function makeIdentity(alias: string): Promise<{
+  alias: string
+  fingerprint: string
+  cert: string
+  privateKey: string
+}> {
+  const pems = await selfsigned.generate([{ name: 'commonName', value: 'Transfer' }], {
+    keyType: 'ec',
+    curve: 'P-256',
+    algorithm: 'sha256'
+  })
+  return { alias, fingerprint: certFingerprint(pems.cert), cert: pems.cert, privateKey: pems.private }
+}
 
 // 端到端:两个 AppCore 实例走 发现 → chat 发送 → 自动接收/确认 → 落盘+入库 全链路。
 // 验证装配层(app-core + chat-service)。用非默认端口避免与系统冲突。
@@ -28,6 +59,8 @@ interface Inst {
   core: AppCore
   store: MessageStore
   recvDir: string
+  /** 本机证书指纹(= 对端发现/发送时用的 key) */
+  fp: string
   devices: () => RemoteDevice[]
   messages: () => Message[]
   /** onMessageUpserted 收到的状态序列(按消息 id 分组),验证流转 */
@@ -47,12 +80,8 @@ describe('AppCore 端到端(聊天)', () => {
     dirs.length = 0
   })
 
-  function mkCore(
-    alias: string,
-    fingerprint: string,
-    httpPort: number,
-    autoAccept: boolean
-  ): Inst {
+  async function mkCore(alias: string, httpPort: number, autoAccept: boolean): Promise<Inst> {
+    const identity = await makeIdentity(alias)
     const recvDir = mkdtempSync(join(tmpdir(), `core-${alias}-`))
     const settingsDir = mkdtempSync(join(tmpdir(), `set-${alias}-`))
     dirs.push(recvDir, settingsDir)
@@ -63,7 +92,7 @@ describe('AppCore 端到端(聊天)', () => {
     const seq = new Map<string, string[]>()
     const prog: { direction: 'send' | 'recv'; sent: number }[] = []
     const core = new AppCore({
-      identity: { alias, fingerprint },
+      identity,
       platform: 'darwin',
       receiveDir: recvDir,
       multicastPort: 56000,
@@ -86,6 +115,7 @@ describe('AppCore 端到端(聊天)', () => {
       core,
       store,
       recvDir,
+      fp: identity.fingerprint,
       devices: () => latest,
       messages: () => store.list({ limit: 100 }),
       statusSeq: (id) => seq.get(id) ?? [],
@@ -94,14 +124,14 @@ describe('AppCore 端到端(聊天)', () => {
   }
 
   test('A 发现 B 后,自动接收下发文件成功落盘 + 两端入库', async () => {
-    const a = mkCore('A', 'FP_A', 56317, false)
-    const b = mkCore('B', 'FP_B', 56318, true) // B 自动接收
+    const a = await mkCore('A', 56317, false)
+    const b = await mkCore('B', 56318, true) // B 自动接收
 
     await a.core.start()
     await b.core.start()
 
     await waitFor(() =>
-      a.devices().find((d) => d.info.fingerprint === 'FP_B') ? true : undefined
+      a.devices().find((d) => d.info.fingerprint === b.fp) ? true : undefined
     )
 
     // 256KB → 多个 64KB 读块,产生递增进度帧(4KB 只有单帧,验不出进度)
@@ -112,7 +142,7 @@ describe('AppCore 端到端(聊天)', () => {
     const srcPath = join(srcDir, 'payload.bin')
     writeFileSync(srcPath, content)
 
-    await a.core.chat.sendFiles('FP_B', [srcPath])
+    await a.core.chat.sendFiles(b.fp, [srcPath])
 
     // B 完整落盘
     const received = readFileSync(join(b.recvDir, 'payload.bin'))
@@ -144,16 +174,16 @@ describe('AppCore 端到端(聊天)', () => {
   })
 
   test('文本消息端到端:A 发文本 → B 入流(done),不落文件', async () => {
-    const a = mkCore('A2', 'FP_A2', 56319, false)
-    const b = mkCore('B2', 'FP_B2', 56320, false) // 文本不受自动接收影响
+    const a = await mkCore('A2', 56319, false)
+    const b = await mkCore('B2', 56320, false) // 文本不受自动接收影响
 
     await a.core.start()
     await b.core.start()
     await waitFor(() =>
-      a.devices().find((d) => d.info.fingerprint === 'FP_B2') ? true : undefined
+      a.devices().find((d) => d.info.fingerprint === b.fp) ? true : undefined
     )
 
-    await a.core.chat.sendText('FP_B2', '你好,这是端到端文本')
+    await a.core.chat.sendText(b.fp, '你好,这是端到端文本')
 
     // B 侧:recv 文本 done,正文正确
     const bText = await waitFor(() => {
@@ -169,7 +199,7 @@ describe('AppCore 端到端(聊天)', () => {
   })
 
   test('离线对端:发送失败标 failed(network)', async () => {
-    const a = mkCore('A3', 'FP_A3', 56321, false)
+    const a = await mkCore('A3', 56321, false)
     await a.core.start()
     // 未发现任何设备,直接发给不存在的 fingerprint
     await a.core.chat.sendText('FP_NOBODY', 'hello')
@@ -184,12 +214,13 @@ describe('AppCore 端到端(聊天)', () => {
     const blocker = createServer()
     await new Promise<void>((r) => blocker.listen(busyPort, '0.0.0.0', () => r()))
     try {
-      const c = mkCore('C', 'FP_C', busyPort, false)
+      const c = await mkCore('C', busyPort, false)
       await c.core.start()
       expect(c.core.actualHttpPort).toBe(busyPort + 1)
-      const info = await fetch(
-        `http://127.0.0.1:${c.core.actualHttpPort}/api/localsend/v2/info`
-      ).then((r) => r.json())
+      // HTTPS + 自签名:测试 client 接受自签名(rejectUnauthorized:false)
+      const info = await httpsGetJson(
+        `https://127.0.0.1:${c.core.actualHttpPort}/api/localsend/v2/info`
+      )
       expect(info.port).toBe(busyPort + 1)
     } finally {
       await new Promise<void>((r) => blocker.close(() => r()))

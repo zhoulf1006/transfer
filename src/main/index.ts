@@ -133,12 +133,12 @@ function createWindow(): void {
 }
 
 function registerIpc(): void {
-  ipcMain.handle(CMD.getIdentity, (): IdentityInfo => {
-    const id = loadOrCreateIdentity(app.getPath('userData'))
+  ipcMain.handle(CMD.getIdentity, async (): Promise<IdentityInfo> => {
+    const id = await loadOrCreateIdentity(app.getPath('userData'))
     return { alias: id.alias, fingerprint: id.fingerprint }
   })
-  ipcMain.handle(CMD.setAlias, (_e, alias: string) => {
-    saveAlias(app.getPath('userData'), alias)
+  ipcMain.handle(CMD.setAlias, async (_e, alias: string) => {
+    await saveAlias(app.getPath('userData'), alias)
   })
   ipcMain.handle(CMD.listDevices, () => core?.listDevices() ?? [])
   ipcMain.handle(CMD.pickFiles, async () => {
@@ -280,7 +280,16 @@ app.whenReady().then(async () => {
   registerIpc()
   createWindow()
 
-  const identity = loadOrCreateIdentity(app.getPath('userData'))
+  // 证书/身份(首启生成 EC 自签名证书,几十 ms)。证书是 HTTPS 硬前提,失败即无法起服务:
+  // 明确报错并退出,不静默(此处在 startCore 的 catch 之前,自身需兜住 rejection,M1)。
+  let identity: Awaited<ReturnType<typeof loadOrCreateIdentity>>
+  try {
+    identity = await loadOrCreateIdentity(app.getPath('userData'))
+  } catch (err) {
+    dialog.showErrorBox('初始化失败', `无法生成本机证书(HTTPS 前提):${String(err)}`)
+    app.quit()
+    return
+  }
   const userData = app.getPath('userData')
   store = new MessageStore(join(userData, 'messages.db'))
   settings = new SettingsStore(userData)

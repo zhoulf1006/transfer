@@ -73,7 +73,7 @@ describe('ChatService', () => {
       },
       resolvePeer: (fp) =>
         onlinePeers.has(fp)
-          ? { target: { address: '1.1.1.1', port: 1, protocol: 'http' } as SendTarget, alias: `Dev-${fp}` }
+          ? { target: { address: '1.1.1.1', port: 1, protocol: 'https', fingerprint: 'fp' } as SendTarget, alias: `Dev-${fp}` }
           : null,
       isReceiveDirWritable: () => dirWritable,
       onMessageUpserted: (m) => upserted.push(m),
@@ -316,7 +316,7 @@ describe('ChatService 进度', () => {
         },
         sendText: async () => ({ kind: 'done' })
       },
-      resolvePeer: () => ({ target: { address: '1.1.1.1', port: 1, protocol: 'http' } as SendTarget, alias: 'P' }),
+      resolvePeer: () => ({ target: { address: '1.1.1.1', port: 1, protocol: 'https', fingerprint: 'fp' } as SendTarget, alias: 'P' }),
       isReceiveDirWritable: () => true,
       fileSize: () => 1000,
       onMessageUpserted: () => {},

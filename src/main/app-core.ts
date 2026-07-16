@@ -94,7 +94,7 @@ export class AppCore {
       buildAnnouncement: (announce) => ({
         ...this.selfInfo(),
         port: this.httpPort,
-        protocol: 'http',
+        protocol: 'https',
         announce
       }),
       onDevice: (info, address) => this.handleDevice(info, address),
@@ -125,7 +125,13 @@ export class AppCore {
     const dev = this.registry.list().find((d) => d.info.fingerprint === fingerprint)
     if (!dev) return null
     return {
-      target: { address: dev.address, port: dev.port, protocol: dev.protocol },
+      // fingerprint = 发现阶段记住的对端证书指纹,连接时用它 pin TLS(§3.4)
+      target: {
+        address: dev.address,
+        port: dev.port,
+        protocol: dev.protocol,
+        fingerprint: dev.info.fingerprint
+      },
       alias: dev.info.alias
     }
   }
@@ -144,7 +150,10 @@ export class AppCore {
     const target: SendTarget = {
       address,
       port: info.port ?? DEFAULT_PORT,
-      protocol: info.protocol ?? 'http'
+      protocol: info.protocol ?? 'https',
+      // register 走不 pin 的 discoveryAgent(B1:此刻可能还没登记对方,无指纹可 pin)。
+      // fingerprint 仅占位,registerTo 不校验它。
+      fingerprint: info.fingerprint
     }
     void registerTo(target, this.selfInfo()) // 只为让对方发现我们;返回值忽略
   }
@@ -154,7 +163,7 @@ export class AppCore {
       info,
       address,
       info.port ?? DEFAULT_PORT,
-      info.protocol ?? 'http'
+      info.protocol ?? 'https'
     )
     if (changed) this.opts.events.onDevicesUpdated(this.registry.list())
   }
@@ -164,6 +173,7 @@ export class AppCore {
     try {
       this.server = createHttpServer({
         sessions: this.sessions,
+        tls: { key: this.opts.identity.privateKey, cert: this.opts.identity.cert },
         selfInfo: () => this.selfInfo(),
         receiveDir: () => this.opts.receiveDir,
         onPrepareAsk: (transferId, req, fromIp) => this.chat.askUser(transferId, req, fromIp),

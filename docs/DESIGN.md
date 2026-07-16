@@ -13,7 +13,7 @@
 | 技术栈 | Electron + TypeScript + pnpm | |
 | 连接 | 局域网直连 | 无服务器/账号 |
 | **发现机制** | **UDP 多播 + 子网广播双通道**(LocalSend 协议 v2,回应用 HTTP 定向 register) | `224.0.0.167:53317` + 各网卡子网广播;可与 LocalSend App 互通;详见 §1.1 |
-| **传输加密** | **先 HTTP**(明文) | LocalSend 支持 http 模式;HTTPS 留待后续 |
+| **传输加密** | **HTTPS**(自签名证书 + 指纹 TOFU pinning) | 见 [https-migration.md](./https-migration.md);~~原 MVP 用 HTTP 明文,已升级~~ |
 | **接收确认** | **弹框确认** | 收到 prepare-upload 时本机弹框,用户点了才收 |
 | 笔记存储 | 本地 Markdown 文件 | |
 | 截屏 | **快捷键(默认 F1,可设置里自定义)→ 区域框选 + 全套标注 + 发聊天/复制/存文件(已实现)** | 详见 [screenshot-feature.md](./screenshot-feature.md) + [custom-shortcut.md](./custom-shortcut.md);层级检测/多屏跨屏/滚动长图为后续 P2 |
@@ -270,9 +270,10 @@ export const T_UPLOAD_MS = 5 * 60_000    // 单个 upload 超时(S4:防接收方
 
 ## 6. 本机身份(device-identity.ts)
 
-- 首次启动生成并持久化(userData 目录):
+- 首次启动生成并持久化(userData 目录 `identity.json`):
   - `alias`:默认取机器名或随机生成(如 "Loong's Mac"),用户可改。
-  - `fingerprint`:HTTP 模式下为**随机字符串**(如 UUID/32字节 hex),持久化保持稳定。
+  - `fingerprint`:**证书 SHA-256(DER 整证书)**,由自签名证书派生(HTTPS 改造后;~~原 HTTP 模式为随机串~~,见 [https-migration.md](./https-migration.md) §3.2)。
+  - `cert` / `privateKey`:EC P-256 自签名证书(PEM),首启生成一次,10 年有效期。
   - `deviceType`:固定 `"desktop"`。
   - `deviceModel`:`process.platform` 映射("darwin"→"macOS","win32"→"Windows")。
 - fingerprint 用于**防止发现到自己**:收到多播 announce **或** `/register` 请求时,若对端 fingerprint == 本机,忽略(H4:两条发现入口都要做此比对,不只多播)。
@@ -317,7 +318,7 @@ export const T_UPLOAD_MS = 5 * 60_000    // 单个 upload 超时(S4:防接收方
 - **多播报文伪造 / 放大攻击**:发现层 DoS,MVP 不处理。
 - **IPv6**:`224.0.0.167` 为 IPv4 多播,**MVP 仅 IPv4**;IPv6 留待后续。
 
-**安全提醒(MVP HTTP 明文):** 局域网明文传输,任何同网设备可发现并尝试发送。弹框确认是第一道防线。后续可加 PIN / HTTPS。
+**安全提醒(HTTPS + 指纹 pinning):** 传输已加密(自签名证书 + 指纹 TOFU pinning),防被动窃听。但 fingerprint 经**明文 UDP 广播**,同网段主动攻击者可冒充任意 alias/指纹的对端,发送方无法察觉(与官方 LocalSend 同级局限,见 [https-migration.md](./https-migration.md) §4.1)。**弹框确认仍是防主动冒充的唯一人肉防线**;请在可信局域网使用。后续可加 PIN / 带外指纹验证。
 
 ---
 
@@ -369,7 +370,7 @@ export const T_UPLOAD_MS = 5 * 60_000    // 单个 upload 超时(S4:防接收方
 1. **与真实 LocalSend App 互通(B1 替代方案)**:挂起 prepare-upload 等弹框的模型对第三方 App 秒级超时不成立。互通需改为「prepare-upload **立即返回**占位/待定,用户确认异步进行」的方案(或参考 LocalSend App 实际的默认接受/快速拒绝行为)。在实现互通前,§0 的互通承诺仅在自家两端(可控超时)成立。
 2. 文本/剪贴板传送(prepare-upload 里 fileType=text 或专门端点)
 3. `/register` HTTP fallback 发现 + IPv6 支持
-4. HTTPS + fingerprint TOFU 校验
+4. ~~HTTPS + fingerprint TOFU 校验~~ ✅ **已实现**(见 [https-migration.md](./https-migration.md))
 5. 截屏(区域 → 全屏/窗口 → 标注 → 滚动长图)
 6. 笔记(Markdown 本地文件 + 搜索)
 7. 打通:截屏 → 标注 → 一键发送到某设备 / 存入笔记
