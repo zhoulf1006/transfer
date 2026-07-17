@@ -5,6 +5,11 @@ directories:
   output: release/${version}
   buildResources: build
 
+# 打包末尾自动清理:release/ 下只保留最近 5 个版本目录(electron-builder 无内置保留配置,只写不删)。
+# 脚本按 semver 排序删旧,保留数可用 KEEP_RELEASES 覆盖;删除失败只警告不拖垮打包。见 build/clean-old-releases.cjs。
+# .cjs 后缀必需:package.json 是 type:module,普通 .js 会被当 ESM 导致 require 报错。
+afterAllArtifactBuild: build/clean-old-releases.cjs
+
 # electron-vite 输出到 out/;fastify 等 dependencies 由 builder 从 node_modules 收集
 files:
   - out
