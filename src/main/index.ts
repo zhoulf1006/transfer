@@ -111,6 +111,9 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 900,
     height: 640,
+    // 最小尺寸:侧栏固定 220,给主聊天区留 ~420,再小会挤压侧栏
+    minWidth: 640,
+    minHeight: 600,
     show: false,
     // 底色跟随系统深浅(与 theme.css 的 --bg 一致):renderer 加载前不露白屏
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#18191b' : '#f7f8f9',

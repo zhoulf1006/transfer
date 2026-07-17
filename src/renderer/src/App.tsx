@@ -359,13 +359,15 @@ function Sidebar(props: {
                   style={{ ...S.aliasInput, ...(saveError ? S.aliasInputError : {}) }}
                 />
               ) : (
-                d.info.alias
+                <span style={S.devName} title={d.info.alias}>
+                  {d.info.alias}
+                </span>
               )}
             </div>
             {editing && saveError ? (
               <div style={S.aliasErr}>保存失败,请重试</div>
             ) : (
-              <div style={S.devSub}>
+              <div style={S.devSub} title={`${d.info.deviceModel} · ${off ? '离线' : d.address}`}>
                 {d.info.deviceModel} · {off ? '离线' : d.address}
               </div>
             )}
@@ -1085,7 +1087,7 @@ function fmtSize(bytes: number): string {
 // 静谧石墨中性 + Notion 紫:所有颜色走 CSS 变量(见 theme.css),字号小一档、边框细、留白从容。
 const S: Record<string, React.CSSProperties> = {
   app: { display: 'flex', height: '100vh', color: 'var(--ink)', fontSize: 13 },
-  sidebar: { width: 224, borderRight: '1px solid var(--line)', background: 'var(--side)', display: 'flex', flexDirection: 'column', padding: '14px 12px', boxSizing: 'border-box', overflowY: 'auto' },
+  sidebar: { width: 220, flexShrink: 0, borderRight: '1px solid var(--line)', background: 'var(--side)', display: 'flex', flexDirection: 'column', padding: '14px 12px', boxSizing: 'border-box', overflowY: 'auto' },
   brand: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
   brandName: { fontSize: 15, fontWeight: 640, letterSpacing: '-0.01em' },
   iconBtn: { border: 'none', background: 'none', fontSize: 14, cursor: 'pointer', color: 'var(--muted)', width: 26, height: 26, borderRadius: 7, display: 'grid', placeItems: 'center' },
@@ -1095,7 +1097,8 @@ const S: Record<string, React.CSSProperties> = {
   devItem: { padding: '7px 9px', borderRadius: 8, cursor: 'pointer', marginBottom: 1 },
   devItemActive: { background: 'var(--accent-soft)', color: 'var(--accent)' },
   devItemOffline: { opacity: 0.5 },
-  devSub: { fontSize: 10.5, color: 'var(--muted)', marginTop: 1, paddingLeft: 14 },
+  devName: { minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  devSub: { fontSize: 10.5, color: 'var(--muted)', marginTop: 1, paddingLeft: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   dot: { width: 7, height: 7, borderRadius: '50%', display: 'inline-block', flexShrink: 0 },
   unreadBadge: { flexShrink: 0, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: 'var(--danger)', color: '#fff', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', fontVariantNumeric: 'tabular-nums' },
   // 设备备注:行内编辑输入框 + 右键菜单(theme.css 变量,深浅色自适配)
