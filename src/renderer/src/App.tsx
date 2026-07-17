@@ -1050,6 +1050,21 @@ function SettingsModal(props: {
 }
 
 // ── helpers ──
+/** failed 消息按 errorReason 给明确文案(区分超时/拒连/证书,主治对端开 VPN 的连不上)。 */
+function failedLabel(reason: string | null): string {
+  switch (reason) {
+    case 'busy':
+      return '对方正忙'
+    case 'timeout':
+      return '连接超时(对方可能开了 VPN)'
+    case 'refused':
+      return '对方未在监听'
+    case 'cert-mismatch':
+      return '证书不匹配'
+    default:
+      return '失败'
+  }
+}
 function statusLabel(m: UiMessage): string {
   switch (m.status) {
     case 'pending':
@@ -1065,7 +1080,7 @@ function statusLabel(m: UiMessage): string {
     case 'expired':
       return '已过期'
     case 'failed':
-      return m.errorReason === 'busy' ? '对方正忙' : '失败'
+      return failedLabel(m.errorReason)
     default:
       return m.status
   }

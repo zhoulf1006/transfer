@@ -22,7 +22,16 @@ export type MessageStatus =
   | 'done'
   | 'failed'
   | 'expired'
-export type ErrorReason = 'busy' | 'enospc' | 'sha256' | 'network' | 'no-file' | 'unknown'
+export type ErrorReason =
+  | 'busy'
+  | 'enospc'
+  | 'sha256'
+  | 'network'
+  | 'no-file'
+  | 'unknown'
+  | 'timeout'
+  | 'refused'
+  | 'cert-mismatch'
 
 export interface Message {
   id: string
