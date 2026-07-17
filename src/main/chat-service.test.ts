@@ -1,5 +1,5 @@
 import { test, expect, describe, beforeEach, afterEach } from 'vitest'
-import { ChatService } from './chat-service'
+import { ChatService, classifyError } from './chat-service'
 import { MessageStore, type Message } from './db/messages'
 import { SettingsStore } from './settings'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -242,6 +242,51 @@ describe('ChatService', () => {
     sendFilesResult = { kind: 'rejected' }
     const [m] = await chat.sendFiles('P', ['/tmp/x.bin'])
     expect(m.status).toBe('rejected')
+  })
+
+  // ── 发送失败错误细分(连接超时/拒连/证书,主治对端开 VPN 连不上)──
+  test('sendText 连接超时 → failed(timeout)', async () => {
+    sendTextResult = { kind: 'error', message: 'prepare-upload failed: connect ETIMEDOUT' }
+    const m = await chat.sendText('P', 'hi')
+    expect(m.status).toBe('failed')
+    expect(m.errorReason).toBe('timeout')
+  })
+
+  test('sendText 对方未监听 → failed(refused)', async () => {
+    sendTextResult = { kind: 'error', message: 'connect ECONNREFUSED 1.1.1.1:53317' }
+    const m = await chat.sendText('P', 'hi')
+    expect(m.errorReason).toBe('refused')
+  })
+
+  test('sendText 证书不符 → failed(cert-mismatch)', async () => {
+    sendTextResult = { kind: 'error', message: 'fingerprint mismatch: AA != BB' }
+    const m = await chat.sendText('P', 'hi')
+    expect(m.errorReason).toBe('cert-mismatch')
+  })
+
+  test('sendFiles 连接超时 → failed(timeout)', async () => {
+    sendFilesResult = { kind: 'error', message: 'connect ETIMEDOUT' }
+    const [m] = await chat.sendFiles('P', ['/tmp/x.bin'])
+    expect(m.status).toBe('failed')
+    expect(m.errorReason).toBe('timeout')
+  })
+
+  test('sendText 其他网络错误 → failed(network)', async () => {
+    sendTextResult = { kind: 'error', message: 'socket hang up' }
+    const m = await chat.sendText('P', 'hi')
+    expect(m.errorReason).toBe('network')
+  })
+
+  // classifyError 直接单测:关键词 → errorReason
+  test('classifyError 关键词映射', () => {
+    expect(classifyError('connect ETIMEDOUT')).toBe('timeout')
+    expect(classifyError('request timeout')).toBe('timeout')
+    expect(classifyError('connect ECONNREFUSED 1.1.1.1:1')).toBe('refused')
+    expect(classifyError('fingerprint mismatch: AA != BB')).toBe('cert-mismatch')
+    expect(classifyError('no peer certificate')).toBe('cert-mismatch')
+    expect(classifyError('Error: ECERT xyz')).toBe('cert-mismatch')
+    expect(classifyError('socket hang up')).toBe('network')
+    expect(classifyError('')).toBe('network')
   })
 
   // ── 发送串行化 ──

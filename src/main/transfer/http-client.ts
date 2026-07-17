@@ -14,7 +14,7 @@ import { createHash } from 'node:crypto'
 import https from 'node:https'
 import tls from 'node:tls'
 import { Transform } from 'node:stream'
-import { EP, T_SENDER_MS, T_UPLOAD_MS } from '@shared/protocol'
+import { EP, T_SENDER_MS, T_UPLOAD_MS, T_CONNECT_MS } from '@shared/protocol'
 import type { DeviceInfo, FileMeta, PrepareUploadResponse } from '@shared/types'
 import { encodeTextMessage } from './text-message'
 
@@ -50,6 +50,14 @@ export type SendResult =
  * 在连接回调里**同步比对**握手实际证书(getPeerCertificate)的 fingerprint256,不符即 destroy。
  */
 const agentCache = new Map<string, https.Agent>()
+
+/** 造一个带 code='ECERT' 的证书类错误,供上层 classifyError 区分"证书不匹配"与普通网络错误。 */
+function certError(message: string): NodeJS.ErrnoException {
+  const err = new Error(message) as NodeJS.ErrnoException
+  err.code = 'ECERT'
+  return err
+}
+
 function pinnedAgent(target: SendTarget): https.Agent {
   const cached = agentCache.get(target.fingerprint)
   if (cached) return cached
@@ -61,24 +69,34 @@ function pinnedAgent(target: SendTarget): https.Agent {
   ) => tls.TLSSocket
   ;(agent as unknown as { createConnection: CreateConn }).createConnection = (opts, cb) => {
     const socket = tls.connect({ ...opts, rejectUnauthorized: false }, () => {
+      // 握手完成 → 清掉建连超时。⚠️ 回归红线:不清则大文件上传空闲期会被 T_CONNECT_MS 误杀
+      //(connect timeout 只管"建连到握手完成",握手后交还请求级 T_UPLOAD_MS/T_SENDER_MS)。
+      socket.setTimeout(0)
       // fail-closed(B3):期望指纹缺失也要响亮失败,不静默放行
       if (!target.fingerprint) {
-        socket.destroy(new Error('no pinned fingerprint for target'))
+        socket.destroy(certError('no pinned fingerprint for target'))
         return
       }
       // 握手实际证书(叶子);证书变则指纹必变(M4:整证书 SHA-256)
       const cert = socket.getPeerCertificate()
       if (!cert || !cert.fingerprint256) {
-        socket.destroy(new Error('no peer certificate'))
+        socket.destroy(certError('no peer certificate'))
         return
       }
       if (cert.fingerprint256 !== target.fingerprint) {
         socket.destroy(
-          new Error(`fingerprint mismatch: ${cert.fingerprint256} != ${target.fingerprint}`)
+          certError(`fingerprint mismatch: ${cert.fingerprint256} != ${target.fingerprint}`)
         )
         return
       }
       cb(null, socket) // 通过
+    })
+    // 建连级短超时:连不上(如对端开 VPN,SYN 被灌进隧道黑洞)时快速失败,不干等 T_SENDER_MS 6min。
+    // 只覆盖建连阶段;握手成功回调里 setTimeout(0) 清除(见上)。
+    socket.setTimeout(T_CONNECT_MS, () => {
+      const err = new Error('connect ETIMEDOUT') as NodeJS.ErrnoException
+      err.code = 'ETIMEDOUT'
+      socket.destroy(err)
     })
     socket.on('error', (err) => cb(err))
     return socket

@@ -50,6 +50,24 @@ interface PendingResolver {
   fileIds: string[]
 }
 
+/**
+ * 把 http-client 发送失败的错误串映射成细分 errorReason,让 UI 能给出明确文案
+ * (而非一律"失败")。error 冒泡到此处只剩 message 字符串,故按关键词匹配:
+ *  - ETIMEDOUT / timeout → 连接超时(主 case:对端开 VPN 时局域网 IP 被隧道黑洞)
+ *  - ECONNREFUSED       → 对方未在监听(应用未开)
+ *  - ECERT / fingerprint / certificate → 证书不匹配(安全语义)
+ *  - 其他               → 泛化 network
+ * 见 docs/send-preflight-probe.md。
+ */
+export function classifyError(message: string): ErrorReason {
+  const m = message.toLowerCase()
+  if (m.includes('etimedout') || m.includes('timeout')) return 'timeout'
+  if (m.includes('econnrefused')) return 'refused'
+  if (m.includes('ecert') || m.includes('fingerprint') || m.includes('certificate'))
+    return 'cert-mismatch'
+  return 'network'
+}
+
 export class ChatService {
   private readonly d: ChatServiceDeps
   private readonly acceptTimeoutMs: number
@@ -298,7 +316,7 @@ export class ChatService {
       this.upsert(msg)
       if (!peer) return this.fail(msg.id, 'network')
       const res = await this.d.sender.sendText(peer.target, text)
-      return this.applySendResult(msg.id, res.kind)
+      return this.applySendResult(msg.id, res)
     })
   }
 
@@ -341,7 +359,7 @@ export class ChatService {
               ? 'failed'
               : 'failed'
       const reason: ErrorReason | undefined =
-        res.kind === 'busy' ? 'busy' : res.kind === 'error' ? 'network' : undefined
+        res.kind === 'busy' ? 'busy' : res.kind === 'error' ? classifyError(res.message) : undefined
       return msgs.map((m) => {
         const updated = this.d.store.updateStatus(m.id, status, reason ? { errorReason: reason } : undefined)!
         this.upsert(updated)
@@ -369,12 +387,15 @@ export class ChatService {
     return m
   }
 
-  private applySendResult(
-    msgId: string,
-    result: 'done' | 'rejected' | 'busy' | 'error'
-  ): Message {
-    const status = result === 'done' ? 'done' : result === 'rejected' ? 'rejected' : 'failed'
-    const reason: ErrorReason | undefined = result === 'busy' ? 'busy' : result === 'error' ? 'network' : undefined
+  private applySendResult(msgId: string, result: SendTextResult): Message {
+    const status =
+      result.kind === 'done' ? 'done' : result.kind === 'rejected' ? 'rejected' : 'failed'
+    const reason: ErrorReason | undefined =
+      result.kind === 'busy'
+        ? 'busy'
+        : result.kind === 'error'
+          ? classifyError(result.message)
+          : undefined
     const m = this.d.store.updateStatus(msgId, status, reason ? { errorReason: reason } : undefined)!
     this.upsert(m)
     return m
