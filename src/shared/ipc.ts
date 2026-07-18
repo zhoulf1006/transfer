@@ -42,7 +42,9 @@ export const EVT = {
   /** 截图:main → overlay,会话结束,overlay 清空状态(回等待态,防下次 show 闪旧框) */
   shotHide: 'shot:hide',
   /** 主窗聚焦态变化(focus→true / blur→false):renderer 据此决定新消息是否计未读 */
-  windowFocus: 'window:focus'
+  windowFocus: 'window:focus',
+  /** 界面语言变化(setLanguage 后 main 广播 effective):所有 window 据此热切换,含常驻 overlay */
+  languageChanged: 'language:changed'
 } as const
 
 export interface ProgressPayload {
@@ -85,6 +87,9 @@ export const CMD = {
   /** 主题偏好读写(存 main 侧,避开 file:// 下 localStorage 慢) */
   getTheme: 'settings:getTheme',
   setTheme: 'settings:setTheme',
+  /** 界面语言:读回 {pref,effective};写 pref 后回传新 {pref,effective}(effective 由 main 解析 system) */
+  getLanguage: 'settings:getLanguage',
+  setLanguage: 'settings:setLanguage',
   /** 截图快捷键:取当前值 / 设新值(设时试注册,冲突返 ok:false) */
   getShortcut: 'settings:getShortcut',
   setShortcut: 'settings:setShortcut',
@@ -98,6 +103,12 @@ export type SetShortcutResult =
   | { ok: false; reason: 'conflict' | 'invalid' }
 
 export type ThemePref = 'system' | 'light' | 'dark'
+
+// 界面语言:偏好(存盘)与有效语言(渲染用)分离;system 由 main 解析成 effective。
+export type { LangPref } from './i18n/resolve'
+export type { Lang } from './i18n/t'
+/** 语言 IPC 返回:pref=用户选的偏好,effective=实际生效语言(system 已解析) */
+export type LangResult = { pref: import('./i18n/resolve').LangPref; effective: import('./i18n/t').Lang }
 
 // ── 截图(overlay ↔ main)独立分组,避免 CMD 膨胀(见 docs/screenshot-feature §4.3)──
 export const SHOT_CMD = {

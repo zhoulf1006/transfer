@@ -105,6 +105,35 @@ describe('SettingsStore', () => {
     })
   })
 
+  describe('language', () => {
+    test('首次无文件 → 默认 system', () => {
+      const s = new SettingsStore(mkdir())
+      expect(s.getLanguage()).toBe('system')
+    })
+
+    test('setLanguage 持久化 + 重新加载可读', () => {
+      const dir = mkdir()
+      new SettingsStore(dir).setLanguage('en')
+      expect(new SettingsStore(dir).getLanguage()).toBe('en')
+    })
+
+    test('非法 language 被归一化为 system', () => {
+      const dir = mkdir()
+      writeFileSync(join(dir, 'settings.json'), JSON.stringify({ language: 'fr' }))
+      expect(new SettingsStore(dir).getLanguage()).toBe('system')
+    })
+
+    // 回归:改一个偏好不能抹掉另一个(照 theme 的回归测)。
+    test('setLanguage 不抹掉已设的 theme,反之亦然', () => {
+      const s = new SettingsStore(mkdir())
+      s.setTheme('light')
+      s.setLanguage('zh')
+      expect(s.getTheme()).toBe('light')
+      s.setTheme('dark')
+      expect(s.getLanguage()).toBe('zh')
+    })
+  })
+
   describe('shortcutCapture', () => {
     test('首次无文件 → 默认 F1', () => {
       const s = new SettingsStore(mkdir())

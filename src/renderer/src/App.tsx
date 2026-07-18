@@ -9,9 +9,13 @@ import type {
   UiMessage,
   AutoAcceptSettings,
   ProgressPayload,
-  StorageDirs
+  StorageDirs,
+  LangPref
 } from '@shared/ipc'
 import { ErrorBoundary } from './ErrorBoundary'
+import { useI18n } from './i18n'
+import type { TFn } from '@shared/i18n/t'
+import type { TKey } from '@shared/i18n/dict'
 import {
   SunMoonIcon,
   SunIcon,
@@ -179,7 +183,7 @@ export function App(): JSX.Element {
   return (
     <div style={S.app}>
       {/* 侧栏与主区各自包错误边界:一块崩溃不影响另一块(用户诉求) */}
-      <ErrorBoundary label="设备列表">
+      <ErrorBoundary labelKey="sidebar.boundaryDevices">
         <Sidebar
           identity={identity}
           devices={devices}
@@ -197,7 +201,7 @@ export function App(): JSX.Element {
         />
       </ErrorBoundary>
       <div style={S.main}>
-        <ErrorBoundary label="聊天" key={view + (peer ?? '')}>
+        <ErrorBoundary labelKey="sidebar.boundaryChat" key={view + (peer ?? '')}>
           {view === 'downloads' ? (
             <Downloads />
           ) : peer ? (
@@ -245,11 +249,13 @@ function Sidebar(props: {
   onOpenSettings: () => void
 }): JSX.Element {
   const { identity, devices, peer, view, unread, themePref, onCycleTheme, onPick, onShowDownloads, onOpenSettings } = props
+  const { t } = useI18n()
   const online = devices.filter((d) => d.status !== 'offline')
   const offline = devices.filter((d) => d.status === 'offline')
   const themeIcon =
     themePref === 'system' ? <SunMoonIcon /> : themePref === 'light' ? <SunIcon /> : <MoonIcon />
-  const themeLabel = themePref === 'system' ? '跟随系统' : themePref === 'light' ? '浅色' : '深色'
+  const themeLabel =
+    themePref === 'system' ? t('theme.system') : themePref === 'light' ? t('theme.light') : t('theme.dark')
 
   // ── 设备备注:右键菜单 + 行内编辑(见 docs/device-alias.md §4)──
   const [menuFp, setMenuFp] = useState<string | null>(null)
@@ -365,10 +371,13 @@ function Sidebar(props: {
               )}
             </div>
             {editing && saveError ? (
-              <div style={S.aliasErr}>保存失败,请重试</div>
+              <div style={S.aliasErr}>{t('sidebar.aliasSaveFail')}</div>
             ) : (
-              <div style={S.devSub} title={`${d.info.deviceModel} · ${off ? '离线' : d.address}`}>
-                {d.info.deviceModel} · {off ? '离线' : d.address}
+              <div
+                style={S.devSub}
+                title={`${d.info.deviceModel} · ${off ? t('sidebar.deviceOffline') : d.address}`}
+              >
+                {d.info.deviceModel} · {off ? t('sidebar.deviceOffline') : d.address}
               </div>
             )}
           </div>
@@ -386,17 +395,22 @@ function Sidebar(props: {
           <button
             className="tf-icon-btn"
             onClick={onCycleTheme}
-            title={`主题:${themeLabel}(点击切换)`}
+            title={t('theme.tooltip', { label: themeLabel })}
             style={S.iconBtn}
           >
             {themeIcon}
           </button>
-          <button className="tf-icon-btn" onClick={onOpenSettings} title="设置" style={S.iconBtn}>
+          <button
+            className="tf-icon-btn"
+            onClick={onOpenSettings}
+            title={t('common.settings')}
+            style={S.iconBtn}
+          >
             <SettingsIcon />
           </button>
         </div>
       </div>
-      {identity && <div style={S.self}>本机 · {identity.alias}</div>}
+      {identity && <div style={S.self}>{t('sidebar.self', { alias: identity.alias })}</div>}
 
       <div
         className="tf-row"
@@ -404,16 +418,16 @@ function Sidebar(props: {
         style={{ ...S.downloadsEntry, ...(view === 'downloads' ? S.devItemActive : {}) }}
       >
         <InboxIcon size={16} />
-        已接收文件
+        {t('sidebar.received')}
       </div>
 
-      <div style={S.devHeader}>在线 · {online.length}</div>
-      {online.length === 0 && <div style={S.hint}>正在搜索…</div>}
+      <div style={S.devHeader}>{t('sidebar.online', { count: online.length })}</div>
+      {online.length === 0 && <div style={S.hint}>{t('sidebar.searching')}</div>}
       {online.map(DeviceRow)}
 
       {offline.length > 0 && (
         <>
-          <div style={S.devHeader}>离线 · {offline.length}</div>
+          <div style={S.devHeader}>{t('sidebar.offlineGroup', { count: offline.length })}</div>
           {offline.map(DeviceRow)}
         </>
       )}
@@ -447,6 +461,7 @@ function DeviceContextMenu(props: {
   onClose: () => void
 }): JSX.Element {
   const { pos, hasCustomAlias, clearError, onEdit, onClear, onClose } = props
+  const { t } = useI18n()
   const ref = useRef<HTMLDivElement | null>(null)
   const [adj, setAdj] = useState(pos)
 
@@ -485,23 +500,24 @@ function DeviceContextMenu(props: {
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="tf-row" style={S.ctxItem} onClick={onEdit}>
-        修改备注
+        {t('sidebar.ctxRenameAlias')}
       </div>
       {hasCustomAlias && (
         <div className="tf-row" style={S.ctxItem} onClick={onClear}>
-          清除备注
+          {t('sidebar.ctxClearAlias')}
         </div>
       )}
-      {clearError && <div style={S.ctxErr}>清除失败,请重试</div>}
+      {clearError && <div style={S.ctxErr}>{t('sidebar.aliasClearFail')}</div>}
     </div>
   )
 }
 
 function Empty({ devices }: { devices: RemoteDevice[] }): JSX.Element {
+  const { t } = useI18n()
   return (
     <div style={S.empty}>
       <div style={{ fontSize: 40 }}>💬</div>
-      <p>{devices.length ? '选择左侧设备开始聊天' : '正在搜索局域网设备…'}</p>
+      <p>{devices.length ? t('chat.emptyPickDevice') : t('chat.emptySearching')}</p>
     </div>
   )
 }
@@ -514,6 +530,7 @@ function Chat(props: {
   progress: ProgressMap
 }): JSX.Element {
   const { peer, peerAlias, online, messages, progress } = props
+  const { t } = useI18n()
   const [text, setText] = useState('')
   const [dragging, setDragging] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -523,10 +540,10 @@ function Chat(props: {
   }, [messages.length])
 
   const sendText = useCallback(async () => {
-    const t = text.trim()
-    if (!t) return
+    const trimmed = text.trim()
+    if (!trimmed) return
     setText('')
-    await window.transfer.sendText({ peerFp: peer, text: t })
+    await window.transfer.sendText({ peerFp: peer, text: trimmed })
   }, [text, peer])
 
   const sendPaths = useCallback(
@@ -575,7 +592,7 @@ function Chat(props: {
     <div style={S.chat}>
       <div style={S.chatHeader}>
         {peerAlias}
-        {!online && <span style={S.offlineTag}>离线</span>}
+        {!online && <span style={S.offlineTag}>{t('chat.offlineTag')}</span>}
       </div>
       <div
         ref={scrollRef}
@@ -590,17 +607,25 @@ function Chat(props: {
         }}
         onDrop={onDrop}
       >
-        {messages.length === 0 && <div style={S.hint}>还没有消息。发一条,或把文件拖进来 👇</div>}
+        {messages.length === 0 && <div style={S.hint}>{t('chat.noMessages')}</div>}
         {messages.map((m) => (
           <Bubble key={m.id} msg={m} prog={progress[m.id]} />
         ))}
-        {dragging && <div style={S.dropHint}>松开发送文件</div>}
+        {dragging && <div style={S.dropHint}>{t('chat.dropHint')}</div>}
       </div>
       <div style={S.inputBar}>
-        <button onClick={() => window.transfer.beginShot()} style={S.inputIconBtn} title="截图">
+        <button
+          onClick={() => window.transfer.beginShot()}
+          style={S.inputIconBtn}
+          title={t('chat.captureTitle')}
+        >
           <CameraIcon size={19} />
         </button>
-        <button onClick={pickAndSend} style={{ ...S.inputIconBtn, marginLeft: -6 }} title="发送文件">
+        <button
+          onClick={pickAndSend}
+          style={{ ...S.inputIconBtn, marginLeft: -6 }}
+          title={t('chat.sendFileTitle')}
+        >
           <PaperclipIcon size={19} />
         </button>
         <textarea
@@ -615,7 +640,7 @@ function Chat(props: {
               sendText()
             }
           }}
-          placeholder="输入消息,Enter 发送,Shift+Enter 换行"
+          placeholder={t('chat.inputPlaceholder')}
           rows={1}
           style={S.textarea}
         />
@@ -629,6 +654,7 @@ function Chat(props: {
 
 /** 已接收文件下载列表(§12.5) */
 function Downloads(): JSX.Element {
+  const { t } = useI18n()
   const [files, setFiles] = useState<UiMessage[]>([])
   useEffect(() => {
     window.transfer.listReceivedFiles().then(setFiles)
@@ -641,9 +667,9 @@ function Downloads(): JSX.Element {
   }, [])
   return (
     <div style={S.chat}>
-      <div style={S.chatHeader}>已接收文件</div>
+      <div style={S.chatHeader}>{t('downloads.title')}</div>
       <div style={{ ...S.stream, gap: 0 }}>
-        {files.length === 0 && <div style={S.hint}>还没有接收到文件。</div>}
+        {files.length === 0 && <div style={S.hint}>{t('downloads.empty')}</div>}
         {files.map((f) => (
           <div key={f.id} className="tf-row" style={S.dlRow}>
             <div style={S.fileIcon}>{fileEmoji(f.fileName)}</div>
@@ -652,8 +678,8 @@ function Downloads(): JSX.Element {
                 {f.fileName}
               </div>
               <div style={S.dlMeta}>
-                {f.fileSize != null ? fmtSize(f.fileSize) : ''} · 来自 {f.peerAlias} ·{' '}
-                {fmtDateTime(f.createdAt)}
+                {f.fileSize != null ? fmtSize(f.fileSize) : ''} ·{' '}
+                {t('downloads.from', { alias: f.peerAlias ?? '' })} · {fmtDateTime(f.createdAt)}
               </div>
             </div>
             <button
@@ -661,7 +687,7 @@ function Downloads(): JSX.Element {
               style={S.openBtn}
               onClick={() => window.transfer.showInFolder(f.id)}
             >
-              打开所在文件夹
+              {t('common.openFolder')}
             </button>
           </div>
         ))}
@@ -671,6 +697,7 @@ function Downloads(): JSX.Element {
 }
 
 function Bubble({ msg, prog }: { msg: UiMessage; prog?: { sent: number; total: number } }): JSX.Element {
+  const { t } = useI18n()
   const own = msg.direction === 'sent'
   return (
     <div style={{ ...S.bubbleRow, justifyContent: own ? 'flex-end' : 'flex-start' }}>
@@ -681,7 +708,7 @@ function Bubble({ msg, prog }: { msg: UiMessage; prog?: { sent: number; total: n
           <FileBubble msg={msg} prog={prog} own={own} />
         )}
         <div style={S.meta}>
-          {statusLabel(msg)} · {fmtTime(msg.createdAt)}
+          {statusLabel(t, msg)} · {fmtTime(msg.createdAt)}
         </div>
       </div>
     </div>
@@ -710,6 +737,7 @@ function FileBubble({
   prog?: { sent: number; total: number }
   own: boolean
 }): JSX.Element {
+  const { t } = useI18n()
   const canRespond = msg.direction === 'recv' && msg.status === 'pending'
   const canOpen = msg.status === 'done' && msg.filePath
   // 传输中(pending/accepted)且有进度 → 百分比进度条(§12.3)
@@ -748,7 +776,7 @@ function FileBubble({
               msg.transferId && window.transfer.respond({ transferId: msg.transferId, accept: true })
             }
           >
-            接收
+            {t('common.accept')}
           </button>
           <button
             className="tf-btn"
@@ -757,7 +785,7 @@ function FileBubble({
               msg.transferId && window.transfer.respond({ transferId: msg.transferId, accept: false })
             }
           >
-            拒绝
+            {t('common.reject')}
           </button>
         </div>
       )}
@@ -767,7 +795,7 @@ function FileBubble({
           style={S.openBtn}
           onClick={() => window.transfer.showInFolder(msg.id)}
         >
-          打开所在文件夹
+          {t('common.openFolder')}
         </button>
       )}
     </div>
@@ -780,6 +808,7 @@ function FileBubble({
  * 拿不到(GIF/WEBP/读失败)→ 回退文件图标行(与非图片一致)。
  */
 function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
+  const { t } = useI18n()
   const [thumb, setThumb] = useState<string | null | undefined>(undefined) // undefined=加载中
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null) // 右键菜单位置
   const [viewer, setViewer] = useState<string | null>(null) // 原图 dataURL(居中弹层打开中)
@@ -849,7 +878,7 @@ function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
           e.preventDefault()
           setMenu({ x: e.clientX, y: e.clientY })
         }}
-        title="点击查看原图 · 右键保存"
+        title={t('image.thumbTitle')}
         alt={msg.fileName ?? ''}
       />
       {viewer && (
@@ -867,7 +896,7 @@ function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
               void window.transfer.saveImageAs(msg.id)
             }}
           >
-            保存图片
+            {t('image.saveImage')}
           </div>
           <div
             className="tf-row"
@@ -877,7 +906,7 @@ function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
               void window.transfer.openFile(msg.id)
             }}
           >
-            用系统程序打开
+            {t('image.openWithSystem')}
           </div>
         </div>
       )}
@@ -891,6 +920,7 @@ function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
  * Esc / 失焦退出录制,不改键。
  */
 function ShortcutRecorder(): JSX.Element {
+  const { t } = useI18n()
   const [accel, setAccel] = useState<string | null>(null) // 当前生效的键(null=加载中)
   const [recording, setRecording] = useState(false)
   const [hint, setHint] = useState<string | null>(null) // 提示(录制引导 / 冲突 / 非法)
@@ -923,16 +953,16 @@ function ShortcutRecorder(): JSX.Element {
       setHintErr(false)
       setHint(
         reason === 'need-modifier'
-          ? '普通键需配合 Cmd/Ctrl/Alt/Shift'
+          ? t('shortcut.hintNeedModifier')
           : reason === 'unsupported'
-            ? '不支持该按键,请换一个'
-            : '继续按下组合键…'
+            ? t('shortcut.hintUnsupported')
+            : t('shortcut.hintContinue')
       )
       return
     }
     // 合法 → 立即试生效
     setRecording(false)
-    setHint('保存中…')
+    setHint(t('shortcut.saving'))
     setHintErr(false)
     window.transfer.setShortcut(next).then((r) => {
       if (r.ok) {
@@ -940,24 +970,20 @@ function ShortcutRecorder(): JSX.Element {
         setHint(null)
       } else {
         setHintErr(true)
-        setHint(
-          r.reason === 'conflict'
-            ? '该快捷键可能被其他程序占用,请换一个'
-            : '快捷键格式非法,请换一个'
-        )
+        setHint(r.reason === 'conflict' ? t('shortcut.errConflict') : t('shortcut.errInvalid'))
       }
     })
   }
 
   return (
     <div style={S.settingRow}>
-      <span style={{ flexShrink: 0 }}>截图:</span>
+      <span style={{ flexShrink: 0 }}>{t('shortcut.captureLabel')}</span>
       <button
         className="tf-btn"
         style={{ ...S.shortcutBox, ...(recording ? S.shortcutBoxRec : {}) }}
         onClick={() => {
           setRecording(true)
-          setHint('按下快捷键…(Esc 取消)')
+          setHint(t('shortcut.recordGuideEsc'))
           setHintErr(false)
         }}
         onKeyDown={onKeyDown}
@@ -970,7 +996,7 @@ function ShortcutRecorder(): JSX.Element {
           }
         }}
       >
-        {recording ? '按下快捷键…' : (accel ?? '…')}
+        {recording ? t('shortcut.recordGuide') : (accel ?? '…')}
       </button>
       {hint && (
         <span style={{ ...S.shortcutHint, color: hintErr ? 'var(--danger)' : 'var(--muted)' }}>
@@ -986,6 +1012,7 @@ function SettingsModal(props: {
   onClose: () => void
   onSave: (s: Partial<AutoAcceptSettings>) => void
 }): JSX.Element {
+  const { t, pref: langPref, setPref: setLangPref } = useI18n()
   const [enabled, setEnabled] = useState(props.value.enabled)
   const [mb, setMb] = useState(Math.round(props.value.maxBytes / (1024 * 1024)))
   const [dirs, setDirs] = useState<StorageDirs | null>(null)
@@ -995,15 +1022,15 @@ function SettingsModal(props: {
   return (
     <div style={S.modalMask} onClick={props.onClose}>
       <div style={S.modal} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginTop: 0 }}>设置</h3>
+        <h3 style={{ marginTop: 0 }}>{t('settings.title')}</h3>
 
-        <div style={S.settingSectionTitle}>接收</div>
+        <div style={S.settingSectionTitle}>{t('settings.sectionReceive')}</div>
         <label style={S.settingRow}>
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-          启用自动接收(文本消息始终自动接收)
+          {t('settings.autoAcceptLabel')}
         </label>
         <label style={{ ...S.settingRow, opacity: enabled ? 1 : 0.5 }}>
-          自动接收文件大小上限:
+          {t('settings.maxSizeLabel')}
           <input
             type="number"
             value={mb}
@@ -1014,34 +1041,48 @@ function SettingsModal(props: {
           MB
         </label>
 
-        <div style={S.settingSectionTitle}>存储</div>
+        <div style={S.settingSectionTitle}>{t('settings.sectionStorage')}</div>
         <div style={S.storageRow}>
-          <span style={S.storageLabel}>文件:</span>
+          <span style={S.storageLabel}>{t('settings.fileLabel')}</span>
           <span style={S.storagePath} title={dirs?.downloads ?? ''}>
             {dirs?.downloads ?? '…'}
           </span>
           <button
             className="tf-icon-btn"
             style={S.storageIconBtn}
-            title="打开文件夹"
+            title={t('settings.openFolderTitle')}
             onClick={() => window.transfer.openDownloadsDir()}
           >
             📂
           </button>
         </div>
 
-        <div style={S.settingSectionTitle}>快捷键</div>
+        <div style={S.settingSectionTitle}>{t('settings.sectionShortcut')}</div>
         <ShortcutRecorder />
+
+        <div style={S.settingSectionTitle}>{t('settings.sectionLanguage')}</div>
+        <div style={S.settingRow}>
+          <select
+            value={langPref}
+            onChange={(e) => setLangPref(e.target.value as LangPref)}
+            style={S.langSelect}
+          >
+            <option value="system">{t('settings.lang.system')}</option>
+            <option value="zh">{t('settings.lang.zh')}</option>
+            <option value="en">{t('settings.lang.en')}</option>
+          </select>
+        </div>
+        {langPref === 'system' && <div style={S.langHint}>{t('settings.lang.systemHint')}</div>}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
           <button onClick={props.onClose} style={S.btn}>
-            取消
+            {t('common.cancel')}
           </button>
           <button
             onClick={() => props.onSave({ enabled, maxBytes: mb * 1024 * 1024 })}
             style={{ ...S.btn, ...S.btnPrimary }}
           >
-            保存
+            {t('common.save')}
           </button>
         </div>
       </div>
@@ -1051,36 +1092,36 @@ function SettingsModal(props: {
 
 // ── helpers ──
 /** failed 消息按 errorReason 给明确文案(区分超时/拒连/证书,主治对端开 VPN 的连不上)。 */
-function failedLabel(reason: string | null): string {
+function failedLabel(t: TFn<TKey>, reason: string | null): string {
   switch (reason) {
     case 'busy':
-      return '对方正忙'
+      return t('chat.failed.busy')
     case 'timeout':
-      return '连接超时(对方可能开了 VPN)'
+      return t('chat.failed.timeout')
     case 'refused':
-      return '对方未在监听'
+      return t('chat.failed.refused')
     case 'cert-mismatch':
-      return '证书不匹配'
+      return t('chat.failed.certMismatch')
     default:
-      return '失败'
+      return t('chat.failed.default')
   }
 }
-function statusLabel(m: UiMessage): string {
+function statusLabel(t: TFn<TKey>, m: UiMessage): string {
   switch (m.status) {
     case 'pending':
-      return m.direction === 'sent' ? '发送中' : '待接收'
+      return m.direction === 'sent' ? t('chat.status.pendingSent') : t('chat.status.pendingRecv')
     case 'accepted':
-      return '接收中'
+      return t('chat.status.accepting')
     case 'sent':
-      return '已发送'
+      return t('chat.status.sent')
     case 'done':
-      return m.direction === 'sent' ? '已送达' : '已接收'
+      return m.direction === 'sent' ? t('chat.status.delivered') : t('chat.status.received')
     case 'rejected':
-      return '被拒绝'
+      return t('chat.status.rejected')
     case 'expired':
-      return '已过期'
+      return t('chat.status.expired')
     case 'failed':
-      return failedLabel(m.errorReason)
+      return failedLabel(t, m.errorReason)
     default:
       return m.status
   }
@@ -1227,6 +1268,8 @@ const S: Record<string, React.CSSProperties> = {
   shortcutBox: { minWidth: 120, padding: '4px 12px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--bg)', color: 'var(--ink)', cursor: 'pointer', fontSize: 12, fontFamily: 'ui-monospace, monospace', textAlign: 'center' },
   shortcutBoxRec: { borderColor: 'var(--accent)', color: 'var(--accent)' },
   shortcutHint: { fontSize: 11, flex: 1, minWidth: 0 },
+  langSelect: { padding: '4px 10px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--bg)', color: 'var(--ink)', cursor: 'pointer', fontSize: 12.5 },
+  langHint: { fontSize: 11, color: 'var(--muted)', margin: '-2px 0 4px' },
   numInput: { width: 80, padding: '4px 8px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--bg)', color: 'var(--ink)' },
   btn: { padding: '6px 16px', border: '1px solid var(--line-strong)', borderRadius: 8, background: 'var(--card)', color: 'var(--ink)', cursor: 'pointer', fontSize: 13 },
   btnPrimary: { border: '1px solid var(--accent-soft)', background: 'var(--accent-soft)', color: 'var(--accent)' }

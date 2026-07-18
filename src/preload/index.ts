@@ -14,6 +14,9 @@ import {
   type ProgressPayload,
   type ShotSource,
   type ThemePref,
+  type LangPref,
+  type LangResult,
+  type Lang,
   type StorageDirs,
   type SetShortcutResult
 } from '@shared/ipc'
@@ -60,6 +63,9 @@ const api = {
   /** 主题偏好读写(存 main 侧,避开 file:// 下 localStorage 慢) */
   getTheme: (): Promise<ThemePref> => ipcRenderer.invoke(CMD.getTheme),
   setTheme: (t: ThemePref): Promise<ThemePref> => ipcRenderer.invoke(CMD.setTheme, t),
+  /** 界面语言:读回 {pref,effective};写 pref 后回传新 {pref,effective}(main 解析 system) */
+  getLanguage: (): Promise<LangResult> => ipcRenderer.invoke(CMD.getLanguage),
+  setLanguage: (pref: LangPref): Promise<LangResult> => ipcRenderer.invoke(CMD.setLanguage, pref),
   /** 截图快捷键:取当前 / 设新(设时 main 试注册,冲突返 ok:false) */
   getShortcut: (): Promise<string> => ipcRenderer.invoke(CMD.getShortcut),
   setShortcut: (accel: string): Promise<SetShortcutResult> =>
@@ -78,6 +84,8 @@ const api = {
   onProgress: (cb: (p: ProgressPayload) => void) => subscribe(EVT.progress, cb),
   /** 主窗聚焦态变化(用于"正在看→不计未读") */
   onWindowFocus: (cb: (focused: boolean) => void) => subscribe(EVT.windowFocus, cb),
+  /** 界面语言变化(main 广播 effective):所有 window 热切换,含常驻 overlay */
+  onLanguageChanged: (cb: (lang: Lang) => void) => subscribe(EVT.languageChanged, cb),
 
   // ── 截图(主窗同步 peer;overlay 用 shot 子分组,见 docs/screenshot-feature §4.1)──
   /** 主窗当前聊天对象变化时同步给 main(决定截图"发聊天"可用性) */

@@ -4,6 +4,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
+import type { LangPref } from '@shared/i18n/resolve'
 
 export interface AutoAcceptSettings {
   /** 是否启用自动接收(仅约束文件,文本永远自动入流) */
@@ -21,6 +22,8 @@ export const DEFAULT_SHORTCUT_CAPTURE = 'F1'
 export interface AppSettings {
   autoAccept: AutoAcceptSettings
   theme: ThemePref
+  /** 界面语言偏好:跟随系统 / 中文 / 英文。默认 system(见 docs/i18n-follow-system.md)。 */
+  language: LangPref
   /** 截图快捷键(Electron accelerator 字符串,如 'F1' / 'Command+Shift+A') */
   shortcutCapture: string
   /** 远端设备备注:key = 设备 fingerprint,value = 备注(非空;空即删除该键)。见 docs/device-alias.md */
@@ -33,6 +36,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     maxBytes: 100 * 1024 * 1024 // 100MB(启用后的默认阈值)
   },
   theme: 'system',
+  language: 'system',
   shortcutCapture: DEFAULT_SHORTCUT_CAPTURE,
   deviceAliases: {}
 }
@@ -43,6 +47,10 @@ function normalize(raw: unknown): AppSettings {
   const aa = (r.autoAccept ?? {}) as Partial<AutoAcceptSettings>
   const theme: ThemePref =
     r.theme === 'light' || r.theme === 'dark' || r.theme === 'system' ? r.theme : DEFAULT_SETTINGS.theme
+  const language: LangPref =
+    r.language === 'zh' || r.language === 'en' || r.language === 'system'
+      ? r.language
+      : DEFAULT_SETTINGS.language
   // 只保证是非空字符串;是否为合法/可注册 accelerator 是运行时 register 的事,不在此校验。
   const shortcutCapture =
     typeof r.shortcutCapture === 'string' && r.shortcutCapture.trim()
@@ -65,6 +73,7 @@ function normalize(raw: unknown): AppSettings {
           : DEFAULT_SETTINGS.autoAccept.maxBytes
     },
     theme,
+    language,
     shortcutCapture,
     deviceAliases
   }
@@ -115,6 +124,16 @@ export class SettingsStore {
     this.cache = normalize({ ...this.cache, theme })
     this.persist()
     return this.cache.theme
+  }
+
+  getLanguage(): LangPref {
+    return this.cache.language
+  }
+
+  setLanguage(language: LangPref): LangPref {
+    this.cache = normalize({ ...this.cache, language })
+    this.persist()
+    return this.cache.language
   }
 
   getShortcutCapture(): string {
