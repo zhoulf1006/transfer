@@ -34,6 +34,8 @@ import {
 } from '@shared/screenshot-annotation'
 import { drawElement } from './annotation-draw'
 import { CopyIcon, SaveIcon, SendIcon } from './icons'
+import { I18nProvider, useI18n } from './i18n'
+import type { TKey } from '@shared/i18n/dict'
 
 /**
  * 截图遮罩层(见 docs/screenshot-feature §4.1)。
@@ -42,6 +44,7 @@ import { CopyIcon, SaveIcon, SendIcon } from './icons'
  * 几何全走 @shared/screenshot-selection 纯函数。放大镜/标注在后续阶段。
  */
 function Overlay(): JSX.Element {
+  const { t } = useI18n()
   const [shot, setShot] = useState<ShotSource | null>(null)
 
   useEffect(() => {
@@ -66,7 +69,7 @@ function Overlay(): JSX.Element {
   if (!shot) {
     return (
       <div style={S.mask}>
-        <div style={S.hint}>正在截图…</div>
+        <div style={S.hint}>{t('overlay.loading')}</div>
       </div>
     )
   }
@@ -166,6 +169,7 @@ function isElementValid(el: ShotElement): boolean {
 
 /** 一次截图会话(shotId 变 → 整体重挂,天然复位)。 */
 function Session({ shot }: { shot: ShotSource }): JSX.Element {
+  const { t } = useI18n()
   const bounds = { w: shot.displayW, h: shot.displayH }
   const ratio = { x: shot.ratioX, y: shot.ratioY }
   const [sel, setSel] = useState<Rect | null>(null)
@@ -554,7 +558,7 @@ function Session({ shot }: { shot: ShotSource }): JSX.Element {
           }}
         />
       )}
-      {!sel && <div style={S.hint}>拖拽框选 · 右键取消 · Esc 退出</div>}
+      {!sel && <div style={S.hint}>{t('overlay.opHint')}</div>}
       {showMag && hover && sampleRef.current && (
         <Magnifier
           hover={hover}
@@ -589,6 +593,7 @@ function Magnifier(props: {
   fmt: ColorFormat
 }): JSX.Element {
   const { hover, bounds, sample, ratio, bitmapW, bitmapH, zoom, fmt } = props
+  const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [rgb, setRgb] = useState<[number, number, number] | null>(null)
 
@@ -634,7 +639,7 @@ function Magnifier(props: {
           {rgb && <span style={{ ...S.magSwatch, background: `rgb(${rgb[0]},${rgb[1]},${rgb[2]})` }} />}
           <span>{rgb ? formatColor(rgb[0], rgb[1], rgb[2], fmt) : '—'}</span>
         </div>
-        <div style={S.magKeys}>C 复制 · Shift 切格式 · 滚轮缩放</div>
+        <div style={S.magKeys}>{t('overlay.magnifierHint')}</div>
       </div>
     </div>
   )
@@ -669,16 +674,16 @@ function SizeLabel({ sel }: { sel: Rect }): JSX.Element {
 }
 
 const TOOLBAR_H = 32
-const TOOLS: Array<{ t: ShotTool; icon: string; label: string }> = [
-  { t: 'rect', icon: '▭', label: '矩形' },
-  { t: 'ellipse', icon: '◯', label: '椭圆' },
-  { t: 'arrow', icon: '↗', label: '箭头' },
-  { t: 'line', icon: '／', label: '直线' },
-  { t: 'pen', icon: '✎', label: '画笔' },
-  { t: 'mosaic', icon: '▚', label: '马赛克' },
-  { t: 'blur', icon: '◍', label: '模糊' },
-  { t: 'text', icon: 'A', label: '文字' },
-  { t: 'badge', icon: '①', label: '序号' }
+const TOOLS: Array<{ tool: ShotTool; icon: string; labelKey: TKey }> = [
+  { tool: 'rect', icon: '▭', labelKey: 'overlay.tool.rect' },
+  { tool: 'ellipse', icon: '◯', labelKey: 'overlay.tool.ellipse' },
+  { tool: 'arrow', icon: '↗', labelKey: 'overlay.tool.arrow' },
+  { tool: 'line', icon: '／', labelKey: 'overlay.tool.line' },
+  { tool: 'pen', icon: '✎', labelKey: 'overlay.tool.pen' },
+  { tool: 'mosaic', icon: '▚', labelKey: 'overlay.tool.mosaic' },
+  { tool: 'blur', icon: '◍', labelKey: 'overlay.tool.blur' },
+  { tool: 'text', icon: 'A', labelKey: 'overlay.tool.text' },
+  { tool: 'badge', icon: '①', labelKey: 'overlay.tool.badge' }
 ]
 const COLORS = ['#e23b3b', '#f59e0b', '#22c55e', '#2d84c4', '#7c3aed', '#111111', '#ffffff']
 
@@ -701,6 +706,7 @@ function Toolbar(props: {
   onSend: () => void
 }): JSX.Element {
   const { sel, bounds, hasPeer, tool, style } = props
+  const { t } = useI18n()
   const belowTop = sel.y + sel.h + 8
   const top =
     belowTop + TOOLBAR_H <= bounds.h
@@ -716,12 +722,12 @@ function Toolbar(props: {
       onPointerDown={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.stopPropagation()}
     >
-      {TOOLS.map(({ t, icon, label }) => (
+      {TOOLS.map(({ tool: tl, icon, labelKey }) => (
         <button
-          key={t}
-          style={{ ...S.tbTool, ...(tool === t ? S.tbToolOn : {}) }}
-          title={label}
-          onClick={() => props.onTool(tool === t ? null : t)}
+          key={tl}
+          style={{ ...S.tbTool, ...(tool === tl ? S.tbToolOn : {}) }}
+          title={t(labelKey)}
+          onClick={() => props.onTool(tool === tl ? null : tl)}
         >
           {icon}
         </button>
@@ -747,27 +753,27 @@ function Toolbar(props: {
         value={style.width}
         onChange={(e) => props.onStyle({ ...style, width: Number(e.target.value) })}
         style={S.tbRange}
-        title="粗细"
+        title={t('overlay.strokeWidth')}
       />
       <div style={S.tbSep} />
-      <button style={S.tbTool} disabled={!props.canUndo} onClick={props.onUndo} title="撤销">
+      <button style={S.tbTool} disabled={!props.canUndo} onClick={props.onUndo} title={t('overlay.undo')}>
         ↶
       </button>
-      <button style={S.tbTool} disabled={!props.canRedo} onClick={props.onRedo} title="重做">
+      <button style={S.tbTool} disabled={!props.canRedo} onClick={props.onRedo} title={t('overlay.redo')}>
         ↷
       </button>
       <div style={S.tbSep} />
-      <button style={S.tbTool} onClick={props.onCopy} title="复制到剪贴板">
+      <button style={S.tbTool} onClick={props.onCopy} title={t('overlay.copyClipboard')}>
         <CopyIcon size={15} />
       </button>
-      <button style={S.tbTool} onClick={props.onSave} title="保存为文件">
+      <button style={S.tbTool} onClick={props.onSave} title={t('overlay.saveFile')}>
         <SaveIcon size={15} />
       </button>
       <button
         style={{ ...S.tbTool, ...(hasPeer ? S.tbToolPrimary : S.tbToolDisabled) }}
         onClick={props.onSend}
         disabled={!hasPeer}
-        title={hasPeer ? '发到当前聊天' : '先在主窗选择一个聊天对象'}
+        title={hasPeer ? t('overlay.sendToPeer') : t('overlay.sendNoPeer')}
       >
         <SendIcon size={15} />
       </button>
@@ -937,6 +943,8 @@ const S: Record<string, React.CSSProperties> = {
 
 createRoot(document.getElementById('overlay-root')!).render(
   <React.StrictMode>
-    <Overlay />
+    <I18nProvider>
+      <Overlay />
+    </I18nProvider>
   </React.StrictMode>
 )

@@ -14,6 +14,8 @@ import {
   type AutoAcceptSettings,
   type IdentityInfo,
   type ThemePref,
+  type LangPref,
+  type LangResult,
   type StorageDirs,
   type SetShortcutResult
 } from '@shared/ipc'
@@ -24,6 +26,7 @@ import { MessageStore } from './db/messages'
 import { SettingsStore } from './settings'
 import { ScreenshotService, persistAndSend } from './screenshot-service'
 import { APP_HOST, registerAppProtocol } from './app-protocol'
+import { t, setMainLang, resolveSystemEffective } from './i18n'
 
 // 统一 userData 目录名:dev(未打包)默认读 package.json name='transfer'(小写),
 // 打包版读 productName='Transfer'(大写)→ 两者目录名不一致。显式 setName 统一为 'Transfer',
@@ -168,7 +171,7 @@ function registerIpc(): void {
   // 复用截图那套 persistAndSend:成功保留原图(缩略图/看大图靠 filePath 读盘)、失败删副本。
   ipcMain.handle(CMD.sendImage, async (_e, args: SendImageArgs) => {
     if (!core) return
-    const fileName = `图片_${Date.now()}_${randomUUID().slice(0, 8)}.png`
+    const fileName = `${t('main.file.imagePrefix')}_${Date.now()}_${randomUUID().slice(0, 8)}.png`
     const dir = join(app.getPath('userData'), 'sent-images') // 与截图 sentImagesDir 同源(index.ts 处)
     await persistAndSend(dir, fileName, Buffer.from(args.png), async (p) => {
       await core!.chat.sendFiles(args.peerFp, [p])
@@ -242,6 +245,20 @@ function registerIpc(): void {
   // 主题偏好:存 main 侧(避开 file:// 下 localStorage 慢)
   ipcMain.handle(CMD.getTheme, (): ThemePref => settings!.getTheme())
   ipcMain.handle(CMD.setTheme, (_e, t: ThemePref): ThemePref => settings!.setTheme(t))
+  // 界面语言:pref 存盘,effective 由 main 解析 system(getPreferredSystemLanguages)。
+  ipcMain.handle(CMD.getLanguage, (): LangResult => {
+    const pref = settings!.getLanguage()
+    return { pref, effective: resolveSystemEffective(pref) }
+  })
+  ipcMain.handle(CMD.setLanguage, (_e, pref: LangPref): LangResult => {
+    settings!.setLanguage(pref)
+    const effective = resolveSystemEffective(pref)
+    setMainLang(effective) // 更新主进程内存态,后续 dialog/文件名用新语言
+    // 广播给所有 window(主窗自身 + 常驻 overlay):后者只在首次 F1 mount 时拉过语言,
+    // 无此广播则改语言后再截图仍显旧语言(见 docs/i18n-follow-system.md B6/B11)。
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.send(EVT.languageChanged, effective)
+    return { pref, effective }
+  })
   // 截图快捷键:取当前值。
   ipcMain.handle(CMD.getShortcut, (): string => settings!.getShortcutCapture())
   // 设新键:先粗校验格式 → 试注册(rebind,失败自动回滚旧键)→ 成功才持久化。
@@ -288,19 +305,22 @@ app.whenReady().then(async () => {
   registerIpc()
   createWindow()
 
+  const userData = app.getPath('userData')
+  // settings + 语言先建:证书失败的 showErrorBox 也需正确语言(它在 identity try 之前触发)。
+  settings = new SettingsStore(userData)
+  setMainLang(resolveSystemEffective(settings.getLanguage()))
+
   // 证书/身份(首启生成 EC 自签名证书,几十 ms)。证书是 HTTPS 硬前提,失败即无法起服务:
   // 明确报错并退出,不静默(此处在 startCore 的 catch 之前,自身需兜住 rejection,M1)。
   let identity: Awaited<ReturnType<typeof loadOrCreateIdentity>>
   try {
-    identity = await loadOrCreateIdentity(app.getPath('userData'))
+    identity = await loadOrCreateIdentity(userData)
   } catch (err) {
-    dialog.showErrorBox('初始化失败', `无法生成本机证书(HTTPS 前提):${String(err)}`)
+    dialog.showErrorBox(t('main.dialog.initFailTitle'), t('main.dialog.initFailBody', { err: String(err) }))
     app.quit()
     return
   }
-  const userData = app.getPath('userData')
   store = new MessageStore(join(userData, 'messages.db'))
-  settings = new SettingsStore(userData)
 
   core = new AppCore({
     identity,
@@ -350,7 +370,7 @@ app.whenReady().then(async () => {
   // 网络服务(HTTP server + UDP 发现)延迟到窗口显示之后再起:让首帧更早、不被网络初始化阻塞。
   // 代价:启动后极短时间内(窗口已显示到服务就绪之间)可能收不到连接,可接受。
   const startCore = (): void => {
-    core?.start().catch((err) => dialog.showErrorBox('启动失败', String(err)))
+    core?.start().catch((err) => dialog.showErrorBox(t('main.dialog.startFailTitle'), String(err)))
   }
   if (mainWindow && !mainWindow.isVisible()) {
     mainWindow.once('show', startCore)

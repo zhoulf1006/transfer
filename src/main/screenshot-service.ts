@@ -17,6 +17,7 @@ import {
 import { SHOT_CMD, EVT, type ShotSource } from '@shared/ipc'
 import { computeRatios } from '@shared/screenshot-geometry'
 import { APP_HOST } from './app-protocol'
+import { t, getMainLang } from './i18n'
 
 /**
  * 截图会话服务(见 docs/screenshot-feature §4)。
@@ -213,9 +214,9 @@ export class ScreenshotService {
     void dialog
       .showMessageBox({
         type: 'warning',
-        message: '需要屏幕录制权限',
-        detail: '请在「系统设置 → 隐私与安全性 → 屏幕录制」中允许 Transfer,然后重启应用。',
-        buttons: ['打开系统设置', '取消'],
+        message: t('main.dialog.screenPermTitle'),
+        detail: t('main.dialog.screenPermDetail'),
+        buttons: [t('main.dialog.screenPermOpen'), t('main.dialog.screenPermCancel')],
         defaultId: 0,
         cancelId: 1
       })
@@ -374,10 +375,13 @@ export class ScreenshotService {
   }
 
   private loadOverlay(win: BrowserWindow): void {
+    // overlay 是全屏视觉焦点:把当前有效语言经 URL query 带过去,首帧即正确(无中文闪现)。
+    // 常驻 overlay 只在创建时加载一次;之后的语言变化走 EVT.languageChanged 广播热切换。
+    const q = `?lang=${getMainLang()}`
     if (this.deps.rendererUrl) {
-      void win.loadURL(`${this.deps.rendererUrl}/overlay.html`)
+      void win.loadURL(`${this.deps.rendererUrl}/overlay.html${q}`)
     } else {
-      void win.loadURL(`app://${APP_HOST}/overlay.html`)
+      void win.loadURL(`app://${APP_HOST}/overlay.html${q}`)
     }
   }
 
@@ -414,8 +418,8 @@ export class ScreenshotService {
       this.dialogBusy = true
       try {
         const opts = {
-          defaultPath: `截图_${stamp()}.png`,
-          filters: [{ name: 'PNG 图片', extensions: ['png'] }]
+          defaultPath: `${t('main.file.screenshotPrefix')}_${stamp()}.png`,
+          filters: [{ name: t('main.file.pngFilterName'), extensions: ['png'] }]
         }
         const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
         if (r.canceled || !r.filePath) return null
@@ -442,7 +446,7 @@ export class ScreenshotService {
    * **失败才删**这张刚写的副本(消息已入失败态,原图无保留价值,免碎片堆积)。
    */
   private async sendToChatBackground(peer: string, png: Buffer): Promise<void> {
-    const fileName = `截图_${stamp()}_${randomUUID().slice(0, 8)}.png`
+    const fileName = `${t('main.file.screenshotPrefix')}_${stamp()}_${randomUUID().slice(0, 8)}.png`
     await persistAndSend(this.deps.sentImagesDir, fileName, png, (p) =>
       this.deps.sendFiles(peer, [p])
     )
