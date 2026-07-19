@@ -17,7 +17,8 @@ export class DeviceRegistry {
   private devices = new Map<string, RemoteDevice>()
   private readonly now: () => number
   private readonly ttlMs: number
-  private readonly offlineKeepMs: number
+  /** 离线保留时长(ms);可运行时改。Infinity = 永不删。 */
+  private offlineKeepMs: number
 
   constructor(opts: DeviceRegistryOpts) {
     this.now = opts.now
@@ -47,7 +48,19 @@ export class DeviceRegistry {
   }
 
   /**
+   * 运行时改离线保留时长(ms)。Infinity = 永不删除。
+   * 防御:非有限值(NaN/undefined/负数)一律忽略——否则 `idle >= ttlMs + NaN` 恒 false,
+   * 会把非法输入静默伪装成"永不删除"(C1)。Infinity 是唯一允许的非有限值。
+   */
+  setOfflineKeep(ms: number): void {
+    if (ms === Infinity || (Number.isFinite(ms) && ms >= 0)) {
+      this.offlineKeepMs = ms
+    }
+  }
+
+  /**
    * 两段过期(§12.2):online 超 TTL → offline(灰置底保留);offline 超 keep → 真删。
+   * offlineKeepMs=Infinity 时 `idle >= ttlMs + Infinity` 恒 false → 永不删(从不)。
    * 返回是否发生可见变化(有设备转离线或被删),供调用方决定推 devices:updated。
    */
   prune(): { changed: boolean; removed: string[] } {

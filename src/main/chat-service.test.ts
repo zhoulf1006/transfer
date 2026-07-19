@@ -224,11 +224,18 @@ describe('ChatService', () => {
     expect(m.status).toBe('done')
   })
 
-  test('sendText 离线 → failed(network)', async () => {
+  test('sendText 离线 → failed(offline)', async () => {
     onlinePeers.clear()
     const m = await chat.sendText('P', 'hi')
     expect(m.status).toBe('failed')
-    expect(m.errorReason).toBe('network')
+    expect(m.errorReason).toBe('offline')
+  })
+
+  test('sendFiles 离线 → failed(offline)', async () => {
+    onlinePeers.clear()
+    const [m] = await chat.sendFiles('P', ['/tmp/x.bin'])
+    expect(m.status).toBe('failed')
+    expect(m.errorReason).toBe('offline')
   })
 
   test('sendFiles 对方 busy → failed(busy)', async () => {

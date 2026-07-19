@@ -4,6 +4,7 @@ import { isImageFile } from '@shared/ipc'
 import { pickImageItemIndices } from '@shared/clipboard-image'
 import { eventToAccelerator, acceleratorRejectReason } from '@shared/accelerator'
 import { shouldCountUnread } from '@shared/unread'
+import { OFFLINE_KEEP_PRESETS } from '@shared/offline-keep'
 import type {
   IdentityInfo,
   UiMessage,
@@ -1016,8 +1017,10 @@ function SettingsModal(props: {
   const [enabled, setEnabled] = useState(props.value.enabled)
   const [mb, setMb] = useState(Math.round(props.value.maxBytes / (1024 * 1024)))
   const [dirs, setDirs] = useState<StorageDirs | null>(null)
+  const [offlineKeep, setOfflineKeep] = useState<number | null>(null)
   useEffect(() => {
     window.transfer.getStorageDirs().then(setDirs)
+    window.transfer.getOfflineKeep().then(setOfflineKeep)
   }, [])
   return (
     <div style={S.modalMask} onClick={props.onClose}>
@@ -1060,6 +1063,28 @@ function SettingsModal(props: {
         <div style={S.settingSectionTitle}>{t('settings.sectionShortcut')}</div>
         <ShortcutRecorder />
 
+        <div style={S.settingSectionTitle}>{t('settings.sectionDiscovery')}</div>
+        <div style={S.settingRow}>
+          <span style={S.storageLabel}>{t('settings.offlineKeepLabel')}</span>
+          <select
+            value={offlineKeep ?? ''}
+            disabled={offlineKeep === null}
+            onChange={(e) => {
+              const minutes = Number(e.target.value)
+              setOfflineKeep(minutes)
+              void window.transfer.setOfflineKeep(minutes).then(setOfflineKeep)
+            }}
+            style={S.langSelect}
+          >
+            {OFFLINE_KEEP_PRESETS.map((p) => (
+              <option key={p.minutes} value={p.minutes}>
+                {t(p.labelKey as TKey)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div style={S.langHint}>{t('settings.offlineKeepHint')}</div>
+
         <div style={S.settingSectionTitle}>{t('settings.sectionLanguage')}</div>
         <div style={S.settingRow}>
           <select
@@ -1091,11 +1116,13 @@ function SettingsModal(props: {
 }
 
 // ── helpers ──
-/** failed 消息按 errorReason 给明确文案(区分超时/拒连/证书,主治对端开 VPN 的连不上)。 */
+/** failed 消息按 errorReason 给明确文案(区分离线/超时/拒连/证书)。 */
 function failedLabel(t: TFn<TKey>, reason: string | null): string {
   switch (reason) {
     case 'busy':
       return t('chat.failed.busy')
+    case 'offline':
+      return t('chat.failed.offline')
     case 'timeout':
       return t('chat.failed.timeout')
     case 'refused':

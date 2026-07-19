@@ -268,6 +268,11 @@ function registerIpc(): void {
     settings!.setShortcutCapture(accel)
     return { ok: true, accel }
   })
+  // 离线保留时长:取当前分钟值 / 设新值。set 必须走 core(打通 registry + 立即 prune),不能只 settings.set。
+  ipcMain.handle(CMD.getOfflineKeep, (): number => settings!.getOfflineKeepMinutes())
+  ipcMain.handle(CMD.setOfflineKeep, (_e, minutes: number): number =>
+    core?.setOfflineKeepMinutes(minutes) ?? settings!.getOfflineKeepMinutes()
+  )
   // 同步总未读数(renderer 算好后传来)→ mac Dock 数字角标(0 隐藏)。
   // Windows setBadgeCount 无效(返 false),无害;Windows 提醒靠 flashFrame。
   ipcMain.handle(CMD.setUnread, (_e, total: number) => {

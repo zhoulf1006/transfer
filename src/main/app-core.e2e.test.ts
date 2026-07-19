@@ -198,14 +198,14 @@ describe('AppCore 端到端(聊天)', () => {
     expect(aText?.status).toBe('done')
   })
 
-  test('离线对端:发送失败标 failed(network)', async () => {
+  test('离线对端:发送失败标 failed(offline)', async () => {
     const a = await mkCore('A3', 56321, false)
     await a.core.start()
     // 未发现任何设备,直接发给不存在的 fingerprint
     await a.core.chat.sendText('FP_NOBODY', 'hello')
     const m = a.messages().find((x) => x.direction === 'sent')
     expect(m?.status).toBe('failed')
-    expect(m?.errorReason).toBe('network')
+    expect(m?.errorReason).toBe('offline')
   })
 
   test('HTTP 端口被占用时自动回退到下一个端口', async () => {

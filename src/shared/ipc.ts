@@ -93,6 +93,9 @@ export const CMD = {
   /** 截图快捷键:取当前值 / 设新值(设时试注册,冲突返 ok:false) */
   getShortcut: 'settings:getShortcut',
   setShortcut: 'settings:setShortcut',
+  /** 离线设备保留时长(分钟,0=从不):取当前值 / 设新值(即时打通 registry,返归一化后的分钟) */
+  getOfflineKeep: 'settings:getOfflineKeep',
+  setOfflineKeep: 'settings:setOfflineKeep',
   /** 同步总未读数给 main(驱动 mac Dock 数字角标;0=隐藏) */
   setUnread: 'notify:setUnread'
 } as const

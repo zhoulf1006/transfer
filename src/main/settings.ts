@@ -5,6 +5,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import type { LangPref } from '@shared/i18n/resolve'
+import { OFFLINE_KEEP_DEFAULT_MINUTES } from '@shared/offline-keep'
 
 export interface AutoAcceptSettings {
   /** 是否启用自动接收(仅约束文件,文本永远自动入流) */
@@ -28,6 +29,11 @@ export interface AppSettings {
   shortcutCapture: string
   /** 远端设备备注:key = 设备 fingerprint,value = 备注(非空;空即删除该键)。见 docs/device-alias.md */
   deviceAliases: Record<string, string>
+  /**
+   * 离线设备在列表里保留的时长(**分钟**);超时后自动从发现表删除。0 = 从不删除(永久灰置底保留)。
+   * 只存分钟数,Infinity 只在 registry 运行时存在(见 @shared/offline-keep)。默认 60。
+   */
+  offlineKeepMinutes: number
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -38,7 +44,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
   language: 'system',
   shortcutCapture: DEFAULT_SHORTCUT_CAPTURE,
-  deviceAliases: {}
+  deviceAliases: {},
+  offlineKeepMinutes: OFFLINE_KEEP_DEFAULT_MINUTES
 }
 
 /** 归一化(容错旧/损坏字段),保证返回合法结构 */
@@ -75,7 +82,15 @@ function normalize(raw: unknown): AppSettings {
     theme,
     language,
     shortcutCapture,
-    deviceAliases
+    deviceAliases,
+    // 0(从不)必须原样保留 → 用 Number.isInteger && >= 0(不能用 falsy 判断,否则 0 被吃回默认)。
+    // 缺失(undefined)/负/小数/NaN/非数 → 回默认 60。
+    offlineKeepMinutes:
+      typeof r.offlineKeepMinutes === 'number' &&
+      Number.isInteger(r.offlineKeepMinutes) &&
+      r.offlineKeepMinutes >= 0
+        ? r.offlineKeepMinutes
+        : DEFAULT_SETTINGS.offlineKeepMinutes
   }
 }
 
@@ -134,6 +149,16 @@ export class SettingsStore {
     this.cache = normalize({ ...this.cache, language })
     this.persist()
     return this.cache.language
+  }
+
+  getOfflineKeepMinutes(): number {
+    return this.cache.offlineKeepMinutes
+  }
+
+  setOfflineKeepMinutes(minutes: number): number {
+    this.cache = normalize({ ...this.cache, offlineKeepMinutes: minutes })
+    this.persist()
+    return this.cache.offlineKeepMinutes
   }
 
   getShortcutCapture(): string {

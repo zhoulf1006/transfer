@@ -70,6 +70,9 @@ const api = {
   getShortcut: (): Promise<string> => ipcRenderer.invoke(CMD.getShortcut),
   setShortcut: (accel: string): Promise<SetShortcutResult> =>
     ipcRenderer.invoke(CMD.setShortcut, accel),
+  getOfflineKeep: (): Promise<number> => ipcRenderer.invoke(CMD.getOfflineKeep),
+  setOfflineKeep: (minutes: number): Promise<number> =>
+    ipcRenderer.invoke(CMD.setOfflineKeep, minutes),
   /** 存储目录:取路径展示 + 打开(系统文件管理器) */
   getStorageDirs: (): Promise<StorageDirs> => ipcRenderer.invoke(CMD.getStorageDirs),
   openDownloadsDir: (): Promise<void> => ipcRenderer.invoke(CMD.openDownloadsDir),
