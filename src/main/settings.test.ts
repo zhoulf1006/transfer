@@ -268,4 +268,57 @@ describe('SettingsStore', () => {
       expect(s.getDeviceAliases().fp1).toBe('原备注') // 回滚:仍是旧值,不是"新备注"
     })
   })
+
+  describe('offlineKeepMinutes(离线设备保留时长)', () => {
+    function loadRaw(dir: string, raw: unknown): SettingsStore {
+      writeFileSync(join(dir, 'settings.json'), JSON.stringify(raw))
+      return new SettingsStore(dir)
+    }
+
+    test('首次无文件 → 默认 60', () => {
+      const s = new SettingsStore(mkdir())
+      expect(s.getOfflineKeepMinutes()).toBe(60)
+    })
+
+    test('显式 0(从不)被原样保留,不回滚成 60', () => {
+      // C4 防线:0 是 falsy,若 normalize 用 `x > 0 ? x : 默认` 会被吃掉 → "从不"永远选不上
+      const s = loadRaw(mkdir(), { offlineKeepMinutes: 0 })
+      expect(s.getOfflineKeepMinutes()).toBe(0)
+    })
+
+    test('缺失字段 → 60(区分于显式 0)', () => {
+      const s = loadRaw(mkdir(), { theme: 'light' })
+      expect(s.getOfflineKeepMinutes()).toBe(60)
+    })
+
+    test('非法值(负/小数/NaN/字符串/null)→ 60', () => {
+      for (const bad of [-5, 1.5, NaN, 'abc', null]) {
+        const s = loadRaw(mkdir(), { offlineKeepMinutes: bad })
+        expect(s.getOfflineKeepMinutes()).toBe(60)
+      }
+    })
+
+    test('正常值原样保留', () => {
+      const s = loadRaw(mkdir(), { offlineKeepMinutes: 30 })
+      expect(s.getOfflineKeepMinutes()).toBe(30)
+    })
+
+    test('setOfflineKeepMinutes 持久化 + 重新加载可读(含 0 往返)', () => {
+      const dir = mkdir()
+      const s1 = new SettingsStore(dir)
+      s1.setOfflineKeepMinutes(0)
+      // C2:存的是分钟(0),不是 Infinity —— JSON.stringify(0) 正常,JSON.stringify(Infinity) 会变 null
+      expect(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')).offlineKeepMinutes).toBe(0)
+      const s2 = new SettingsStore(dir)
+      expect(s2.getOfflineKeepMinutes()).toBe(0)
+    })
+
+    test('setOfflineKeepMinutes 不抹掉其它字段', () => {
+      const s = new SettingsStore(mkdir())
+      s.setTheme('dark')
+      s.setOfflineKeepMinutes(120)
+      expect(s.getTheme()).toBe('dark')
+      expect(s.getOfflineKeepMinutes()).toBe(120)
+    })
+  })
 })

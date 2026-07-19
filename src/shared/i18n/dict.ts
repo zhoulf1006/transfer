@@ -51,7 +51,8 @@ const zh = {
 
   // chat.failed:failedLabel 参数化(errorReason 枚举)
   'chat.failed.busy': '对方正忙',
-  'chat.failed.timeout': '连接超时(对方可能开了 VPN)',
+  'chat.failed.offline': '对方已离线',
+  'chat.failed.timeout': '连接超时',
   'chat.failed.refused': '对方未在监听',
   'chat.failed.certMismatch': '证书不匹配',
   'chat.failed.default': '失败',
@@ -75,7 +76,19 @@ const zh = {
   'settings.fileLabel': '文件:',
   'settings.openFolderTitle': '打开文件夹',
   'settings.sectionShortcut': '快捷键',
+  'settings.sectionDiscovery': '设备发现',
   'settings.sectionLanguage': '语言',
+
+  // settings.offlineKeep:离线设备保留时长下拉
+  'settings.offlineKeepLabel': '离线设备保留:',
+  'settings.offlineKeepHint': '离线设备灰置底保留多久后从列表移除',
+  'settings.offlineKeep.min10': '10 分钟',
+  'settings.offlineKeep.min30': '30 分钟',
+  'settings.offlineKeep.hour1': '1 小时',
+  'settings.offlineKeep.hour6': '6 小时',
+  'settings.offlineKeep.hour12': '12 小时',
+  'settings.offlineKeep.day1': '1 天',
+  'settings.offlineKeep.never': '从不',
 
   // settings.lang:语言选择器
   'settings.lang.system': '跟随系统',
@@ -189,7 +202,8 @@ const en: Record<TKey, string> = {
   'chat.status.expired': 'Expired',
 
   'chat.failed.busy': 'Recipient is busy',
-  'chat.failed.timeout': 'Connection timed out (recipient may be on a VPN)',
+  'chat.failed.offline': 'Recipient is offline',
+  'chat.failed.timeout': 'Connection timed out',
   'chat.failed.refused': 'Recipient is not listening',
   'chat.failed.certMismatch': 'Certificate mismatch',
   'chat.failed.default': 'Failed',
@@ -210,7 +224,18 @@ const en: Record<TKey, string> = {
   'settings.fileLabel': 'Files:',
   'settings.openFolderTitle': 'Open Folder',
   'settings.sectionShortcut': 'Shortcut',
+  'settings.sectionDiscovery': 'Device Discovery',
   'settings.sectionLanguage': 'Language',
+
+  'settings.offlineKeepLabel': 'Keep offline devices:',
+  'settings.offlineKeepHint': 'How long offline devices stay greyed-out before being removed from the list',
+  'settings.offlineKeep.min10': '10 minutes',
+  'settings.offlineKeep.min30': '30 minutes',
+  'settings.offlineKeep.hour1': '1 hour',
+  'settings.offlineKeep.hour6': '6 hours',
+  'settings.offlineKeep.hour12': '12 hours',
+  'settings.offlineKeep.day1': '1 day',
+  'settings.offlineKeep.never': 'Never',
 
   'settings.lang.system': 'Follow System',
   'settings.lang.zh': '中文',

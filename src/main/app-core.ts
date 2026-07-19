@@ -7,6 +7,7 @@ import { accessSync, constants, statSync } from 'node:fs'
 import type { FastifyInstance } from 'fastify'
 import type { DeviceInfo, RemoteDevice } from '@shared/types'
 import { DEFAULT_PORT } from '@shared/protocol'
+import { minutesToKeepMs } from '@shared/offline-keep'
 import { buildDeviceInfo, type Identity } from '@shared/identity'
 import { MulticastDiscovery } from './discovery/multicast'
 import { DeviceRegistry } from './discovery/device-registry'
@@ -64,7 +65,11 @@ export class AppCore {
     this.httpPort = opts.httpPort ?? DEFAULT_PORT
     this.multicastPort = opts.multicastPort ?? DEFAULT_PORT
     const now = () => Date.now()
-    this.registry = new DeviceRegistry({ now })
+    // 离线保留时长从设置读初值(分钟→ms;0→Infinity 永不删);运行时改走 setOfflineKeepMinutes。
+    this.registry = new DeviceRegistry({
+      now,
+      offlineKeepMs: minutesToKeepMs(opts.settings.getOfflineKeepMinutes())
+    })
     this.sessions = new SessionManager({ now })
 
     // 聊天编排:持久化 + 发送/接收/确认 + 挂起 resolver 表
@@ -123,7 +128,9 @@ export class AppCore {
   /** fingerprint → 连接目标 + alias(离线返回 null) */
   private resolvePeer(fingerprint: string): { target: SendTarget; alias: string } | null {
     const dev = this.registry.list().find((d) => d.info.fingerprint === fingerprint)
-    if (!dev) return null
+    // 契约:只解析"可达的在线对端"。offline 设备虽仍灰置底保留在表内(§12.2 两段过期),
+    // 但直连必失败,当作离线返回 null → 调用方报"对方已离线"而非误导的连接超时。
+    if (!dev || dev.status === 'offline') return null
     return {
       // fingerprint = 发现阶段记住的对端证书指纹,连接时用它 pin TLS(§3.4)
       target: {
@@ -272,6 +279,19 @@ export class AppCore {
     const ok = this.opts.settings.setDeviceAlias(fingerprint, alias)
     if (ok) this.emitDevices() // 不等下次多播,立即可见
     return { ok }
+  }
+
+  /**
+   * 改离线设备保留时长(分钟,0=从不):持久化 + 即时打通 registry。
+   * 立即 prune 一次:缩短时长后超期的离线设备当即从列表消失,不等下一个 5s prune tick(S2)。
+   * 返回归一化后的实际分钟值。
+   */
+  setOfflineKeepMinutes(minutes: number): number {
+    const saved = this.opts.settings.setOfflineKeepMinutes(minutes)
+    this.registry.setOfflineKeep(minutesToKeepMs(saved))
+    const { changed } = this.registry.prune()
+    if (changed) this.emitDevices()
+    return saved
   }
 
   // 发送/接收/确认由 this.chat(ChatService)承载,见 index.ts IPC 接线。

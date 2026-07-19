@@ -32,6 +32,7 @@ export type ErrorReason =
   | 'timeout'
   | 'refused'
   | 'cert-mismatch'
+  | 'offline'
 
 export interface Message {
   id: string

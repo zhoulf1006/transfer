@@ -47,12 +47,18 @@
 ChatService 侧新增 `classifyError(message): ErrorReason`:按错误串/关键字匹配
 (error 冒泡到 ChatService 时只剩 `message: string`,故用**字符串包含**匹配 code 关键词):
 
-| 错误特征(message 含) | errorReason(新增) | UI 文案 |
+> **修订(离线 vs 超时,修误报 VPN)**:早期把 `timeout` 文案写死为"对方可能开了 VPN",
+> 但**离线**比 VPN 常见得多,且一次 TCP 建连超时无法区分二者。现改为**先用在线状态判定**:
+> `resolvePeer` 只解析在线对端(`status==='offline'`/已删 → null),离线直接标 `offline`("对方已离线");
+> 只有**在线却连不上**才走 `classifyError` 得 `timeout`,文案去掉 VPN 猜测,改中性的"连接超时"。
+
+| 错误特征 / 前置判定 | errorReason | UI 文案 |
 |---|---|---|
-| `ETIMEDOUT` / `timeout` | `timeout` | 连接超时。对方可能开了 VPN,局域网连接被隧道拦截 |
+| `resolvePeer` 返回 null(离线/已删) | `offline` | 对方已离线 |
+| `ETIMEDOUT` / `timeout`(在线却连不上) | `timeout` | 连接超时 |
 | `ECONNREFUSED` | `refused` | 对方未在监听(应用未开?) |
 | `ECERT` / `fingerprint` / `certificate` | `cert-mismatch` | 证书不匹配,可能不是同一设备 |
-| 其他 | `network`(现有) | 网络错误 |
+| 其他 | `network`(兜底) | 失败 |
 
 > 关键:http-client 的 error message 已经带这些关键词
 > (`request timeout`、`fingerprint mismatch: ...`、Node 的 `connect ECONNREFUSED ...`、

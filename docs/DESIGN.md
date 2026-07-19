@@ -569,10 +569,12 @@ settings.ts            # 自动接收开关+阈值(持久化,复用 identity.jso
 
 ### 12.2 需求1:设备在线/离线
 
-- `device-registry`:过期(TTL 15s 未刷新)**不删**,而是标 `offline`;`offline` 后再保留 `offlineKeepMs`(默认 5min)才真正删。加 `status: 'online'|'offline'` 到 `RemoteDevice`(必填)。
+- `device-registry`:过期(TTL 15s 未刷新)**不删**,而是标 `offline`;`offline` 后再保留 `offlineKeepMs` 才真正删。加 `status: 'online'|'offline'` 到 `RemoteDevice`(必填)。
+  - **`offlineKeepMs` 可配置**(设置项「离线设备保留」):存**分钟数** `offlineKeepMinutes`(settings.json),默认 **60min**,`0` = 从不删除。运行时改走 `registry.setOfflineKeep(ms)` 即时生效并立即 `prune()`(缩短后超期设备当即消失,不等 5s tick)。
+  - 分钟→ms 换算见 `@shared/offline-keep`:`0 → Infinity`(`idle >= ttlMs + Infinity` 恒 false → 永不删)。**硬约束:`Infinity` 只在 registry 运行时存在,绝不进 settings.json(`JSON.stringify(Infinity)==="null"` 会损坏持久化)**;setter 对非有限值(NaN/undefined)做防御(忽略,不静默变永久)。
 - `prune()` 改为两段并返回 `{ changed, removed }`:online 超 TTL → offline(`changed=true`);offline 后总 idle 超 `TTL+offlineKeepMs` → 真删(`removed` 含 fp)。app-core 按 `changed` 决定是否推 `devices:updated`。
 - `upsert`:离线设备重新听到 → 转 online 且返回 `true`(可见变化),触发 UI 刷新。
-- UI:设备列表分**在线组**(绿点)+ **离线组**(灰点、灰置底、"离线"标)。点离线设备可打开历史会话但发送会 failed(network)。
+- UI:设备列表分**在线组**(绿点)+ **离线组**(灰点、灰置底、"离线"标)。点离线设备可打开历史会话但发送会 failed(offline,文案"对方已离线")——`resolvePeer` 对 `status==='offline'` 的灰置底设备返回 null(见 §12.2 表)。
 
 ### 12.3 需求4:真实进度(改动传输层)
 
@@ -605,7 +607,7 @@ settings.ts            # 自动接收开关+阈值(持久化,复用 identity.jso
 | 拖入非文件(文本/URL) | `getPathForFile` 返回空串 → 过滤掉空串,无有效文件则忽略 |
 | 拖入文件夹 | MVP 不支持文件夹(getPathForFile 返回目录路径,fs 读会失败)→ 发送时标 failed;后续可递归 |
 | 进度 total 未知(无 Content-Length) | UI 无百分比(降级);节流状态靠终态 upsert 清理(不依赖 100% 帧,见 §12.3 的 2-C) |
-| 离线设备发送 | 离线设备仍在列表(灰置底),但 `resolvePeer` 只匹配在线连接信息;点击离线设备发送 → 找不到活跃连接 → failed(network) |
+| 离线设备发送 | 离线设备仍在列表(灰置底),但 `resolvePeer` 只解析在线对端(`status==='offline'` 或已删 → 返回 null);点击离线设备发送 → failed(offline,文案"对方已离线")。**不误报连接超时/VPN**:在线才可能超时,离线直接判定 |
 | 进度 IPC 高频 | 节流每 100ms;首帧永远推、100% 强制推;**终态(done/failed/rejected/expired)统一清节流状态**(2-C) |
 | 下载列表文件已被用户删除 | 打开时 openPath 失败,UI 提示(MVP 可不处理,openPath 静默失败) |
 

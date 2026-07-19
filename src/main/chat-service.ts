@@ -314,7 +314,8 @@ export class ChatService {
         transferId: null
       })
       this.upsert(msg)
-      if (!peer) return this.fail(msg.id, 'network')
+      // resolvePeer 契约:离线/已从发现表移除返回 null → 报"对方已离线",而非误导性的连接超时
+      if (!peer) return this.fail(msg.id, 'offline')
       const res = await this.d.sender.sendText(peer.target, text)
       return this.applySendResult(msg.id, res)
     })
@@ -343,7 +344,7 @@ export class ChatService {
       })
       msgs.forEach((m) => this.upsert(m))
       if (!peer) {
-        return msgs.map((m) => this.fail(m.id, 'network'))
+        return msgs.map((m) => this.fail(m.id, 'offline'))
       }
       const files = filePaths.map((path, i) => ({ id: msgs[i].id, path }))
       // 发送进度:fileId === 发送方 msgId,直接推 UI(§12.3)

@@ -82,4 +82,59 @@ describe('DeviceRegistry', () => {
     reg.clear()
     expect(reg.list()).toHaveLength(0)
   })
+
+  describe('setOfflineKeep(运行时改保留时长)', () => {
+    /** 让 fp 转成 offline(超 TTL 后 prune 一次)。返回转 offline 时的 clock。 */
+    function makeOffline(fp: string): void {
+      reg.upsert(info(fp), '1.1.1.1', 53317, 'http')
+      clock += 15_000 // 超 TTL
+      reg.prune() // → offline
+      expect(reg.list().find((d) => d.info.fingerprint === fp)?.status).toBe('offline')
+    }
+
+    test('缩短保留时长:已超新阈值的 offline 设备下次 prune 被删', () => {
+      makeOffline('A') // A 在 clock=16000 转 offline,lastSeen=1000
+      clock += 20_000 // A idle = 15000+20000 = 35s;keep=60s 时不该删
+      expect(reg.prune().removed).toEqual([])
+      // 缩短到 10s(总阈值 TTL+keep = 25s),A idle 已 35s > 25s → 下次 prune 删
+      reg.setOfflineKeep(10_000)
+      expect(reg.prune().removed).toEqual(['A'])
+    })
+
+    test('放大保留时长:原本要删的 offline 设备被留住', () => {
+      makeOffline('A')
+      clock += 70_000 // idle=85s,keep=60s 本应删(阈值75s)
+      reg.setOfflineKeep(5 * 60_000) // 放大到 5min(阈值 315s),85s < 315s
+      expect(reg.prune().removed).toEqual([])
+      expect(reg.list().map((d) => d.info.fingerprint)).toEqual(['A'])
+    })
+
+    test('Infinity(从不):offline 设备永不删,即便 clock 推进极大', () => {
+      reg.setOfflineKeep(Infinity)
+      makeOffline('A')
+      clock += 100 * 24 * 60 * 60_000 // 推进 100 天
+      expect(reg.prune().removed).toEqual([])
+      expect(reg.list().map((d) => d.info.fingerprint)).toEqual(['A'])
+    })
+
+    test('Infinity → 有限值:超期 offline 设备下次 prune 被批量删除', () => {
+      reg.setOfflineKeep(Infinity)
+      makeOffline('A')
+      makeOffline('B')
+      clock += 10 * 60_000 // 10min
+      expect(reg.prune().removed).toEqual([]) // Infinity 仍不删
+      reg.setOfflineKeep(60_000) // 收回到 1min,A/B idle 远超
+      expect(reg.prune().removed.sort()).toEqual(['A', 'B'])
+      expect(reg.list()).toHaveLength(0)
+    })
+
+    test('防御:非法值(NaN/undefined)被忽略,保留原阈值(不静默变永久)', () => {
+      makeOffline('A')
+      reg.setOfflineKeep(NaN)
+      reg.setOfflineKeep(undefined as unknown as number)
+      // 原 keep=60s(阈值75s),A idle 15s < 75s,不删;推进到 80s 则删(证明阈值仍是 60s 未被 NaN 改成"永不")
+      clock += 65_000 // A idle = 15+65 = 80s > 75s
+      expect(reg.prune().removed).toEqual(['A'])
+    })
+  })
 })
