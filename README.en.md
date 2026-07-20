@@ -5,6 +5,8 @@
 > Cross-platform (macOS / Windows) LAN tool: **file/text transfer + chat + screenshot annotation**, all in one.
 > Direct LAN connection, **no server, no account, no cloud**. Built on Electron + TypeScript; discovery and transfer are compatible with the [LocalSend protocol v2](https://github.com/localsend/protocol).
 
+![Transfer main window: chat-style file and text transfer](docs/img/introduction.png)
+
 ---
 
 ## What is this
