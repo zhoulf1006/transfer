@@ -10,7 +10,7 @@
 export const VERSION = '0.9.0'
 
 // 三个下载来源的 base（阶段三接好后回填真实值）
-const R2_BASE = 'https://dl.example.com/releases' // Cloudflare R2 自定义域(海外/默认)
+const R2_BASE = 'https://dl.aloongplanet.com/releases' // Cloudflare R2 自定义域(海外/默认)
 const GITEE_REPO = 'https://gitee.com/aloong/transfer' // Gitee 镜像仓库(中国)
 const GITHUB_REPO = 'https://github.com/zhoulf1006/transfer' // GitHub(兜底)
 
