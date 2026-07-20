@@ -1,0 +1,40 @@
+---
+import { useTranslations, type Locale } from '../i18n/ui'
+interface Props { locale: Locale }
+const { locale } = Astro.props
+const t = useTranslations(locale)
+---
+
+<section id="security">
+  <div class="container narrow">
+    <h2 class="section-title">{t('security.title')}</h2>
+    <div class="sec-grid grid">
+      <div class="card sec-card">
+        <p>{t('security.transport')}</p>
+      </div>
+      <div class="card sec-card sec-warn">
+        <p>{t('security.vpn')}</p>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .narrow {
+      max-width: 780px;
+    }
+    .sec-grid {
+      grid-template-columns: 1fr;
+    }
+    .sec-card {
+      padding: 20px 24px;
+    }
+    .sec-card p {
+      margin: 0;
+      color: var(--fg-muted);
+      font-size: 0.95rem;
+    }
+    .sec-warn {
+      border-left: 3px solid var(--brand);
+    }
+  </style>
+</section>

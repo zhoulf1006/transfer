@@ -1,0 +1,139 @@
+:root {
+  --brand: #8a67ab;
+  --brand-dark: #6f5090;
+  --brand-light: #a985c9;
+  --brand-tint: #f3eef8;
+
+  --fg: #1a1626;
+  --fg-muted: #5c5470;
+  --bg: #ffffff;
+  --bg-soft: #faf8fc;
+  --border: #e7e1ef;
+  --card: #ffffff;
+  --shadow: 0 1px 3px rgba(26, 22, 38, 0.06), 0 8px 24px rgba(26, 22, 38, 0.06);
+
+  --radius: 14px;
+  --maxw: 1080px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', Roboto, Helvetica, Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #ece8f4;
+    --fg-muted: #a49cbb;
+    --bg: #14111c;
+    --bg-soft: #1b1726;
+    --border: #2c2640;
+    --card: #1e1a2b;
+    --brand-tint: #241d33;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  color: var(--fg);
+  background: var(--bg);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--brand);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+.container {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+section {
+  padding: 72px 0;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.5em;
+}
+
+.section-title {
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.section-sub {
+  text-align: center;
+  color: var(--fg-muted);
+  max-width: 640px;
+  margin: 0 auto 48px;
+}
+
+/* buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.98rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform 0.08s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.btn:hover {
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+.btn-primary {
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(138, 103, 171, 0.35);
+}
+.btn-primary:hover {
+  background: var(--brand-dark);
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--fg);
+  border-color: var(--border);
+}
+.btn-ghost:hover {
+  background: var(--bg-soft);
+}
+
+/* cards */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* utilities */
+.grid {
+  display: grid;
+  gap: 20px;
+}
+.text-muted {
+  color: var(--fg-muted);
+}

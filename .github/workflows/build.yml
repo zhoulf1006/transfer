@@ -140,3 +140,88 @@ jobs:
           prerelease: ${{ endsWith(github.ref, '-beta') || endsWith(github.ref, '-rc') || endsWith(github.ref, '-alpha') || endsWith(github.ref, '-dev') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 汇总同步 job:两平台产物都齐后,统一
+  #   ① 推所有安装包 → Cloudflare R2(海外/默认下载源)
+  #   ② 生成 latest.json 并上传 R2(落地页读它拿最新版本/文件清单)
+  #   ③ 把小文件镜像到 Gitee Releases(中国大陆免备案下载源)
+  # 仅 tag 触发时运行;R2 / Gitee 步骤在 secret 缺失时跳过(不报错),照现有 mac 签名的 HAS_XXX 模式。
+  # 各平台的 GitHub Release 已在上面各 job 发好,本 job 失败不影响它。
+  # ─────────────────────────────────────────────────────────────────────────
+  sync:
+    needs: [build-win, build-mac]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    env:
+      # 提升到 job env 供 step 的 if 判断(与 mac job 同款写法,跨版本稳)
+      HAS_R2: ${{ secrets.R2_ACCOUNT_ID != '' && secrets.R2_ACCESS_KEY_ID != '' && secrets.R2_SECRET_ACCESS_KEY != '' && secrets.R2_BUCKET != '' }}
+      HAS_GITEE: ${{ secrets.GITEE_PAT != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 从 tag 去掉 v 前缀得到纯版本号(vX.Y.Z → X.Y.Z),供脚本与 R2 路径用
+      - name: Resolve version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # 下载两平台已上传的 artifact 到 dist/(build-win / build-mac 里 upload-artifact 的产物)
+      - name: Download windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Transfer-windows
+          path: dist/win
+      - name: Download macos artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Transfer-macos-dmg
+          path: dist/mac
+
+      - name: List downloaded artifacts
+        run: find dist -type f \( -name '*.dmg' -o -name '*.exe' \) | sort
+
+      # ① 生成 latest.json(纯 Node,无外部依赖)
+      - name: Generate latest.json
+        env:
+          RELEASE_TIMESTAMP: ${{ github.event.head_commit.timestamp }}
+        run: node build/gen-latest-json.cjs "${{ steps.ver.outputs.version }}" dist dist/latest.json
+
+      # ② 推 R2:所有安装包 → releases/vX.Y.Z/,latest.json → 根(覆盖)。用 aws-cli(S3 兼容)。
+      - name: Upload to Cloudflare R2
+        if: env.HAS_R2 == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          # 安装包:按版本目录,长缓存(内容不可变)
+          find dist -type f \( -name '*.dmg' -o -name '*-win-setup.exe' -o -name '*-win-portable.exe' \) -print0 \
+          | while IFS= read -r -d '' f; do
+              name=$(basename "$f")
+              aws s3 cp "$f" "s3://${R2_BUCKET}/releases/v${VERSION}/${name}" \
+                --endpoint-url "$R2_ENDPOINT" \
+                --cache-control "public, max-age=31536000, immutable"
+            done
+          # latest.json:放根,短缓存(要能快速反映新版本)
+          aws s3 cp dist/latest.json "s3://${R2_BUCKET}/latest.json" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --content-type application/json \
+            --cache-control "public, max-age=300"
+
+      # ③ 镜像小文件到 Gitee(超限/大包跳过,脚本内按后缀+大小过滤)。失败不拖垮主流程。
+      - name: Mirror to Gitee Releases
+        if: env.HAS_GITEE == 'true'
+        continue-on-error: true
+        env:
+          GITEE_PAT: ${{ secrets.GITEE_PAT }}
+        run: node build/gitee-mirror.cjs aloong/transfer "${{ steps.ver.outputs.version }}" dist
+
+      - name: Summary
+        run: |
+          echo "R2 上传: ${{ env.HAS_R2 == 'true' && '已执行' || '跳过(缺 secret)' }}"
+          echo "Gitee 镜像: ${{ env.HAS_GITEE == 'true' && '已执行' || '跳过(缺 secret)' }}"
