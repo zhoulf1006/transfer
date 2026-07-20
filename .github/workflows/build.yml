@@ -143,10 +143,9 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────────────────
   # 汇总同步 job:两平台产物都齐后,统一
-  #   ① 推所有安装包 → Cloudflare R2(海外/默认下载源)
+  #   ① 推所有安装包 → Cloudflare R2(全球下载源)
   #   ② 生成 latest.json 并上传 R2(落地页读它拿最新版本/文件清单)
-  #   ③ 把小文件镜像到 Gitee Releases(中国大陆免备案下载源)
-  # 仅 tag 触发时运行;R2 / Gitee 步骤在 secret 缺失时跳过(不报错),照现有 mac 签名的 HAS_XXX 模式。
+  # 仅 tag 触发时运行;R2 步骤在 secret 缺失时跳过(不报错),照现有 mac 签名的 HAS_XXX 模式。
   # 各平台的 GitHub Release 已在上面各 job 发好,本 job 失败不影响它。
   # ─────────────────────────────────────────────────────────────────────────
   sync:
@@ -156,7 +155,6 @@ jobs:
     env:
       # 提升到 job env 供 step 的 if 判断(与 mac job 同款写法,跨版本稳)
       HAS_R2: ${{ secrets.R2_ACCOUNT_ID != '' && secrets.R2_ACCESS_KEY_ID != '' && secrets.R2_SECRET_ACCESS_KEY != '' && secrets.R2_BUCKET != '' }}
-      HAS_GITEE: ${{ secrets.GITEE_PAT != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -213,15 +211,6 @@ jobs:
             --content-type application/json \
             --cache-control "public, max-age=300"
 
-      # ③ 镜像小文件到 Gitee(超限/大包跳过,脚本内按后缀+大小过滤)。失败不拖垮主流程。
-      - name: Mirror to Gitee Releases
-        if: env.HAS_GITEE == 'true'
-        continue-on-error: true
-        env:
-          GITEE_PAT: ${{ secrets.GITEE_PAT }}
-        run: node build/gitee-mirror.cjs aloong/transfer "${{ steps.ver.outputs.version }}" dist
-
       - name: Summary
         run: |
           echo "R2 上传: ${{ env.HAS_R2 == 'true' && '已执行' || '跳过(缺 secret)' }}"
-          echo "Gitee 镜像: ${{ env.HAS_GITEE == 'true' && '已执行' || '跳过(缺 secret)' }}"

@@ -18,21 +18,22 @@ const GITHUB = 'https://github.com/zhoulf1006/transfer'
     </div>
     <p class="hero-platforms">{t('hero.platforms')}</p>
 
-    <!-- 主视觉占位:替换为真实应用截图(建议 1280×800 左右,放 site/public/screenshots/main.png) -->
-    <div class="hero-shot card" aria-label="app screenshot placeholder">
-      <div class="shot-chrome">
-        <span></span><span></span><span></span>
-      </div>
-      <div class="shot-body">
-        <span class="shot-note">📷 应用主界面截图占位<br />screenshot placeholder</span>
-      </div>
+    <!-- 应用主界面截图(自带 macOS 窗口栏,不再套假 chrome) -->
+    <div class="hero-shot">
+      <img
+        src="/screenshots/main.png"
+        alt={t('hero.shotAlt')}
+        width="1800"
+        height="1280"
+        loading="eager"
+      />
     </div>
   </div>
 
   <style>
     .hero {
-      padding-top: 64px;
-      padding-bottom: 40px;
+      padding-top: 48px;
+      padding-bottom: 32px;
       background:
         radial-gradient(1200px 500px at 50% -10%, var(--brand-tint), transparent 70%);
       text-align: center;
@@ -71,36 +72,16 @@ const GITHUB = 'https://github.com/zhoulf1006/transfer'
       font-size: 0.9rem;
     }
     .hero-shot {
-      margin: 48px auto 0;
+      margin: 32px auto 0;
       max-width: 900px;
-      overflow: hidden;
-      text-align: left;
     }
-    .shot-chrome {
-      display: flex;
-      gap: 7px;
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--border);
-      background: var(--bg-soft);
-    }
-    .shot-chrome span {
-      width: 11px;
-      height: 11px;
-      border-radius: 50%;
-      background: var(--border);
-    }
-    .shot-body {
-      aspect-ratio: 16 / 9;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background:
-        linear-gradient(135deg, var(--brand-tint), var(--bg-soft));
-    }
-    .shot-note {
-      color: var(--fg-muted);
-      text-align: center;
-      font-size: 0.95rem;
+    .hero-shot img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
     }
   </style>
 </section>

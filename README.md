@@ -5,6 +5,8 @@
 > 跨平台(macOS / Windows)局域网工具:**文件/文本互传 + 聊天 + 截图标注**,三者打通。
 > 局域网直连,**无服务器、无账号、无云**。基于 Electron + TypeScript,发现与传输兼容 [LocalSend 协议 v2](https://github.com/localsend/protocol)。
 
+![Transfer 主界面:聊天式收发文件与文本](docs/img/introduction.png)
+
 ---
 
 ## 这是什么

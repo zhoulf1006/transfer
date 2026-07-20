@@ -63,7 +63,7 @@ a:hover {
 }
 
 section {
-  padding: 72px 0;
+  padding: 48px 0;
 }
 
 h1,
@@ -84,7 +84,7 @@ h3 {
   text-align: center;
   color: var(--fg-muted);
   max-width: 640px;
-  margin: 0 auto 48px;
+  margin: 0 auto 32px;
 }
 
 /* buttons */

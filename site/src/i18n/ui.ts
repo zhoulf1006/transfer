@@ -24,6 +24,7 @@ export const ui: Record<Locale, Dict> = {
     'hero.cta.download': '免费下载',
     'hero.cta.github': '在 GitHub 查看',
     'hero.platforms': '支持 macOS(Apple 芯片 / Intel)与 Windows',
+    'hero.shotAlt': 'Transfer 应用主界面:聊天式收发文件与文本',
 
     'features.title': '核心功能',
     'features.autodiscovery.title': '自动发现',
@@ -65,9 +66,7 @@ export const ui: Record<Locale, Dict> = {
     'download.win.setup': '安装版 (Setup)',
     'download.win.portable': '免安装版 (Portable)',
     'download.source.primary': '下载',
-    'download.source.gitee': '国内下载 (Gitee)',
-    'download.source.github': 'GitHub',
-    'download.china.hint': '中国大陆用户建议使用「国内下载 (Gitee)」，速度更快。',
+    'download.source.cloudflare': 'Cloudflare',
 
     'security.title': '安全说明',
     'security.transport':
@@ -94,6 +93,7 @@ export const ui: Record<Locale, Dict> = {
     'hero.cta.download': 'Download free',
     'hero.cta.github': 'View on GitHub',
     'hero.platforms': 'Supports macOS (Apple Silicon / Intel) and Windows',
+    'hero.shotAlt': 'Transfer main window: chat-style file and text transfer',
 
     'features.title': 'Key features',
     'features.autodiscovery.title': 'Auto discovery',
@@ -135,9 +135,7 @@ export const ui: Record<Locale, Dict> = {
     'download.win.setup': 'Installer (Setup)',
     'download.win.portable': 'Portable',
     'download.source.primary': 'Download',
-    'download.source.gitee': 'China mirror (Gitee)',
-    'download.source.github': 'GitHub',
-    'download.china.hint': 'Users in mainland China: the "China mirror (Gitee)" link is faster.',
+    'download.source.cloudflare': 'Cloudflare',
 
     'security.title': 'Security notes',
     'security.transport':
