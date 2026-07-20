@@ -26,8 +26,8 @@ const winItems = DOWNLOADS.filter((d) => d.os === 'win')
           <div class="dl-row">
             <div class="dl-label">{t(item.labelKey)}</div>
             <div class="dl-actions">
-              <a class="btn btn-primary btn-sm" href={item.sources.r2}>{t('download.source.primary')}</a>
-              <a class="dl-alt" href={item.sources.github} target="_blank" rel="noopener">{t('download.source.github')}</a>
+              <a class="btn btn-primary btn-sm" href={item.sources.github} target="_blank" rel="noopener">{t('download.source.primary')}</a>
+              <a class="dl-alt" href={item.sources.r2}>{t('download.source.cloudflare')}</a>
             </div>
           </div>
         ))}
@@ -42,8 +42,8 @@ const winItems = DOWNLOADS.filter((d) => d.os === 'win')
           <div class="dl-row">
             <div class="dl-label">{t(item.labelKey)}</div>
             <div class="dl-actions">
-              <a class="btn btn-primary btn-sm" href={item.sources.r2}>{t('download.source.primary')}</a>
-              <a class="dl-alt" href={item.sources.github} target="_blank" rel="noopener">{t('download.source.github')}</a>
+              <a class="btn btn-primary btn-sm" href={item.sources.github} target="_blank" rel="noopener">{t('download.source.primary')}</a>
+              <a class="dl-alt" href={item.sources.r2}>{t('download.source.cloudflare')}</a>
             </div>
           </div>
         ))}
@@ -54,6 +54,11 @@ const winItems = DOWNLOADS.filter((d) => d.os === 'win')
   <style>
     .download {
       background: var(--bg-soft);
+    }
+    /* 下载按钮更紧凑:覆盖 global .btn 的 12px 22px */
+    .dl-actions .btn-sm {
+      padding: 7px 16px;
+      font-size: 0.9rem;
     }
     .dl-grid {
       grid-template-columns: repeat(2, 1fr);
