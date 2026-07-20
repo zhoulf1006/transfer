@@ -65,9 +65,7 @@ export const ui: Record<Locale, Dict> = {
     'download.win.setup': '安装版 (Setup)',
     'download.win.portable': '免安装版 (Portable)',
     'download.source.primary': '下载',
-    'download.source.gitee': '国内下载 (Gitee)',
     'download.source.github': 'GitHub',
-    'download.china.hint': '中国大陆用户建议使用「国内下载 (Gitee)」，速度更快。',
 
     'security.title': '安全说明',
     'security.transport':
@@ -135,9 +133,7 @@ export const ui: Record<Locale, Dict> = {
     'download.win.setup': 'Installer (Setup)',
     'download.win.portable': 'Portable',
     'download.source.primary': 'Download',
-    'download.source.gitee': 'China mirror (Gitee)',
     'download.source.github': 'GitHub',
-    'download.china.hint': 'Users in mainland China: the "China mirror (Gitee)" link is faster.',
 
     'security.title': 'Security notes',
     'security.transport':

@@ -1,7 +1,15 @@
 # Transfer 官网落地页 + 全球下载方案(设计文档)
 
 > 目标:做一个类似 filo.buildwithais.com 的 App 介绍页,申请域名、部署到 Cloudflare,
-> 并把 GitHub Release 安装包同步到 Cloudflare + 国内镜像,让全球(尤其中国大陆)用户都能无障碍下载。
+> 并把 GitHub Release 安装包同步到 Cloudflare,让全球用户下载。
+
+> **⚠️ 决策变更(2026-07-20):移除 Gitee 镜像。**
+> 原设计用 Gitee Releases 做国内免备案镜像给大陆用户提速。落地页 + R2 上线后在大陆实测:
+> 不备案的 Cloudflare(Pages/R2)不接大陆节点,R2 在大陆并不比 GitHub 快;而 Gitee 需额外维护
+> (仓库容量/附件审核/大包放不下),收益不确定。综合决定**不再使用 Gitee**:下载源精简为
+> **R2(主) + GitHub Release(兜底)**。以下正文保留原 Gitee 相关内容作决策轨迹,不代表当前实现;
+> 当前实现以本变更说明为准(CI 已删 Gitee step、`build/gitee-mirror.cjs` 已删、落地页已去除 Gitee 链接)。
+> 大陆真正提速若日后需要,走"备案 + 大陆云节点"另议。
 
 ## 0. 已确认的决策(决策树结论)
 
