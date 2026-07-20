@@ -49,6 +49,12 @@ export interface DownloadItem {
   labelKey: string
   filename: string
   sources: ReturnType<typeof sources>
+  /**
+   * 该文件是否会镜像到 Gitee。Gitee 免费仓库单附件 ≤100 MiB、总附件 ≤1 GiB,
+   * 故只镜像小文件(mac-arm64 / win-setup / win-portable);universal(177M)/x64(98M)不镜像。
+   * CI 据此决定推哪些文件到 Gitee;落地页据此决定中国用户能否把默认源切到 Gitee。
+   */
+  giteeAvailable: boolean
 }
 
 /** 三平台五变体下载清单 */
@@ -58,29 +64,34 @@ export const DOWNLOADS: DownloadItem[] = [
     labelKey: 'download.mac.arm64',
     filename: macArm64(VERSION),
     sources: sources(macArm64(VERSION)),
+    giteeAvailable: true, // 92M，进 Gitee
   },
   {
     os: 'mac',
     labelKey: 'download.mac.x64',
     filename: macX64(VERSION),
     sources: sources(macX64(VERSION)),
+    giteeAvailable: false, // 98M，接近上限，不进 Gitee，中国用户指回 R2
   },
   {
     os: 'mac',
     labelKey: 'download.mac.universal',
     filename: macUniversal(VERSION),
     sources: sources(macUniversal(VERSION)),
+    giteeAvailable: false, // 177M，超 Gitee 100M 上限，中国用户指回 R2
   },
   {
     os: 'win',
     labelKey: 'download.win.setup',
     filename: winSetup(VERSION),
     sources: sources(winSetup(VERSION)),
+    giteeAvailable: true, // 81M，进 Gitee
   },
   {
     os: 'win',
     labelKey: 'download.win.portable',
     filename: winPortable(VERSION),
     sources: sources(winPortable(VERSION)),
+    giteeAvailable: true, // 81M，进 Gitee
   },
 ]

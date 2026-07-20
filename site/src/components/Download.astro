@@ -32,9 +32,11 @@ const winItems = DOWNLOADS.filter((d) => d.os === 'win')
                 class="btn btn-primary btn-sm dl-primary"
                 href={item.sources.r2}
                 data-src-r2={item.sources.r2}
-                data-src-gitee={item.sources.gitee}
+                data-src-gitee={item.giteeAvailable ? item.sources.gitee : ''}
               >{t('download.source.primary')}</a>
-              <a class="dl-alt" href={item.sources.gitee} target="_blank" rel="noopener">{t('download.source.gitee')}</a>
+              {item.giteeAvailable && (
+                <a class="dl-alt" href={item.sources.gitee} target="_blank" rel="noopener">{t('download.source.gitee')}</a>
+              )}
               <a class="dl-alt" href={item.sources.github} target="_blank" rel="noopener">{t('download.source.github')}</a>
             </div>
           </div>
@@ -54,9 +56,11 @@ const winItems = DOWNLOADS.filter((d) => d.os === 'win')
                 class="btn btn-primary btn-sm dl-primary"
                 href={item.sources.r2}
                 data-src-r2={item.sources.r2}
-                data-src-gitee={item.sources.gitee}
+                data-src-gitee={item.giteeAvailable ? item.sources.gitee : ''}
               >{t('download.source.primary')}</a>
-              <a class="dl-alt" href={item.sources.gitee} target="_blank" rel="noopener">{t('download.source.gitee')}</a>
+              {item.giteeAvailable && (
+                <a class="dl-alt" href={item.sources.gitee} target="_blank" rel="noopener">{t('download.source.gitee')}</a>
+              )}
               <a class="dl-alt" href={item.sources.github} target="_blank" rel="noopener">{t('download.source.github')}</a>
             </div>
           </div>

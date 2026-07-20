@@ -95,8 +95,8 @@ push tag vX.Y.Z
 - [ ] **A1. 落地页脚手架**:在仓库新建 `site/`(Astro 项目),写好页面、组件、i18n、样式、下载逻辑。
 - [ ] **A2. 文案 + 结构**:从 README 中/英版提炼 Hero/特性/原理/安全文案。
 - [ ] **A3. 下载按钮逻辑**:读 `latest.json`、地区判断、三平台链接拼装。
-- [ ] **A4. CI 改造**:在 `build.yml` 加 R2 上传 + latest.json 生成 + Gitee 镜像三步(用 secrets,不硬编码)。
-- [ ] **A5. `latest.json` 生成脚本** + R2 上传脚本(rclone 或 aws-cli 指向 R2 S3 端点)。
+- [x] **A4. CI 改造**:`build.yml` 新增 `sync` job(needs 两平台),R2 上传 + latest.json + Gitee 镜像,secret 缺失即跳过。
+- [x] **A5. 脚本**:`build/gen-latest-json.cjs`(生成版本清单)+ `build/gitee-mirror.cjs`(删旧 Release→建新→传小文件);R2 上传用 runner 自带 aws-cli 直接 `aws s3 cp` 到 R2 S3 端点。
 - [ ] **A6. Pages 部署配置**(`wrangler.toml` 或 Pages 构建设置说明)。
 - [ ] **A7. 本地预览验证**(`pnpm --dir site dev`)+ 构建产物检查。
 - [ ] **A8. 文档**:一份"运维手册",写清如何发版、如何换域名、密钥都是什么。
@@ -125,6 +125,20 @@ push tag vX.Y.Z
 - **CI secrets 缺失**:R2/Gitee 步骤要在 secret 缺失时**跳过而非报错**(照现有 mac 签名的 `HAS_XXX` 模式),让 fork/无凭据也能跑基础打包。
 - **universal dmg 体积**:177 MiB 单文件,R2 上传/Gitee 审核都最吃力;可考虑下载区默认只推 arm64/x64,universal 作为"不确定就选它"的次选。
 - **latest.json 缓存**:R2/CF 边缘缓存可能让新版本延迟生效;上传后需 purge 或设短 cache-control。
+
+## 7b. 阶段三 CI 设计决策(已定)
+
+- **编排**:新增汇总 `sync` job,`needs: [build-win, build-mac]`,下载两平台 artifact 后统一
+  推 R2 + 生成 latest.json + 镜像 Gitee。GitHub Release 由各 job 照旧发,sync 失败不影响它。
+- **R2 上传**:aws-cli(S3 兼容),secret:`R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` /
+  `R2_SECRET_ACCESS_KEY` / `R2_BUCKET`。上传到 `releases/vX.Y.Z/<文件名>`。
+- **Gitee 镜像**(secret `GITEE_PAT`,仓库 `aloong/transfer`):**Gitee 免费仓库硬限制——单附件
+  ≤100 MiB、总附件 ≤1 GiB**。故 Gitee **只放小文件**:`mac-arm64`(92M)+ `win-setup`(81M)+
+  `win-portable`(81M);**跳过** `mac-universal`(177M,超限)与 `mac-x64`(98M,接近上限、省容量)。
+  每次发版**先删旧 Release 再建新**,保证不累积爆 1 GiB。
+- **落地页连锁约束**:下载区"中国用户切默认源到 Gitee"**只对 Gitee 上真存在的文件生效**;
+  universal/x64 对中国用户保持指向 R2(Gitee 上没有)。用 `download-config.ts` 的 `giteeAvailable`
+  标记逐项区分。
 
 ## 8. 成本预估(个人项目)
 
