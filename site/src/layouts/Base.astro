@@ -1,0 +1,157 @@
+---
+import '../styles/global.css'
+import { useTranslations, localizedPath, type Locale } from '../i18n/ui'
+
+interface Props {
+  locale: Locale
+  title?: string
+  description?: string
+}
+
+const { locale, title, description } = Astro.props
+const t = useTranslations(locale)
+const pageTitle = title ?? `${t('site.name')} — ${t('hero.tagline')}`
+const pageDesc = description ?? t('hero.subtitle')
+
+// 语言切换:指向另一语言的首页
+const otherLocale: Locale = locale === 'zh' ? 'en' : 'zh'
+const otherHref = localizedPath(otherLocale, '/')
+const otherLabel = otherLocale === 'zh' ? '中文' : 'EN'
+
+const GITHUB = 'https://github.com/zhoulf1006/transfer'
+const home = localizedPath(locale, '/')
+---
+
+<!doctype html>
+<html lang={locale === 'zh' ? 'zh-CN' : 'en'}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={pageDesc} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={pageDesc} />
+    <meta property="og:type" content="website" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body>
+    <header class="nav">
+      <div class="container nav-inner">
+        <a href={home} class="brand">
+          <img src="/favicon.svg" alt="" width="26" height="26" />
+          <span>{t('site.name')}</span>
+        </a>
+        <nav class="nav-links">
+          <a href={`${home}#features`}>{t('nav.features')}</a>
+          <a href={`${home}#how`}>{t('nav.how')}</a>
+          <a href={`${home}#download`}>{t('nav.download')}</a>
+          <a href={GITHUB} target="_blank" rel="noopener">{t('nav.github')}</a>
+          <a href={otherHref} class="lang-switch">{otherLabel}</a>
+          <a href={`${home}#download`} class="btn btn-primary btn-sm">{t('nav.download')}</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <slot />
+    </main>
+
+    <footer class="footer">
+      <div class="container footer-inner">
+        <div class="footer-brand">
+          <img src="/favicon.svg" alt="" width="22" height="22" />
+          <strong>{t('site.name')}</strong>
+        </div>
+        <div class="footer-links">
+          <span class="text-muted">{t('footer.opensource')} · {t('footer.license')}</span>
+          <a href={GITHUB} target="_blank" rel="noopener">GitHub</a>
+          <a href="https://gitee.com/aloong/transfer" target="_blank" rel="noopener">Gitee</a>
+          <span class="text-muted">{t('footer.madeby')}</span>
+        </div>
+      </div>
+    </footer>
+
+    <style>
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        background: color-mix(in srgb, var(--bg) 82%, transparent);
+        backdrop-filter: saturate(180%) blur(12px);
+        border-bottom: 1px solid var(--border);
+      }
+      .nav-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 60px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-weight: 700;
+        font-size: 1.1rem;
+        color: var(--fg);
+      }
+      .brand:hover {
+        text-decoration: none;
+      }
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+      }
+      .nav-links > a {
+        color: var(--fg-muted);
+        font-size: 0.95rem;
+      }
+      .nav-links > a:hover {
+        color: var(--fg);
+        text-decoration: none;
+      }
+      .lang-switch {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 4px 10px;
+        font-size: 0.85rem !important;
+      }
+      .btn-sm {
+        padding: 8px 16px;
+        font-size: 0.9rem;
+      }
+      .footer {
+        border-top: 1px solid var(--border);
+        background: var(--bg-soft);
+        padding: 32px 0;
+      }
+      .footer-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+      .footer-brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .footer-links {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        flex-wrap: wrap;
+        font-size: 0.9rem;
+      }
+      @media (max-width: 720px) {
+        .nav-links {
+          gap: 14px;
+        }
+        .nav-links > a:not(.lang-switch):not(.btn) {
+          display: none;
+        }
+      }
+    </style>
+  </body>
+</html>

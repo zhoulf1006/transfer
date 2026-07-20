@@ -1,0 +1,16 @@
+{
+  "name": "transfer-site",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Transfer 官网落地页 (Astro static site)",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "astro": "^4.16.0"
+  }
+}

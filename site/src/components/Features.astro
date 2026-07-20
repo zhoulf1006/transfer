@@ -1,0 +1,77 @@
+---
+import { useTranslations, type Locale } from '../i18n/ui'
+interface Props { locale: Locale }
+const { locale } = Astro.props
+const t = useTranslations(locale)
+
+// 内联 SVG 图标(不用 emoji,与项目 UI 规范一致的做法:线性图标)
+const feats = [
+  { key: 'autodiscovery', icon: 'radar' },
+  { key: 'filetransfer', icon: 'file' },
+  { key: 'text', icon: 'chat' },
+  { key: 'chat', icon: 'layers' },
+  { key: 'screenshot', icon: 'crop' },
+  { key: 'multilang', icon: 'globe' },
+]
+
+const icons: Record<string, string> = {
+  radar: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 12 20 6"/>',
+  file: '<path d="M14 3v5h5"/><path d="M6 3h8l5 5v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M9 13h6M9 17h4"/>',
+  chat: '<path d="M4 5h16v10H8l-4 4V5z"/>',
+  layers: '<path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 13l9 5 9-5"/>',
+  crop: '<path d="M6 3v14a1 1 0 0 0 1 1h14"/><path d="M3 6h14a1 1 0 0 1 1 1v14"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>',
+}
+---
+
+<section id="features">
+  <div class="container">
+    <h2 class="section-title">{t('features.title')}</h2>
+    <div class="feat-grid grid">
+      {feats.map((f) => (
+        <div class="card feat">
+          <div class="feat-icon" set:html={`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${icons[f.icon]}</svg>`}></div>
+          <h3>{t(`features.${f.key}.title`)}</h3>
+          <p class="text-muted">{t(`features.${f.key}.desc`)}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <style>
+    .feat-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+    .feat {
+      padding: 26px;
+    }
+    .feat-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--brand);
+      background: var(--brand-tint);
+      margin-bottom: 16px;
+    }
+    .feat-icon :global(svg) {
+      width: 24px;
+      height: 24px;
+    }
+    .feat h3 {
+      font-size: 1.15rem;
+      margin-bottom: 8px;
+    }
+    .feat p {
+      font-size: 0.95rem;
+      margin: 0;
+    }
+    @media (max-width: 860px) {
+      .feat-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</section>

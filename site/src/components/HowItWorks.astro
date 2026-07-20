@@ -1,0 +1,62 @@
+---
+import { useTranslations, type Locale } from '../i18n/ui'
+interface Props { locale: Locale }
+const { locale } = Astro.props
+const t = useTranslations(locale)
+const steps = ['step1', 'step2', 'step3']
+---
+
+<section id="how" class="how">
+  <div class="container">
+    <h2 class="section-title">{t('how.title')}</h2>
+    <div class="how-grid grid">
+      {steps.map((s, i) => (
+        <div class="how-step">
+          <div class="step-num">{i + 1}</div>
+          <h3>{t(`how.${s}.title`)}</h3>
+          <p class="text-muted">{t(`how.${s}.desc`)}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <style>
+    .how {
+      background: var(--bg-soft);
+    }
+    .how-grid {
+      grid-template-columns: repeat(3, 1fr);
+      counter-reset: step;
+    }
+    .how-step {
+      text-align: center;
+      padding: 20px;
+    }
+    .step-num {
+      width: 46px;
+      height: 46px;
+      margin: 0 auto 16px;
+      border-radius: 50%;
+      background: var(--brand);
+      color: #fff;
+      font-weight: 700;
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 6px 16px rgba(138, 103, 171, 0.35);
+    }
+    .how-step h3 {
+      font-size: 1.15rem;
+    }
+    .how-step p {
+      font-size: 0.95rem;
+      margin: 0;
+    }
+    @media (max-width: 860px) {
+      .how-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</section>
