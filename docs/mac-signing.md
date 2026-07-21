@@ -9,7 +9,7 @@
 
 ## 签名、公证与 staple
 
-- **签名**：用 `Developer ID Application` 标识开发者并保护 App 完整性；Electron App 同时启用 Hardened Runtime 和所需 entitlements。
+- **签名**：用 `Developer ID Application` 标识开发者并保护 App 与最外层 DMG 的完整性；Electron App 同时启用 Hardened Runtime 和所需 entitlements。
 - **公证**：把最终交付物提交 Apple 扫描。本项目直接分发 DMG，因此只公证最外层 DMG，不再提前单独公证 `.app`。
 - **staple**：把 Apple ticket 装订到 DMG，使 Gatekeeper 无法访问 Apple 服务时仍能验证公证结果。
 
@@ -18,6 +18,7 @@
 ```text
 签名 Transfer.app
 → 生成 arm64 / x64 / universal DMG
+→ 使用 Developer ID Application 签名每个 DMG
 → 提交每个 DMG 给 notarytool 并等待 Accepted
 → staple DMG
 → 验证最终 DMG 和内部 App
@@ -112,7 +113,7 @@ pnpm run dist:mac:package-signed
 pnpm run notarize:mac:dmgs
 ```
 
-`dist:mac:package-signed` 显式设置 `mac.notarize=false`，避免 electron-builder 在 DMG 创建前公证内部 App；`notarize:mac:dmgs` 对最终三个 DMG 执行完整门禁。
+`dist:mac:package-signed` 显式设置 `mac.notarize=false`，避免 electron-builder 在 DMG 创建前公证内部 App；`dmg.sign=true` 使用同一 Developer ID Application 身份签名最终 DMG；`notarize:mac:dmgs` 对这三个已签名 DMG 执行完整门禁。
 
 ## 每个 DMG 的验证门禁
 

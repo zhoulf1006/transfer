@@ -201,6 +201,15 @@ describe('单个 DMG 公证与验证', () => {
 })
 
 describe('GitHub Actions 发布门禁', () => {
+  test('正式版 DMG 启用容器签名，确保 Gatekeeper 能验证最外层下载文件', () => {
+    const config = readFileSync(new URL('../../electron-builder.yml', import.meta.url), 'utf8')
+    const dmgStart = config.indexOf('\ndmg:')
+    const nextSection = config.indexOf('\n\n', dmgStart)
+    const dmgBlock = config.slice(dmgStart, nextSection === -1 ? undefined : nextSection)
+
+    expect(dmgBlock).toMatch(/\n  sign: true(?:\s|#|$)/)
+  })
+
   test('正式版在上传 artifact 和 GitHub Release 之前公证最终 DMG', () => {
     const workflow = readFileSync(new URL('../../.github/workflows/build.yml', import.meta.url), 'utf8')
     const notarize = workflow.indexOf('name: Notarize and validate macOS dmgs')

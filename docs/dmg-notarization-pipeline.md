@@ -11,14 +11,14 @@
 
 - electron-builder 26.15.3 的 `mac.notarize=true` 对签名后的 `.app` 执行，发生在 DMG 创建之前。
 - 线上 0.9.0 arm64 DMG 镜像完整，但无 DMG ticket，`spctl --type open` 返回 `rejected / no usable signature`；内部 App 的 Developer ID 签名、stapled ticket 和 Gatekeeper 验证均通过。
-- Apple 对嵌套分发的建议是：内部代码从内向外签名，只公证并 staple 最终分发的最外层容器。
+- Apple 对嵌套分发的建议是：内部代码从内向外签名，签名最外层 DMG，并且只公证和 staple 最外层容器。
 
 ## 流水线
 
 ### 正式版
 
 1. 在互斥打包分支之前校验签名证书和三项 Apple 公证凭据；`HAS_APPLE` 同时检查 Apple ID、App 专用密码和 Team ID，缺任一项则 macOS job 失败。
-2. electron-builder 使用 Developer ID 签名 App、生成 arm64/x64/universal 三个 DMG，并显式关闭内置 App 公证。
+2. electron-builder 使用 Developer ID 签名 App、生成 arm64/x64/universal 三个 DMG，再用同一 Developer ID Application 身份签名每个 DMG；同时显式关闭内置 App 公证。
 3. 公证脚本严格识别同一产品版本的三个预期 DMG，缺失、重复或出现未知架构均失败。
 4. 每个 DMG 串行执行：
    - `hdiutil verify`
@@ -45,6 +45,7 @@
 ### 发布者推正式版 tag
 
 - 缺签名证书或任一 Apple 凭据：打包前失败，不降级成仅签名正式版。
+- 最外层 DMG 未签名或签名不可用：`spctl` 失败，job 停止，不上传 macOS 产物。
 - 三架构任一缺失、重复、版本不一致或名称异常：公证前失败，避免部分发布。
 - Apple 返回 `Invalid`：显示 submission ID；尽力读取公证日志，日志读取失败不覆盖原始错误。
 - Apple 网络错误、超时、staple、镜像完整性或 Gatekeeper 失败：job 失败，不上传。

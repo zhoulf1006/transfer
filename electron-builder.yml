@@ -74,3 +74,6 @@ dmg:
   # mac- 系统标识 + ${arch} 架构后缀。${arch} 必需:多架构时无它会同名互相覆盖。
   # 三产物解析为 -mac-universal / -mac-arm64 / -mac-x64(dmg 上 x64 保持 x64,不变 x86_64)。
   artifactName: ${productName}-${version}-mac-${arch}.dmg
+  # 用打包阶段已导入的 Developer ID Application 证书签名最外层 DMG。
+  # 正式版随后公证/staple 该同一文件；无证书构建会跳过签名。
+  sign: true
