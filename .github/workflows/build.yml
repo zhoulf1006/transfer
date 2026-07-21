@@ -71,9 +71,10 @@ jobs:
     env:
       # 把 secret 提升到 job env,供下面 step 的 if 条件判断(比在 if 里直接读 secrets 更稳、跨版本都支持)。
       HAS_CSC: ${{ secrets.CSC_LINK != '' }}                              # 有签名证书
-      HAS_APPLE: ${{ secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' }}  # 有公证凭据
+      HAS_APPLE: ${{ secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}  # 三项公证凭据齐全
       # 预发布(迭代版):tag 以 -beta/-rc/-alpha/-dev 结尾 → 只签名不公证。干净 tag = 正式版 → 公证。
       IS_PRERELEASE: ${{ endsWith(github.ref, '-beta') || endsWith(github.ref, '-rc') || endsWith(github.ref, '-alpha') || endsWith(github.ref, '-dev') }}
+      IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/') && !(endsWith(github.ref, '-beta') || endsWith(github.ref, '-rc') || endsWith(github.ref, '-alpha') || endsWith(github.ref, '-dev')) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -91,36 +92,49 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # mac 打包分三档互斥(见 docs/mac-signing.md):
-      #  ① 未签名:无签名证书 secret(fork PR/未建)→ 跳过签名(空 CSC_LINK="" 会被当空路径证书→失败,故这里不设它)。
-      #  ② 只签名:有证书 + **预发布 tag**(-beta/-rc/-alpha/-dev)或缺 Apple 凭据 → 已签名未公证(右键打开)。
-      #  ③ 签名+公证:有证书+Apple 凭据 + **干净 tag(正式版)** → 公证(双击即开,dist:mac:sign 开 notarize)。
-      #     公证耗时不可控(2–30min),故只在正式版(非预发布)才做。
+      #  ① 预发布/手动运行且无证书:生成未签名 artifact；正式版禁止进入此路径。
+      #  ② 预发布/手动运行且有证书:只签名，不公证。
+      #  ③ 正式版:凭据必须齐全；签名 App → 生成 DMG → 公证/staple/验证最终 DMG。
+      #     任一步失败都不上传；正式版不允许降级为仅签名或未签名。
 
-      # ③ 签名 + 公证(干净 tag = 正式版,且有全部凭据)
-      - name: Package macOS dmg (signed + notarized)
-        if: env.HAS_CSC == 'true' && env.HAS_APPLE == 'true' && env.IS_PRERELEASE != 'true'
-        run: pnpm run dist:mac:sign
+      # ③ 正式版:先验证凭据，再生成并公证最终 DMG。
+      - name: Verify formal macOS release credentials
+        if: env.IS_RELEASE == 'true'
+        run: |
+          if [[ "$HAS_CSC" != "true" || "$HAS_APPLE" != "true" ]]; then
+            echo "::error::正式版 macOS 发布缺少 Developer ID 证书或 Apple 公证凭据(APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID)"
+            exit 1
+          fi
+
+      - name: Package formal macOS dmgs (signed)
+        if: env.IS_RELEASE == 'true'
+        run: pnpm run dist:mac:package-signed
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-      # ② 只签名(有证书,但预发布 tag 或缺 Apple 凭据)
+      # ② 预发布/手动运行:有证书则只签名。
       - name: Package macOS dmg (signed only)
-        if: env.HAS_CSC == 'true' && !(env.HAS_APPLE == 'true' && env.IS_PRERELEASE != 'true')
+        if: env.IS_RELEASE != 'true' && env.HAS_CSC == 'true'
         run: pnpm run dist:mac
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
 
-      # ① 未签名(无证书 secret)
+      # ① 预发布/手动运行:无证书时保留未签名 artifact。
       - name: Package macOS dmg (unsigned, no cert secret)
-        if: env.HAS_CSC != 'true'
+        if: env.IS_RELEASE != 'true' && env.HAS_CSC != 'true'
         run: pnpm run dist:mac
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Notarize and validate macOS dmgs
+        if: env.IS_RELEASE == 'true'
+        run: pnpm run notarize:mac:dmgs
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Upload dmg (artifact)
         uses: actions/upload-artifact@v4
@@ -145,12 +159,12 @@ jobs:
   # 汇总同步 job:两平台产物都齐后,统一
   #   ① 推所有安装包 → Cloudflare R2(全球下载源)
   #   ② 生成 latest.json 并上传 R2(落地页读它拿最新版本/文件清单)
-  # 仅 tag 触发时运行;R2 步骤在 secret 缺失时跳过(不报错),照现有 mac 签名的 HAS_XXX 模式。
+  # 仅干净正式版 tag 运行；预发布只停留在 GitHub Release，不生成/覆盖 R2 latest.json。
   # 各平台的 GitHub Release 已在上面各 job 发好,本 job 失败不影响它。
   # ─────────────────────────────────────────────────────────────────────────
   sync:
     needs: [build-win, build-mac]
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') && !(endsWith(github.ref, '-beta') || endsWith(github.ref, '-rc') || endsWith(github.ref, '-alpha') || endsWith(github.ref, '-dev'))
     runs-on: ubuntu-latest
     env:
       # 提升到 job env 供 step 的 if 判断(与 mac job 同款写法,跨版本稳)
