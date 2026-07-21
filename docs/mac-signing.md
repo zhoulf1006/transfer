@@ -2,7 +2,7 @@
 
 > - 正式版干净 tag（如 `v0.9.1`）：内部 App 使用 Developer ID 签名，最终三个 DMG 分别公证并 staple，发布到 GitHub Latest 和 Cloudflare R2。
 > - 预发布 tag（`-beta`、`-rc`、`-alpha`、`-dev`）：只签名、不公证，只发布到 GitHub Pre-release，不同步 R2。
-> - 手动运行 workflow：生成 Actions artifact，不创建 GitHub Release，也不同步 R2。
+> - 手动运行 workflow：默认生成普通 Actions artifact；选择 `verify_formal_macos=true` 时执行完整签名/公证门禁。两者都不创建 GitHub Release，也不同步 R2。
 > - 正式版缺凭据或任一架构验证失败时 fail-closed，不发布任何 macOS DMG。
 
 详细设计和失败路径见 [dmg-notarization-pipeline.md](./dmg-notarization-pipeline.md)。
@@ -35,9 +35,9 @@
 - `HAS_CSC`：是否有 `CSC_LINK`。
 - `HAS_APPLE`：`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` 是否全部存在。
 - `IS_PRERELEASE`：tag 是否以 `-beta`、`-rc`、`-alpha` 或 `-dev` 结尾。
-- `IS_RELEASE`：是否为干净正式版 tag。
+- `IS_RELEASE`：是否为干净正式版 tag，或手动运行时选择了 `verify_formal_macos=true`。
 
-正式版先验证 `HAS_CSC` 和 `HAS_APPLE`；缺任一项直接失败，不能落入仅签名或未签名分支。预发布和手动运行保留有证书时签名、无证书时生成未签名 artifact 的既有行为。
+正式版和手动正式验证先检查 `HAS_CSC` 与 `HAS_APPLE`；缺任一项直接失败，不能落入仅签名或未签名分支。预发布和普通手动运行保留有证书时签名、无证书时生成未签名 artifact 的既有行为。
 
 公证步骤位于 DMG 打包与 `actions/upload-artifact` 之间，因此公证、staple、Gatekeeper 或内部 App 验证失败都会阻止 GitHub Release 上传。R2 `sync` job 依赖两个平台构建成功，并且只对干净正式版 tag 运行。
 
@@ -122,12 +122,23 @@ pnpm run notarize:mac:dmgs
 ```bash
 hdiutil verify "$DMG"
 
+codesign --verify --verbose=4 "$DMG"
+codesign --display --verbose=4 "$DMG"
+# 自动断言 Developer ID Application、APPLE_TEAM_ID 与安全 Timestamp
+
 xcrun notarytool submit "$DMG" \
   --apple-id "$APPLE_ID" \
   --password "$APPLE_APP_SPECIFIC_PASSWORD" \
   --team-id "$APPLE_TEAM_ID" \
   --wait \
   --output-format json
+
+xcrun notarytool log "$SUBMISSION_ID" \
+  --apple-id "$APPLE_ID" \
+  --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+  --team-id "$APPLE_TEAM_ID" \
+  --output-format json
+# 自动断言 jobId、Accepted 状态和零 error，并留档为 *.notary-log.json
 
 xcrun stapler staple "$DMG"
 xcrun stapler validate "$DMG"
@@ -146,7 +157,7 @@ spctl --assess \
 codesign --verify --deep --strict --verbose=2 "/挂载点/Transfer.app"
 ```
 
-脚本只接受 `notarytool` JSON 中的 `status: Accepted`，同时要求有效 submission ID。Apple 返回 `Invalid` 时会尽力读取该 submission 的日志，但日志查询失败不会覆盖原始公证错误。
+脚本只接受 `notarytool` JSON 中的 `status: Accepted`，同时要求有效 submission ID。Accepted 后必须成功读取对应日志，确认 submission、状态和零 error，再将日志随 Actions artifact 留档。Apple 返回 `Invalid` 时会尽力读取日志，但诊断日志查询失败不会覆盖原始拒绝错误。
 
 ## 产物与发布
 
@@ -166,4 +177,4 @@ Transfer-<version>-mac-universal.dmg
 
 ## 验证边界
 
-单元测试通过 fake command runner 验证命令顺序、失败传播和卸载清理，不会假装访问过 Apple。真实端到端结果以正式版 tag 的 macOS GitHub Actions 为准；CI 中三个 DMG 都出现 `Accepted`、`stapler validate` 成功和 `spctl ... accepted` 后，才算线上公证验证完成。
+单元测试通过 fake command runner 验证命令顺序、失败传播和卸载清理，不会假装访问过 Apple。真实端到端结果以正式版 tag，或手动 `verify_formal_macos=true` 的 macOS GitHub Actions 为准；CI 中三个 DMG 的签名身份/时间戳、Accepted 日志、stapled ticket 和 Gatekeeper 全部通过后，才算线上公证验证完成。

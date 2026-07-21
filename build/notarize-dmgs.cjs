@@ -49,6 +49,35 @@ function parseAcceptedSubmission(stdout) {
   return result.id
 }
 
+function parseAcceptedLog(stdout, submissionId) {
+  const result = JSON.parse(stdout)
+  if (typeof result.jobId !== 'string' || result.jobId.toLowerCase() !== submissionId.toLowerCase()) {
+    throw new Error(`Apple 公证日志 submission 不匹配: 期望 ${submissionId}`)
+  }
+  if (result.status !== 'Accepted') {
+    throw new Error(`Apple 公证日志状态异常: ${result.status ?? '未知状态'}`)
+  }
+  const issues = Array.isArray(result.issues) ? result.issues : []
+  const errors = issues.filter((issue) => issue?.severity === 'error')
+  if (errors.length > 0) {
+    throw new Error(`Apple 公证日志包含 ${errors.length} 个 error`)
+  }
+  return { ...result, issues }
+}
+
+function assertDmgSignature(output, teamId) {
+  const lines = output.split(/\r?\n/)
+  if (!lines.some((line) => line.startsWith('Authority=Developer ID Application:'))) {
+    throw new Error('DMG 签名身份不是 Developer ID Application')
+  }
+  if (!lines.includes(`TeamIdentifier=${teamId}`)) {
+    throw new Error(`DMG 签名 Team ID 不匹配: 期望 ${teamId}`)
+  }
+  if (!lines.some((line) => line.startsWith('Timestamp=') && !['', 'none'].includes(line.slice('Timestamp='.length).trim().toLowerCase()))) {
+    throw new Error('DMG 签名缺少安全时间戳')
+  }
+}
+
 function readCredentials(env) {
   const required = ['APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID']
   const missing = required.filter((name) => !env[name])
@@ -90,8 +119,19 @@ function findTransferApp(mountPoint) {
 }
 
 function notarizeDmg(file, options) {
-  const { credentials, findApp, makeMountPoint, removeMountPoint, run, writeError = console.error } = options
+  const {
+    credentials,
+    findApp,
+    makeMountPoint,
+    removeMountPoint,
+    run,
+    writeError = console.error,
+    writeNotaryLog = (logFile, contents) => fs.writeFileSync(logFile, contents)
+  } = options
   run('hdiutil', ['verify', file])
+  run('codesign', ['--verify', '--verbose=4', file])
+  const signature = run('codesign', ['--display', '--verbose=4', file])
+  assertDmgSignature([signature.stdout, signature.stderr].filter(Boolean).join('\n'), credentials.teamId)
   const submission = run('xcrun', [
     'notarytool', 'submit', file,
     '--apple-id', credentials.appleId,
@@ -126,6 +166,16 @@ function notarizeDmg(file, options) {
     }
     throw error
   }
+
+  const acceptedLog = run('xcrun', [
+    'notarytool', 'log', submissionId,
+    '--apple-id', credentials.appleId,
+    '--password', credentials.password,
+    '--team-id', credentials.teamId,
+    '--output-format', 'json'
+  ])
+  parseAcceptedLog(acceptedLog.stdout, submissionId)
+  writeNotaryLog(`${file}.notary-log.json`, acceptedLog.stdout)
 
   run('xcrun', ['stapler', 'staple', file])
   run('xcrun', ['stapler', 'validate', file])
@@ -191,10 +241,12 @@ function main(argv, env = process.env) {
 }
 
 module.exports = {
+  assertDmgSignature,
   findTransferApp,
   main,
   notarizeAll,
   notarizeDmg,
+  parseAcceptedLog,
   parseAcceptedSubmission,
   readCredentials,
   runCommand,

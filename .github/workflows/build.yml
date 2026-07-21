@@ -1,7 +1,13 @@
 name: Build & Release (Windows + macOS)
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      verify_formal_macos:
+        description: '运行完整 macOS 签名、公证和验证门禁（只上传 Actions artifact，不发布 Release/R2）'
+        required: false
+        default: false
+        type: boolean
   push:
     tags:
       - 'v*'
@@ -72,9 +78,10 @@ jobs:
       # 把 secret 提升到 job env,供下面 step 的 if 条件判断(比在 if 里直接读 secrets 更稳、跨版本都支持)。
       HAS_CSC: ${{ secrets.CSC_LINK != '' }}                              # 有签名证书
       HAS_APPLE: ${{ secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}  # 三项公证凭据齐全
-      # 预发布(迭代版):tag 以 -beta/-rc/-alpha/-dev 结尾 → 只签名不公证。干净 tag = 正式版 → 公证。
+      # 预发布(迭代版):tag 以 -beta/-rc/-alpha/-dev 结尾 → 只签名不公证。
+      # 干净 tag 或手动 verify_formal_macos=true → 完整签名/公证；手动验证因不是 tag，不发布 Release/R2。
       IS_PRERELEASE: ${{ endsWith(github.ref, '-beta') || endsWith(github.ref, '-rc') || endsWith(github.ref, '-alpha') || endsWith(github.ref, '-dev') }}
-      IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/') && !(endsWith(github.ref, '-beta') || endsWith(github.ref, '-rc') || endsWith(github.ref, '-alpha') || endsWith(github.ref, '-dev')) }}
+      IS_RELEASE: ${{ (startsWith(github.ref, 'refs/tags/') && !(endsWith(github.ref, '-beta') || endsWith(github.ref, '-rc') || endsWith(github.ref, '-alpha') || endsWith(github.ref, '-dev'))) || (github.event_name == 'workflow_dispatch' && inputs.verify_formal_macos) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -140,7 +147,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Transfer-macos-dmg
-          path: release/*/*.dmg
+          path: |
+            release/*/*.dmg
+            release/*/*.notary-log.json
           if-no-files-found: error
           retention-days: 7
 

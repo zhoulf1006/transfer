@@ -22,8 +22,10 @@
 3. 公证脚本严格识别同一产品版本的三个预期 DMG，缺失、重复或出现未知架构均失败。
 4. 每个 DMG 串行执行：
    - `hdiutil verify`
+   - 公证前执行 `codesign --verify`，并断言签名信息包含 Developer ID Application、当前 Team ID 和非 `none` 的安全时间戳
    - `xcrun notarytool submit --wait --output-format json`
    - JSON `status` 必须为 `Accepted` 且必须包含 submission ID
+   - 对 Accepted submission 执行 `notarytool log`；日志必须属于当前 submission、状态仍为 Accepted 且不能包含 error，并以 `*.notary-log.json` 留在 Actions artifact
    - `xcrun stapler staple`
    - `xcrun stapler validate`
    - 再次 `hdiutil verify`，验证 staple 后的最终文件
@@ -36,8 +38,8 @@
 ### 预发布与手动运行
 
 1. 有 Developer ID 证书时仅签名并生成三个 DMG；无证书时保留现有未签名 artifact 行为。
-2. 不运行公证脚本。
-3. tag 预发布上传 Actions artifact 和 GitHub Pre-release；手动运行只保留 Actions artifact。
+2. 普通手动运行不运行公证脚本；`verify_formal_macos=true` 的手动运行使用正式版凭据和完整公证门禁。
+3. tag 预发布上传 Actions artifact 和 GitHub Pre-release；两种手动运行都只保留 Actions artifact，不创建 Release。
 4. `sync` job 不运行，因此不上传 R2、不覆盖 `latest.json`。
 
 ## 用户操作序列与失败模式
@@ -45,9 +47,10 @@
 ### 发布者推正式版 tag
 
 - 缺签名证书或任一 Apple 凭据：打包前失败，不降级成仅签名正式版。
-- 最外层 DMG 未签名或签名不可用：`spctl` 失败，job 停止，不上传 macOS 产物。
+- 最外层 DMG 未签名、证书类型/Team ID 不匹配或缺少安全时间戳：在提交 Apple 前失败，job 停止，不上传 macOS 产物。
 - 三架构任一缺失、重复、版本不一致或名称异常：公证前失败，避免部分发布。
 - Apple 返回 `Invalid`：显示 submission ID；尽力读取公证日志，日志读取失败不覆盖原始错误。
+- Apple 返回 `Accepted` 但成功日志无法读取、submission 不匹配、状态异常或包含 error：在 staple 前失败。
 - Apple 网络错误、超时、staple、镜像完整性或 Gatekeeper 失败：job 失败，不上传。
 - 挂载、内部 App 定位或签名验证失败：尝试卸载并清理；原始验证错误优先返回。
 - 前两个 DMG 已成功、第三个失败：整个 job 失败，三个都不进入 GitHub Release/R2；已有 Apple submission 仅作为审计记录保留。
@@ -75,4 +78,4 @@
 
 - typecheck、单元测试、应用 build 和 workflow 静态解析全绿；项目当前没有 lint 脚本。
 - 无 Apple 凭据的测试使用注入的 fake command runner，不把“没有调用 Apple”伪装成真实公证成功。
-- 真正的 Apple 端到端公证只能由下一个正式版 tag 的 macOS GitHub Actions 验证；PR 阶段不声称已完成线上公证。
+- 真正的 Apple 端到端公证由正式版 tag，或手动触发 `verify_formal_macos=true` 的 macOS GitHub Actions 验证；手动模式不会创建 Release 或同步 R2。
