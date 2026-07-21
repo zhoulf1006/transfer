@@ -6,7 +6,7 @@
  * - `sources`:每个平台构建在「R2(主) / GitHub(兜底)」两处的下载 URL。
  */
 
-export const VERSION = '0.9.0'
+export const VERSION = '0.9.1'
 
 // 两个下载来源的 base
 const R2_BASE = 'https://dl.aloongplanet.com/releases' // Cloudflare R2 自定义域(主)
