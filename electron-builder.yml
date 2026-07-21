@@ -52,7 +52,7 @@ mac:
       #   arm64     Apple 芯片专用(M 系列,~230MB,最小)
       #   x64       Intel 芯片专用(~230MB)
       # ${arch} 在 dmg 上解析为字面 universal/arm64/x64(x64 不变 x86_64);产物名见下方 dmg.artifactName。
-      # 代价:签名+公证按 3 个独立 .app 各跑一次(正式版公证等待 ×3);构建更久。CI 产物 glob 是 *.dmg,自动兼容。
+      # 代价:三个最终 DMG 各自公证并 staple(正式版等待 ×3);构建更久。CI 产物 glob 是 *.dmg,自动兼容。
       arch: [universal, arm64, x64]
   # 裁掉 Chromium 自带的多余 locale.pak(55 个语系→只留这 3 个,省 ~40M)。裁的是浏览器 UI 串
   # (右键菜单/文件对话框),与用户输入/传输的日文法文内容无关(那些走 icudtl.dat+系统字体,均保留)。
@@ -61,14 +61,14 @@ mac:
   electronLanguages: [en, en_GB, zh_CN]
   icon: build/icon.icns       # 应用图标(紫底 + 白色纸飞机,主色 #8a67ab)
   # 加固运行时 + entitlements(签名时生效;Electron/V8 加固运行时必需)。
-  # 公证**不写在这里**(见下),避免 CI(无凭据)时误触发公证失败。
+  # 公证**不写在这里**:electron-builder 的内置流程发生在 DMG 创建前；正式版改由 build/notarize-dmgs.cjs 公证最终 DMG。
   # CI:mac job 用 CSC_IDENTITY_AUTO_DISCOVERY:false → 无签名身份 → electron-builder 跳过签名,
   # 这些字段对未签名构建无副作用。本地 pnpm dist:mac:钥匙串有 Developer ID → 自动签名。
   hardenedRuntime: true                       # 公证前提:启用加固运行时
   gatekeeperAssess: false                      # 打包时不本地跑 Gatekeeper 评估(交给公证)
   entitlements: build/entitlements.mac.plist   # Electron/V8 加固运行时必需
   entitlementsInherit: build/entitlements.mac.plist
-  # notarize:公证只在本地 dist:mac:sign 脚本里通过 env 开启(不硬编码,防 CI 误触发)
+  # notarize:正式版打包显式关闭内置 App 公证，最终 DMG 由独立脚本提交 Apple。
 
 dmg:
   # mac- 系统标识 + ${arch} 架构后缀。${arch} 必需:多架构时无它会同名互相覆盖。

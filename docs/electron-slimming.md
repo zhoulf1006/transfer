@@ -124,7 +124,7 @@ mac:
    - **对你**:`electron-updater` **不是依赖**,`src/` 无 `autoUpdater`(§1.2 实测)→ 这套坑**与你无关**。未来若接自动更新,用 GitHub provider + 当前版 electron-updater 即可;若自托管 S3/generic,须保证两架构在**同一次发布**产出、别让 `latest-mac.yml` 被覆盖。
    - 来源:#5592 https://github.com/electron-userland/electron-builder/issues/5592 · #5616 https://github.com/electron-userland/electron-builder/issues/5616 · #7975 https://github.com/electron-userland/electron-builder/issues/7975 · 自动更新文档 https://www.electron.build/docs/features/auto-update/
 
-3. **签名/公证**:per-arch 每个包**独立签名 + 公证**,流程与现在一致(你本地 `dist:mac:sign` 走钥匙串 Developer ID)。CI 无凭据时照旧跳过(`CSC_IDENTITY_AUTO_DISCOVERY:false`)。**无新副作用**——只是从签 1 个包变成签 2 个包。
+3. **签名/公证**:per-arch App 各自签名，三个最终 DMG 各自公证并 staple；本地 `dist:mac:sign` 与正式版 CI 走同一门禁。预发布/手动运行无凭据时可跳过签名，正式版缺凭据则 fail-closed。
 
 4. **CI 构建时长/带宽**:electron-builder 需分别下载并处理两架构 Electron,**构建更久**(但不再 `lipo` 合并,单包更快;净变化有限)。属工程成本,非产品副作用。
 
@@ -185,7 +185,7 @@ files:
 - ❌ 对已签名的 universal 包用 `lipo` 事后抽薄单架构 → 同样破坏签名。正解:**让 electron-builder 在打包阶段直接产出各架构包**(本方案 `arch: [universal, arm64, x64]` 就是各架构独立打、独立签,不做事后抽薄)。
 - ❌ 依赖 `codesign --deep` 事后补签 → 官方明示「仅供紧急修补」,不可作为常规手段。
 
-**正确顺序恒为:裁剪 → 签名 → 公证**,且裁剪全部通过 electron-builder 配置完成(它保证在签名前执行)。
+**正确顺序恒为:裁剪 → App 签名 → 生成 DMG → 公证并 staple DMG**,且裁剪全部通过 electron-builder 配置完成(它保证在签名前执行)。
 
 ---
 
@@ -226,7 +226,7 @@ files:
 2. per-arch:确认产出**两个 DMG**,各 `lipo -info` 应只含**单一架构**。
 3. locale:`ls Transfer.app/.../Resources/*.lproj` 应只剩保留项;跑一次应用确认菜单/文件对话框正常。
 4. 冒烟:两端 Transfer **实际传一次文件**,确认 fastify(HTTPS server)正常——尤其做了 C 之后。
-5. 签名/公证(本地 `:sign`):`codesign --verify --deep --strict Transfer.app` 通过、`spctl -a -vvv` 通过。
+5. 签名/公证(本地 `:sign`):三个 DMG 的 `stapler validate`、`spctl --type open` 通过，挂载后的 `Transfer.app` 通过 `codesign --verify --deep --strict`。
 6. 回同步:更新 `docs/DESIGN.md` 相关段与本 `electron-builder.yml` 注释,保证“文档 = 配置实际”。
 
 ---

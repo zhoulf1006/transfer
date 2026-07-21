@@ -13,8 +13,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "NODE_OPTIONS=\"--experimental-sqlite --no-warnings\" vitest run",
     "test:watch": "NODE_OPTIONS=\"--experimental-sqlite --no-warnings\" vitest",
-    "dist:mac": "electron-vite build && electron-builder --mac --publish never",
-    "dist:mac:sign": "electron-vite build && electron-builder --mac --publish never -c.mac.notarize=true",
+    "dist:mac": "electron-vite build && electron-builder --mac --publish never -c.mac.notarize=false",
+    "dist:mac:package-signed": "electron-vite build && electron-builder --mac --publish never -c.mac.notarize=false",
+    "notarize:mac:dmgs": "node build/notarize-dmgs.cjs release/*/*.dmg",
+    "dist:mac:sign": "pnpm run dist:mac:package-signed && pnpm run notarize:mac:dmgs",
     "dist:win": "electron-vite build && electron-builder --win --publish never"
   },
   "devDependencies": {
