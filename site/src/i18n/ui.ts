@@ -67,6 +67,8 @@ export const ui: Record<Locale, Dict> = {
     'download.win.portable': '免安装版 (Portable)',
     'download.source.primary': '下载',
     'download.source.cloudflare': 'Cloudflare',
+    'download.stats.prefix': '当前已有',
+    'download.stats.suffix': '次下载',
 
     'security.title': '安全说明',
     'security.transport':
@@ -136,6 +138,8 @@ export const ui: Record<Locale, Dict> = {
     'download.win.portable': 'Portable',
     'download.source.primary': 'Download',
     'download.source.cloudflare': 'Cloudflare',
+    'download.stats.prefix': 'Downloads so far:',
+    'download.stats.suffix': '',
 
     'security.title': 'Security notes',
     'security.transport':
