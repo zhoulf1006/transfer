@@ -15,4 +15,15 @@ export default defineConfig({
   build: {
     inlineStylesheets: 'auto',
   },
+  vite: {
+    server: {
+      proxy: {
+        '/__download-statistics': {
+          target: 'https://dl.aloongplanet.com',
+          changeOrigin: true,
+          rewrite: () => '/stats/downloads.json',
+        },
+      },
+    },
+  },
 })

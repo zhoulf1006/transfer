@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import { getDownloadStatsUrl } from './download-config'
 import { parseDownloadSummary } from './download-statistics'
+
+describe('getDownloadStatsUrl', () => {
+  it('uses the same-origin proxy only in local development', () => {
+    expect(getDownloadStatsUrl(true)).toBe('/__download-statistics')
+    expect(getDownloadStatsUrl(false)).toBe('https://dl.aloongplanet.com/stats/downloads.json')
+  })
+})
 
 describe('parseDownloadSummary', () => {
   it('validates and floors public totals for display', () => {
