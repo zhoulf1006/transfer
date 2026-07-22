@@ -5,7 +5,7 @@
 
 ## Language(术语)
 
-**announce**: 设备通过 UDP 主动宣告自己存在的报文(LocalSend 协议),同时发**多播**(224.0.0.167)与**子网广播**(x.x.x.255)双通道(见 ADR-0006)。
+**announce**: 设备通过 UDP 主动宣告自己存在的报文(LocalSend 协议),同时发**多播**(224.0.0.167)与**子网定向广播**(按接口 netmask 计算,如 /24 下的 192.168.3.255)双通道(见 ADR-0006)。
 _Avoid_: "心跳"、"beacon"——项目里只叫 announce。
 
 **register(发现回应)**: 收到对方 announce 后,走 `POST /register` **定向 TCP** 回应对方。是"发现回应",不是注册账号(见 ADR-0005)。
