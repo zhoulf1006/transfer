@@ -11,7 +11,14 @@ export const VERSION = '0.9.1'
 // 两个下载来源的 base
 const R2_BASE = 'https://dl.aloongplanet.com/releases' // Cloudflare R2 自定义域(主)
 const GITHUB_REPO = 'https://github.com/zhoulf1006/transfer' // GitHub Release(兜底)
-export const DOWNLOAD_STATS_URL = 'https://dl.aloongplanet.com/stats/downloads.json'
+const DOWNLOAD_STATS_PUBLIC_URL = 'https://dl.aloongplanet.com/stats/downloads.json'
+const DOWNLOAD_STATS_DEV_PATH = '/__download-statistics'
+
+export function getDownloadStatsUrl(isDev: boolean) {
+  return isDev ? DOWNLOAD_STATS_DEV_PATH : DOWNLOAD_STATS_PUBLIC_URL
+}
+
+export const DOWNLOAD_STATS_URL = getDownloadStatsUrl(import.meta.env.DEV)
 
 /** 下载文件名（与 electron-builder 产物、GitHub Release 资产一致） */
 function macArm64(v: string) {

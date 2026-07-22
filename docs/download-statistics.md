@@ -90,3 +90,7 @@ access-control-allow-origin: https://transfer.aloongplanet.com
 - JSON 损坏、schema 不支持或数值非法：静默隐藏统计行。
 - 统计加载失败不会阻止页面渲染，也不会改变 GitHub/R2 下载链接。
 - 中文显示“当前已有 N 次下载 · macOS N · Windows N”；英文显示“Downloads so far: N · macOS N · Windows N”。
+
+## 本地预览
+
+Astro 开发服务器把同源路径 `/__download-statistics` 代理到 R2 的公开统计 JSON，因此 `pnpm --dir site dev` 下刷新页面也能看到真实数字。该代理只存在于开发服务器；生产构建仍直接读取 `https://dl.aloongplanet.com/stats/downloads.json`，不会扩大 R2 CORS 白名单。
