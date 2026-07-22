@@ -31,4 +31,4 @@
 
 ## 来源
 
-memory「文档按腐烂速度分类管理」;https://github.com/mattpocock/skills 。ADR 自身的格式规范见 [ADR-0014](0014-adr-format-madr-minimal.md)。
+memory「文档按腐烂速度分类管理」;https://github.com/mattpocock/skills 。

@@ -2,7 +2,7 @@
 
 一决策一文件,只追加不改写;决策变更新开条目并标记旧条「已被 ADR-XXXX 取代」。
 
-**格式规范(见 [ADR-0014](0014-adr-format-madr-minimal.md)):MADR minimal 五段体**——背景与问题 / 备选项(**必填**,含否决理由;无留档须标注,不得编造)/ 决策 / 后果 / 来源,另加状态行。何时该写 ADR:难逆转 + 无上下文会令人费解 + 真实 trade-off 的产物,三者同时满足。
+**格式约定:MADR minimal 五段体**——背景与问题 / 备选项(**必填**,含否决理由;无留档须标注,不得编造)/ 决策 / 后果 / 来源,另加状态行。何时该写 ADR:难逆转 + 无上下文会令人费解 + 真实 trade-off 的产物,三者同时满足。只收录**本项目**的架构决策,工作流/流程类约定不入 ADR。
 
 | # | 决策 |
 |---|------|
@@ -19,4 +19,3 @@
 | [0011](0011-remove-gitee-mirror.md) | 移除 Gitee,下载源 R2 主 + GitHub 兜底 |
 | [0012](0012-notarization-gate-fail-closed.md) | 正式版公证门禁 fail-closed |
 | [0013](0013-docs-lifecycle-by-rot-risk.md) | 文档体系按腐烂速度分类(本体系的元决策) |
-| [0014](0014-adr-format-madr-minimal.md) | ADR 格式采用 MADR minimal(五段+必填备选) |
