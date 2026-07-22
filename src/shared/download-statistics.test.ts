@@ -259,7 +259,7 @@ describe('buildAnalyticsPayload', () => {
         datetime_geq: '2026-07-22T08:00:00.000Z',
         datetime_lt: '2026-07-22T09:00:00.000Z',
         clientRequestHTTPHost: 'dl.aloongplanet.com',
-        clientRequestHTTPMethod: 'GET',
+        clientRequestHTTPMethodName: 'GET',
         clientRequestPath_like: '/releases/%',
         edgeResponseStatus_in: [200, 206],
         requestSource: 'eyeball',
@@ -268,6 +268,7 @@ describe('buildAnalyticsPayload', () => {
     expect(payload.query).toContain('httpRequestsAdaptiveGroups')
     expect(payload.query).toContain('clientRequestPath')
     expect(payload.query).toContain('edgeResponseBytes')
+    expect(payload.variables.filter).not.toHaveProperty('clientRequestHTTPMethod')
   })
 })
 

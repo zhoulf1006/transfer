@@ -160,7 +160,7 @@ function buildAnalyticsPayload(zoneId, hostname, window) {
         datetime_geq: window.start,
         datetime_lt: window.end,
         clientRequestHTTPHost: hostname,
-        clientRequestHTTPMethod: 'GET',
+        clientRequestHTTPMethodName: 'GET',
         clientRequestPath_like: '/releases/%',
         edgeResponseStatus_in: [200, 206],
         requestSource: 'eyeball',
