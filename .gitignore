@@ -8,3 +8,7 @@ release/
 # 本地签名/公证凭据(Apple ID、专用密码等),绝不提交
 .env.local
 .env.*.local
+# agent skills 本体(用 skills-lock.json + npx skills experimental_install 还原)
+.agents/
+# 施工文档(spec/tickets),用完即丢,不入库
+.scratch/
