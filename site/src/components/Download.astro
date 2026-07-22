@@ -1,6 +1,6 @@
 ---
 import { useTranslations, type Locale } from '../i18n/ui'
-import { DOWNLOADS, VERSION } from '../download-config'
+import { DOWNLOADS, DOWNLOAD_STATS_URL, VERSION } from '../download-config'
 interface Props { locale: Locale }
 const { locale } = Astro.props
 const t = useTranslations(locale)
@@ -14,6 +14,17 @@ const winItems = DOWNLOADS.filter((d) => d.os === 'win')
     <h2 class="section-title">{t('download.title')}</h2>
     <p class="section-sub">
       {t('download.version')}: <strong>v{VERSION}</strong>
+    </p>
+    <p
+      class="download-statistics"
+      data-download-statistics
+      data-url={DOWNLOAD_STATS_URL}
+      aria-live="polite"
+      hidden
+    >
+      {t('download.stats.prefix')} <strong data-download-total></strong> {t('download.stats.suffix')}
+      <span aria-hidden="true"> · </span>macOS <strong data-download-macos></strong>
+      <span aria-hidden="true"> · </span>Windows <strong data-download-windows></strong>
     </p>
 
     <div class="dl-grid grid">
@@ -54,6 +65,12 @@ const winItems = DOWNLOADS.filter((d) => d.os === 'win')
   <style>
     .download {
       background: var(--bg-soft);
+    }
+    .download-statistics {
+      margin: -14px 0 24px;
+      text-align: center;
+      color: var(--fg-muted);
+      font-size: 0.95rem;
     }
     /* 下载按钮更紧凑:覆盖 global .btn 的 12px 22px */
     .dl-actions .btn-sm {
@@ -108,3 +125,33 @@ const winItems = DOWNLOADS.filter((d) => d.os === 'win')
     }
   </style>
 </section>
+
+<script>
+  import { parseDownloadSummary } from '../download-statistics'
+
+  for (const element of document.querySelectorAll<HTMLElement>('[data-download-statistics]')) {
+    const url = element.dataset.url
+    if (!url) continue
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 5000)
+    fetch(url, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        return response.json()
+      })
+      .then((value) => {
+        const summary = parseDownloadSummary(value)
+        if (!summary) return
+        const total = element.querySelector<HTMLElement>('[data-download-total]')
+        const macos = element.querySelector<HTMLElement>('[data-download-macos]')
+        const windows = element.querySelector<HTMLElement>('[data-download-windows]')
+        if (!total || !macos || !windows) return
+        total.textContent = summary.total.toLocaleString()
+        macos.textContent = summary.macos.toLocaleString()
+        windows.textContent = summary.windows.toLocaleString()
+        element.hidden = false
+      })
+      .catch(() => {})
+      .finally(() => window.clearTimeout(timeout))
+  }
+</script>
