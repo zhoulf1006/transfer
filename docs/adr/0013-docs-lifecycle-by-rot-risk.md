@@ -27,7 +27,7 @@
 
 - 正面:持久资产(ADR/CONTEXT.md/复盘)不含易腐实现细节,维护成本趋零;施工文档公开承认一次性,可写得更详尽。
 - 中性:"回同步"的对象从"整份设计文档"变为"拆解归档":决策→ADR、术语→CONTEXT.md、踩坑→复盘。
-- 工具链:Matt Pocock skills(grill-with-docs / to-spec / to-tickets / implement 等),tracker 用本地 `.scratch/`,skills 以 `skills-lock.json` 锁定、`npx skills experimental_install` 还原。
+- 工具链:workflow skills 安装于用户全局 `~/.claude/skills`(核心件为基于 mattpocock/skills 的本地 fork 定制,git 版本管理),tracker 用本地 `.scratch/`;仓库内不携带 skills。
 
 ## 来源
 
