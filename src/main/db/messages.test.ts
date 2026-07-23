@@ -1,5 +1,5 @@
 import { test, expect, describe, beforeEach } from 'vitest'
-import { MessageStore, LIST_MAX_LIMIT, type Message } from './messages'
+import { MessageStore, type Message } from './messages'
 
 function baseMsg(over: Partial<Message>): Omit<Message, 'createdAt'> & { createdAt?: number } {
   // 用 'in' 判断而非 ?? ,否则显式传 null 会被默认值覆盖(content:null → 'hello' 的坑)
@@ -106,9 +106,16 @@ describe('MessageStore', () => {
       expect(older.map((m) => m.id)).toEqual(['m1', 'm2'])
     })
 
-    test('limit 超上限被钳到 LIST_MAX_LIMIT', () => {
+    test('limit 超上限被钳到 200(LIST_MAX_LIMIT),返回最新 200 条', () => {
+      // beforeEach 已插 m1..m5;再插到共 206 条,超过钳制上限才能证明钳制真的发生
+      for (let i = 6; i <= 206; i++) {
+        clock = i * 100
+        store.insert(baseMsg({ id: `m${i}` }))
+      }
       const r = store.list({ limit: 99999 })
-      expect(r.length).toBeLessThanOrEqual(LIST_MAX_LIMIT)
+      expect(r.length).toBe(200) // 独立字面量:钳制上限的契约值
+      expect(r[0].id).toBe('m7') // 取最新 200 条(m7..m206),升序返回
+      expect(r[r.length - 1].id).toBe('m206')
     })
   })
 

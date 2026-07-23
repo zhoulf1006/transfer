@@ -428,24 +428,26 @@ describe('ChatService 进度', () => {
     expect(new Set(sendEvents.map((p) => p.messageId))).toEqual(new Set([m.id]))
   })
 
-  // 2-C 回归:传输失败后(无 100% 帧),节流状态随终态 upsert 清理,不残留污染后续帧。
-  // 用 recv 路径:同一 fileId→msgId,失败后重新映射同 msgId,验证首帧不被旧节流窗口吞掉。
-  test('失败终态清理节流状态(2-C):同一消息后续首帧不被旧节流残留吞掉', () => {
+  // 2-C 回归(可达场景版):传输失败后,发送方**重试同一文件**(LocalSend 重试复用同 fileId,
+  // 新 prepare-upload → handleAutoAccept 走真实路径重建映射)→ 新消息首帧不被旧节流残留吞掉。
+  // 若节流状态按 fileId 键控且终态不清理,同 fileId、同 clock=0 的首帧会撞旧窗口被丢——此测锁死。
+  // (原测法直写私有 recvFileMsg 构造"同 msgId 重映射",该状态公开接口不可达,已改为真实重试路径;
+  //  终态清理由 upsert 收口与 handleFileFailed 双保险,其公开可达后果即本场景。)
+  test('失败后同一 fileId 重试(2-C):新消息首帧立即推,不被旧节流残留吞掉', () => {
     // 接收一个文件:入库 accepted + fileId→msgId 映射
     chat.handleAutoAccept(fileReq('P', { fX: { size: 1000 } }).files, peer('P'))
     const msgId = store.list()[0].id
     clock = 0
-    chat.handleReceiveProgress('fX', 300, 1000) // 推 30%(写入 lastProgressAt[msgId]=0)
+    chat.handleReceiveProgress('fX', 300, 1000) // 推 30%(写入节流时间戳=0)
     expect(progress.map((p) => p.sent)).toEqual([300])
-    // 落盘失败 → handleFileFailed → updateStatus(failed) → upsert(failed) → 清 lastProgressAt[msgId]
+    // 落盘失败 → handleFileFailed → updateStatus(failed) + 清映射与节流状态
     chat.handleFileFailed('fX', 'enospc')
     expect(store.get(msgId)?.status).toBe('failed')
-    // 重新给同一 msgId 建映射(模拟重发/复用),在**同一 clock=0** 再推一帧。
-    // 若节流状态没清:now-last=0<100 → 被丢弃;已清:视为首帧 → 立即推。
-    ;(chat as unknown as { recvFileMsg: Map<string, string> }).recvFileMsg.set('fY', msgId)
+    // 发送方重试:同 fileId 再次 prepare-upload → 新消息 + 真实路径重建映射
+    chat.handleAutoAccept(fileReq('P', { fX: { size: 1000 } }).files, peer('P'))
     progress.length = 0
-    clock = 0 // 同一时刻,故意撞节流窗口
-    chat.handleReceiveProgress('fY', 100, 1000)
-    expect(progress.map((p) => p.sent)).toEqual([100]) // 首帧推出,证明旧节流状态已清
+    clock = 0 // 同一时刻,故意撞旧节流窗口
+    chat.handleReceiveProgress('fX', 100, 1000)
+    expect(progress.map((p) => p.sent)).toEqual([100]) // 首帧推出,无残留污染
   })
 })

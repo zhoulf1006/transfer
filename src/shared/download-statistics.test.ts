@@ -112,7 +112,11 @@ describe('mergeGithubAssets', () => {
       },
     ])
 
-    expect(merged).toEqual(previous)
+    // 独立字面量快照(不复用 previous 对象:若实现原地改写入参再返回,别名会让 x equals x 恒真)
+    expect(merged).toEqual({
+      '11': { name: 'Transfer-1.0.0-mac-arm64.dmg', os: 'mac', downloads: 7 },
+      '12': { name: 'Transfer-0.9.0-win-portable.exe', os: 'win', downloads: 4 },
+    })
   })
 
   it('rejects an invalid GitHub download count instead of corrupting the state', () => {
