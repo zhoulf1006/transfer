@@ -1,8 +1,8 @@
 // 设备备注(applyAliases 合并 + setRemoteAlias 刷新)单测。见 docs/device-alias.md。
 // 不起网络(不 call start):只驱动 handleDevice(填 registry + 触发 emitDevices)、listDevices、setRemoteAlias。
 
-import { test, expect, describe, afterEach, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { test, expect, describe, afterEach } from 'vitest'
+import { chmodSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AppCore } from './app-core'
@@ -27,10 +27,12 @@ describe('AppCore 设备备注', () => {
   function makeCore(): {
     core: AppCore
     settings: SettingsStore
+    setDir: string
     updates: RemoteDevice[][]
     addDevice: (fp: string, alias: string) => void
   } {
-    const settings = new SettingsStore(mkdir('alias-set-'))
+    const setDir = mkdir('alias-set-')
+    const settings = new SettingsStore(setDir)
     const store = new MessageStore(':memory:')
     const updates: RemoteDevice[][] = []
     const core = new AppCore({
@@ -60,7 +62,7 @@ describe('AppCore 设备备注', () => {
         '192.168.1.5'
       )
     }
-    return { core, settings, updates, addDevice }
+    return { core, settings, setDir, updates, addDevice }
   }
 
   test('无备注:listDevices 显示默认名 alias,hasCustomAlias=false,defaultAlias=原名', () => {
@@ -125,15 +127,19 @@ describe('AppCore 设备备注', () => {
   })
 
   test('setRemoteAlias 持久化失败 → 返回 {ok:false} 且不推更新', () => {
-    const { core, settings, updates, addDevice } = makeCore()
+    const { core, setDir, updates, addDevice } = makeCore()
     addDevice('fp-A', 'Alice-MacBook')
-    // 让底层 setDeviceAlias 返回 false(模拟 persist 失败)
-    vi.spyOn(settings, 'setDeviceAlias').mockReturnValue(false)
-    const before = updates.length
-    const r = core.setRemoteAlias('fp-A', '存不上')
-    expect(r).toEqual({ ok: false })
-    expect(updates.length).toBe(before) // 失败不刷新
-    vi.restoreAllMocks()
+    // 真实 persist 失败(不 mock 自己的模块):settings 目录改只读 →
+    // writeFileSync 创建 settings.json 时 EACCES → setDeviceAlias catch+回滚 → false
+    chmodSync(setDir, 0o555)
+    try {
+      const before = updates.length
+      const r = core.setRemoteAlias('fp-A', '存不上')
+      expect(r).toEqual({ ok: false })
+      expect(updates.length).toBe(before) // 失败不刷新
+    } finally {
+      chmodSync(setDir, 0o755) // 恢复写权限,afterEach 的 rmSync 需要
+    }
   })
 
   test('两台同默认名设备,备注按各自 fingerprint 独立,互不影响', () => {

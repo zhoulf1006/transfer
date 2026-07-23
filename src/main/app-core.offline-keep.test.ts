@@ -1,7 +1,10 @@
 // app-core ↔ registry 离线保留时长接线单测。
-// 覆盖:①构造时从 settings 读初值传给 registry;②setOfflineKeepMinutes 运行时打通 registry
-// 并立即 prune + emitDevices(缩短后超期设备即时消失,不等 5s tick)。
-// 不起网络:handleDevice 注入设备,cast 驱动 registry 状态/prune。
+// 覆盖(断言全走公开面:listDevices/onDevicesUpdated/同目录重建 SettingsStore):
+// ①0=永不删(Infinity)与运行时修改立即生效;②缩短后立即 prune+emit(不等 5s tick);③持久化写盘。
+// 已知覆盖缺口:「构造时从 settings 读初值传给 registry」无行为触发点可测——prune 仅由
+// start() 的 5s tick(需起网络)或 setOfflineKeepMinutes(会覆盖初值)触发;settings 读值与
+// registry prune 语义各有单测,该接线待 AppCore 提供注入 seam 后补行为测试。
+// 不起网络的折衷:setup 仍用 cast(handleDevice 注设备/置离线),断言不碰私有状态。
 
 import { test, expect, describe, afterEach } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -26,7 +29,11 @@ describe('AppCore 离线保留时长接线', () => {
   }
 
   /** 建 core;可预置 settings.json 的 offlineKeepMinutes。捕获 onDevicesUpdated 推送。 */
-  function makeCore(offlineKeepMinutes?: number): { core: AppCore; updates: RemoteDevice[][] } {
+  function makeCore(offlineKeepMinutes?: number): {
+    core: AppCore
+    updates: RemoteDevice[][]
+    setDir: string
+  } {
     const setDir = mkdir('ok-set-')
     if (offlineKeepMinutes !== undefined) {
       writeFileSync(join(setDir, 'settings.json'), JSON.stringify({ offlineKeepMinutes }))
@@ -46,7 +53,7 @@ describe('AppCore 离线保留时长接线', () => {
         onProgress: () => {}
       }
     })
-    return { core, updates }
+    return { core, updates, setDir }
   }
 
   function addDevice(core: AppCore, fp: string): void {
@@ -72,26 +79,14 @@ describe('AppCore 离线保留时长接线', () => {
     dev.lastSeen = -1e12 // 极久以前 → 任何有限 keep 都算超期
   }
 
-  function keepMs(core: AppCore): number {
-    return (core as unknown as { registry: { offlineKeepMs: number } }).registry.offlineKeepMs
-  }
-
-  test('构造时从 settings 读初值传给 registry(60min → 3.6e6 ms)', () => {
+  test('0=永不删:超期离线设备 prune 后仍在列表;改回有限时长立即删(行为可见)', () => {
     const { core } = makeCore(60)
-    expect(keepMs(core)).toBe(60 * 60_000)
-  })
-
-  test('构造时 settings 为 0(从不)→ registry offlineKeepMs = Infinity', () => {
-    const { core } = makeCore(0)
-    expect(keepMs(core)).toBe(Infinity)
-  })
-
-  test('setOfflineKeepMinutes 运行时改 → registry 阈值同步变化', () => {
-    const { core } = makeCore(60)
-    core.setOfflineKeepMinutes(10)
-    expect(keepMs(core)).toBe(10 * 60_000)
-    core.setOfflineKeepMinutes(0)
-    expect(keepMs(core)).toBe(Infinity)
+    addDevice(core, 'A')
+    markOfflineLongAgo(core, 'A')
+    core.setOfflineKeepMinutes(0) // 触发立即 prune;Infinity 语义 → 不删
+    expect(core.listDevices().map((d) => d.info.fingerprint)).toContain('A')
+    core.setOfflineKeepMinutes(10) // 有限阈值 → 超期设备当即被删
+    expect(core.listDevices().map((d) => d.info.fingerprint)).not.toContain('A')
   })
 
   test('缩短保留时长后立即 prune + emitDevices,超期离线设备当即消失(不等 5s tick)', () => {
@@ -104,10 +99,11 @@ describe('AppCore 离线保留时长接线', () => {
     expect(updates[updates.length - 1].map((d) => d.info.fingerprint)).not.toContain('A')
   })
 
-  test('setOfflineKeepMinutes 持久化(重建 core 仍读到)', () => {
-    const { core } = makeCore(60)
+  test('setOfflineKeepMinutes 持久化:同目录重建 SettingsStore 读到新值(写盘生效)', () => {
+    const { core, setDir } = makeCore(60)
     core.setOfflineKeepMinutes(30)
-    const settings = (core as unknown as { opts: { settings: SettingsStore } }).opts.settings
-    expect(settings.getOfflineKeepMinutes()).toBe(30)
+    // 关键:必须"重建后仍读到"才证明落盘——读同一实例只是内存 cache,写盘逻辑删掉也绿
+    const reloaded = new SettingsStore(setDir)
+    expect(reloaded.getOfflineKeepMinutes()).toBe(30)
   })
 })

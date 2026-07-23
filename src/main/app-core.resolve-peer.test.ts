@@ -1,7 +1,8 @@
-// resolvePeer 在线/离线解析单测。
-// 契约:只解析"可达的在线对端"——offline 灰置底设备(§12.2 两段过期)当离线返回 null,
-// 让 chat-service 报"对方已离线"而非误导的连接超时(修 bug:离线误报 VPN)。
-// 不起网络:经 handleDevice 注入设备,cast 操纵 registry.status 模拟 prune 后的 offline。
+// 对端可达性契约测试(经高层 seam:core.chat.sendText + MessageStore)。
+// 契约:offline 灰置底(§12.2 两段过期)/从未发现的对端 → 消息 failed(offline),
+// 报"对方已离线"而非误导的连接超时(修 bug:离线误报 VPN)。离线路径不触网,可安全单测。
+// 在线对端的解析与 TLS pinning 由 e2e 覆盖(app-core.e2e.test.ts:真实双端发送成功)。
+// 不起网络的折衷:setup 仍用 cast(handleDevice 注设备/置离线),断言全走公开面。
 
 import { test, expect, describe, afterEach } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -11,7 +12,6 @@ import { AppCore } from './app-core'
 import { MessageStore } from './db/messages'
 import { SettingsStore } from './settings'
 import type { DeviceInfo, RemoteDevice } from '@shared/types'
-import type { SendTarget } from './transfer/http-client'
 
 describe('AppCore resolvePeer 在线/离线', () => {
   const dirs: string[] = []
@@ -26,7 +26,7 @@ describe('AppCore resolvePeer 在线/离线', () => {
     return d
   }
 
-  function makeCore(): AppCore {
+  function makeCore(): { core: AppCore; store: MessageStore } {
     const settings = new SettingsStore(mkdir('rp-set-'))
     const store = new MessageStore(':memory:')
     const core = new AppCore({
@@ -37,7 +37,7 @@ describe('AppCore resolvePeer 在线/离线', () => {
       settings,
       events: { onDevicesUpdated: () => {}, onMessageUpserted: () => {}, onProgress: () => {} }
     })
-    return core
+    return { core, store }
   }
 
   function addDevice(core: AppCore, fp: string): void {
@@ -62,31 +62,21 @@ describe('AppCore resolvePeer 在线/离线', () => {
     dev.status = 'offline'
   }
 
-  function resolve(core: AppCore, fp: string): { target: SendTarget; alias: string } | null {
-    return (
-      core as unknown as {
-        resolvePeer: (fp: string) => { target: SendTarget; alias: string } | null
-      }
-    ).resolvePeer(fp)
-  }
-
-  test('在线设备 → 返回 target(可发送)', () => {
-    const core = makeCore()
-    addDevice(core, 'fp-A')
-    const peer = resolve(core, 'fp-A')
-    expect(peer).not.toBeNull()
-    expect(peer!.target.fingerprint).toBe('fp-A')
-  })
-
-  test('offline 灰置底设备 → 返回 null(报已离线,不当在线去连)', () => {
-    const core = makeCore()
+  test('offline 灰置底对端 → sendText 消息标 failed(offline),不误报连接超时', async () => {
+    const { core, store } = makeCore()
     addDevice(core, 'fp-A')
     markOffline(core, 'fp-A')
-    expect(resolve(core, 'fp-A')).toBeNull()
+    await core.chat.sendText('fp-A', 'hello')
+    const m = store.list().find((x) => x.direction === 'sent')
+    expect(m?.status).toBe('failed')
+    expect(m?.errorReason).toBe('offline')
   })
 
-  test('未发现的设备 → 返回 null', () => {
-    const core = makeCore()
-    expect(resolve(core, 'never-seen')).toBeNull()
+  test('从未发现的对端 → sendText 消息标 failed(offline)', async () => {
+    const { core, store } = makeCore()
+    await core.chat.sendText('never-seen', 'hello')
+    const m = store.list().find((x) => x.direction === 'sent')
+    expect(m?.status).toBe('failed')
+    expect(m?.errorReason).toBe('offline')
   })
 })
