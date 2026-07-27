@@ -57,6 +57,7 @@ _Avoid_: "每次打开重新加载"——错误假设,曾因此出 bug。
 **持久化与运行时**
 
 - **进度不落库**:progress 只走 IPC 实时推,DB 只存最终 status;节流状态在**任意终态**统一清理,不依赖 100% 帧。
+- **消息的 `status` / `error_reason` 是无约束 TEXT 列**:`rowToMessage` 直接强转成联合类型,**联合外的值能真的到达消费端**(用户装过含新状态的版本、写了库,再降级回旧版)。故任何读 status/errorReason 的新代码都必须对联合外的值优雅降级:集合归属判断(终态/传输中/待用户决定)写成覆盖每个成员的 `Record` 查表并把结果收敛成布尔——落在联合外答"否";映射查表必须带兜底,否则返回 `undefined` 会让界面渲染成空白。**别用 `Set.has` 或 `===` 串联**:它们对未知成员一律答 false 且新增成员时照常编译,漏改不会被发现。
 - **`Infinity` 绝不进 settings.json**:`JSON.stringify(Infinity)` 得 `"null"` 会损坏持久化;`0 → Infinity` 的换算只存在于运行时。
 - **macOS 文件名大小写不敏感**:`transfer` 与 `Transfer` 同目录,故 dev 改名无缝、不需迁移;Win/Linux 大小写敏感,若遇到才需迁移。
 
