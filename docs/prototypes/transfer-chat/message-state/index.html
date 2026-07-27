@@ -1,0 +1,340 @@
+<!doctype html>
+<!-- Logic 原型页(由 prototype skill 的 logic-page-template.html 填充生成)。
+     图源:同目录 *.mmd(正本) → sync-mmd.mjs 派生 model.mmd.js → 本页渲染。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>原型 — 消息状态机</title>
+<style>
+  :root{
+    --bg:#f7f8f9; --card:#ffffff; --text:#37352f; --text-2:#787774;
+    --line:#e8eaed; --line-strong:#d9dce0; --accent:#8a67ab; --accent-soft:#f0ebf6;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#18191b; --card:#1f2124; --text:#e6e6e5; --text-2:#9b9a97;
+      --line:#2a2c30; --line-strong:#34373c; --accent:#a084c7; --accent-soft:#2c2733; }
+  }
+  *{box-sizing:border-box;margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+  body{background:var(--bg);color:var(--text);font-size:13px;padding:28px;max-width:860px;margin:0 auto}
+  h1{font-size:16px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+  .tag{font-size:10px;border:1px solid var(--line-strong);border-radius:4px;padding:1px 6px;color:var(--text-2)}
+  .q{color:var(--text-2);line-height:1.7;margin-bottom:18px}
+  h4{font-size:12px;color:var(--text-2);margin:18px 0 8px}
+  .dg{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;overflow-x:auto}
+  .dg pre{font-size:12px;white-space:pre-wrap}
+  .dg.pan{height:56vh;padding:0;overflow:hidden;position:relative;cursor:grab;touch-action:none;user-select:none;background:#fdfdfd}
+  .dg.pan.dragging{cursor:grabbing}
+  .dg.pan svg{display:block;transform-origin:0 0;will-change:transform;overflow:visible}
+  /* htmlLabels:false 下,mermaid 给每个边标签垫一块 rect.background,fill 被其样式表套成 primaryColor(#ECECFF 淡紫);
+     edgeLabelBackground 变量管不到,且 mermaid 样式特异性高,须 !important 打透明(Chrome 实测坐实) */
+  .dg svg .edgeLabel rect.background{fill:transparent !important}
+  /* 边标签小节点文字一号(节点默认 16px),让状态节点作为主体更突出 */
+  .dg svg .edgeLabel text,.dg svg .edgeLabel tspan{font-size:14px}
+  .rst{position:absolute;top:8px;right:8px;z-index:2;border:1px solid var(--line-strong);
+    background:var(--card);color:var(--text-2);border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer}
+  .rst:hover{color:var(--accent);border-color:var(--accent)}
+  code{display:block;background:var(--card);border:1px solid var(--line);border-radius:8px;
+    padding:10px 12px;font-size:12px;user-select:all;overflow-x:auto;white-space:pre}
+  .hint{font-size:12px;color:var(--text-2);margin-top:14px}
+
+  /* ── 驾驶面板 ── */
+  .drive{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+  .st{display:flex;flex-direction:column;gap:9px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+  .st-row{display:flex;align-items:center;gap:10px;font-size:13px}
+  .st-row .k{width:96px;color:var(--text-2);font-family:ui-monospace,Menlo,monospace;font-size:12px;flex:none}
+  .badge{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:600;
+    padding:2px 10px;border-radius:5px;border:1px solid transparent}
+  .badge.pending{background:#fff6b8;border-color:#e4c800;color:#5c5100}
+  .badge.accepted{background:#dbeafe;border-color:#93c5fd;color:#1e40af}
+  .badge.done{background:#dcfce7;border-color:#86efac;color:#166534}
+  .badge.failed,.badge.rejected{background:#fee2e2;border-color:#fca5a5;color:#991b1b}
+  .badge.expired{background:var(--line);border-color:var(--line-strong);color:var(--text-2)}
+  .badge.empty{background:transparent;border-color:var(--line-strong);color:var(--text-2);border-style:dashed}
+  .bar{width:170px;height:7px;border-radius:4px;background:var(--line);overflow:hidden;flex:none}
+  .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .18s}
+  .num{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--text-2);font-variant-numeric:tabular-nums}
+  .val{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+  .val.nil{color:var(--text-2);opacity:.7}
+  .illegal{margin:12px 0;padding:8px 12px;border-radius:7px;font-size:12.5px;border:1px solid}
+  .illegal.ok{color:var(--text-2);border-color:var(--line);background:transparent}
+  .illegal.idle{color:var(--text-2);border-color:var(--line);background:transparent;opacity:.6}
+  .illegal .ev{font-family:ui-monospace,Menlo,monospace;color:var(--accent);font-weight:600}
+  .illegal.bad{color:#991b1b;border-color:#fca5a5;background:#fee2e2}
+  @media (prefers-color-scheme:dark){
+    .illegal.bad{color:#fca5a5;border-color:#7f1d1d;background:#2a1416}
+    .badge.pending{background:#3a3316;border-color:#7a6a1e;color:#f0dd8a}
+    .badge.accepted{background:#17263f;border-color:#2c4d80;color:#93c5fd}
+    .badge.done{background:#12301d;border-color:#2a6540;color:#86efac}
+    .badge.failed,.badge.rejected{background:#2a1416;border-color:#7f1d1d;color:#fca5a5}
+  }
+  .acts{display:flex;flex-direction:column;gap:10px}
+  .grp{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .grp-t{font-size:11px;color:var(--text-2);width:78px;flex:none;
+    font-family:ui-monospace,Menlo,monospace}
+  .acts button{font:inherit;font-size:12.5px;padding:5px 13px;border-radius:6px;cursor:pointer;
+    border:1px solid var(--line-strong);background:var(--bg);color:var(--text);transition:.12s}
+  .acts button:hover{border-color:var(--accent);color:var(--accent)}
+  .acts button:active{transform:translateY(1px)}
+  .acts button.ghost{border-style:dashed;color:var(--text-2);margin-left:4px}
+  .acts button.ghost:hover{border-style:solid;color:var(--accent)}
+  /* 置灰 = 当前状态不可达(由 legal(state) 派生,非 UI 自行判断) */
+  /* 置灰不用 opacity:opacity 会连带把伪元素 tooltip 一起变淡,文字看不清。改用具体颜色变淡。 */
+  .acts button[aria-disabled="true"]{cursor:not-allowed;border-style:dotted;
+    color:var(--text-2);opacity:1;border-color:var(--line);background:transparent}
+  .acts button[aria-disabled="true"]:hover{border-color:var(--line-strong);color:var(--text-2)}
+  /* 即时 tooltip:原生 title 有约 1s 延迟,置灰原因要立刻可见 */
+  .acts button{position:relative}
+  .acts button[data-tip]:hover::after{
+    content:attr(data-tip);position:absolute;bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);
+    background:#1b1b1f;color:#fff;font-size:11.5px;line-height:1.45;padding:6px 10px;border-radius:6px;
+    white-space:nowrap;z-index:20;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.28)}
+  .acts button[data-tip]:hover::before{
+    content:"";position:absolute;bottom:calc(100% + 2px);left:50%;transform:translateX(-50%);
+    border:5px solid transparent;border-top-color:#1b1b1f;z-index:20;pointer-events:none}
+  .stress{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:12px;color:var(--text-2);cursor:pointer}
+  .stress input{cursor:pointer}
+  code.inl{display:inline;background:var(--bg);border:1px solid var(--line);border-radius:4px;
+    padding:1px 5px;font-size:11.5px}
+  .drive .hint{margin-top:14px;line-height:1.6}
+  /* 图上高亮当前状态节点 */
+  .dg svg g.node.cur rect,.dg svg g.node.cur polygon,.dg svg g.node.cur circle{
+    stroke:var(--accent) !important;stroke-width:2.5px !important}
+</style>
+</head>
+<body>
+  <h1>消息状态机 <span class="tag">Logic</span></h1>
+  <div class="q">逆向示范件:逆向自已实现的 chat-service 消息生命周期。若在实现前原型化,它回答的问题是——接收文件消息的确认/超时/落盘状态机,在"用户迟迟不点、确认超时、落盘失败、重启恢复"交错发生时是否有洞(非法迁移是否都被挡住、终态是否真的终)。</div>
+  <div id="dgs"></div>
+
+  <h4>亲手驾驶(点按钮驱动状态机)</h4>
+  <div class="drive">
+    <div class="st">
+      <div class="st-row"><span class="k">status</span><span id="v-status" class="badge">—</span></div>
+      <div class="st-row"><span class="k">progress</span>
+        <span class="bar"><i id="v-bar"></i></span><span id="v-prog" class="num">0 / 0</span></div>
+      <div class="st-row"><span class="k">filePath</span><span id="v-path" class="val nil">null</span></div>
+      <div class="st-row"><span class="k">errorReason</span><span id="v-err" class="val nil">null</span></div>
+    </div>
+    <div id="v-illegal" class="illegal idle">尚未派发事件</div>
+    <div class="acts">
+      <div class="grp"><span class="grp-t">新消息</span>
+        <button data-new="manual">需确认</button>
+        <button data-new="auto">自动接收命中</button>
+        <button id="btn-reset" class="ghost">↺ 重置</button>
+      </div>
+      <div class="grp"><span class="grp-t">用户与超时</span>
+        <button data-act="userAccept">接收</button>
+        <button data-act="userReject">拒绝</button>
+        <button data-act="acceptTimeout">确认超时</button>
+        <button data-act="restartRecover">重启恢复</button>
+      </div>
+      <div class="grp"><span class="grp-t">传输</span>
+        <button data-act="progress">进度 +30%</button>
+        <button data-act="fileDone">落盘完成</button>
+        <button data-act="fileFail">落盘失败</button>
+      </div>
+    </div>
+    <label class="stress"><input type="checkbox" id="stress"><span>压测模式:解除置灰,允许强行派发非法事件(验证 reducer 防线真的挡得住)</span></label>
+    <p class="hint">按钮的可用性由 <code class="inl">legal(state)</code> 从模型派生——置灰即"当前状态不可达",悬停看原因。图上高亮的是当前状态。</p>
+  </div>
+
+<script src="../../vendor/mermaid.min.js"></script>
+<script src="./model.mmd.js"></script>
+<script src="./logic.js"></script>
+<script>
+  const host = document.getElementById('dgs');
+  const packs = Object.values(window.MERMAID_SOURCES || {}).flat();
+  (async () => {
+    if (!packs.length) { host.innerHTML = '<div class="hint">无图源:目录内没有 .mmd 或未跑 sync-mmd.mjs。</div>'; return; }
+    let i = 0;
+    for (const d of packs) {
+      const h = document.createElement('h4'); h.textContent = d.title;
+      const box = document.createElement('div'); box.className = 'dg';
+      host.appendChild(h); host.appendChild(box);
+      if (!window.mermaid) {
+        const pre = document.createElement('pre'); pre.textContent = d.src; box.appendChild(pre);
+        continue; // 缺 vendor 库:降级显示图源文本
+      }
+      try {
+        // 内置 dark 主题近乎灰度,default 是浅底设计——用 base+themeVariables 接项目色板
+        const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+        mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'base',
+          themeVariables: dark ? {
+            primaryColor: '#2c2733', primaryTextColor: '#e6e6e5', primaryBorderColor: '#a084c7',
+            lineColor: '#9b9a97', textColor: '#e6e6e5', edgeLabelBackground: '#1f2124',
+            noteBkgColor: '#34373c', noteTextColor: '#e6e6e5', background: '#18191b',
+            secondaryColor: '#1f2124', tertiaryColor: '#232526'
+          } : {
+            primaryColor: '#f0ebf6', primaryTextColor: '#37352f', primaryBorderColor: '#8a67ab',
+            lineColor: '#787774', textColor: '#37352f', edgeLabelBackground: '#ffffff',
+            noteBkgColor: '#f7f8f9', noteTextColor: '#37352f', background: '#ffffff',
+            secondaryColor: '#ffffff', tertiaryColor: '#f7f8f9'
+          } });
+        const { svg } = await mermaid.render('mmd-' + i++, d.src);
+        box.innerHTML = svg;
+        enablePanZoom(box);
+      } catch (e) {
+        const pre = document.createElement('pre'); pre.textContent = d.src; box.appendChild(pre);
+      }
+    }
+  })();
+
+  // 画布交互:拖动=平移;捏合或 ⌘/Ctrl+滚轮=平滑缩放(以指针为锚点);普通滚轮放行给页面滚动;双击或 ⌂=重置适配
+  function enablePanZoom(box){
+    const svg = box.querySelector('svg');
+    if (!svg || !svg.viewBox || !svg.viewBox.baseVal.width) return;
+    const natW = svg.viewBox.baseVal.width, natH = svg.viewBox.baseVal.height;
+    svg.style.maxWidth = 'none'; svg.style.width = natW + 'px'; svg.style.height = natH + 'px';
+    box.classList.add('pan');
+    box.insertAdjacentHTML('beforeend', '<button class="rst" title="重置视图(双击画布同效)">⌂</button>');
+    let s = 1, tx = 0, ty = 0, dragging = false, sx = 0, sy = 0;
+    const apply = () => { svg.style.transform = `translate(${tx}px,${ty}px) scale(${s})`; };
+    const fit = () => {
+      const r = box.getBoundingClientRect();
+      s = Math.min((r.width - 28) / natW, (r.height - 28) / natH, 1);
+      tx = (r.width - natW * s) / 2; ty = (r.height - natH * s) / 2; apply();
+    };
+    fit();
+    box.querySelector('.rst').addEventListener('click', (e) => { e.stopPropagation(); fit(); });
+    box.addEventListener('dblclick', fit);
+    box.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.rst')) return;
+      dragging = true; sx = e.clientX - tx; sy = e.clientY - ty;
+      box.classList.add('dragging'); box.setPointerCapture(e.pointerId);
+    });
+    box.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      tx = e.clientX - sx; ty = e.clientY - sy; apply();
+    });
+    const end = () => { dragging = false; box.classList.remove('dragging'); };
+    box.addEventListener('pointerup', end); box.addEventListener('pointercancel', end);
+    box.addEventListener('wheel', (e) => {
+      if (!e.ctrlKey && !e.metaKey) return; // 普通滚动不劫持,页面正常滚
+      e.preventDefault();
+      let dy = e.deltaY;
+      if (e.deltaMode === 1) dy *= 16; else if (e.deltaMode === 2) dy *= 120; // 行/页模式归一为像素
+      dy = Math.max(-60, Math.min(60, dy)); // 单次步长封顶:鼠标一格 ≈ ±12%
+      const r = box.getBoundingClientRect();
+      const px = e.clientX - r.left, py = e.clientY - r.top;
+      const ns = Math.min(5, Math.max(0.2, s * Math.exp(-dy * 0.002)));
+      tx = px - (px - tx) * (ns / s); ty = py - (py - ty) * (ns / s); s = ns; apply();
+    }, { passive: false });
+  }
+</script>
+
+<script>
+  // 驾驶面板:按钮 → reduce → 渲染状态 + 图上高亮当前状态
+  (function(){
+    var SM = window.StateMachine;
+    var TOTAL = 1000;
+    var state = null;                      // null = 空态(无消息在驾驶);入场靠「新消息」,每次重选
+    var lastEvent = null;                  // 上一个派发的事件名(供回执显示;清空时归零)
+
+    var els = {
+      status: document.getElementById('v-status'),
+      bar: document.getElementById('v-bar'),
+      prog: document.getElementById('v-prog'),
+      path: document.getElementById('v-path'),
+      err: document.getElementById('v-err'),
+      illegal: document.getElementById('v-illegal')
+    };
+
+    function render(){
+      if (state === null) {                       // 空态:无消息在驾驶
+        els.status.textContent = '—';
+        els.status.className = 'badge empty';
+        els.bar.style.width = '0%';
+        els.prog.textContent = '0 / ' + TOTAL;
+        els.path.textContent = '—'; els.path.className = 'val nil';
+        els.err.textContent = '—'; els.err.className = 'val nil';
+        els.illegal.textContent = '空态:点「新消息」入场';
+        els.illegal.className = 'illegal idle';
+        applyReachability();
+        highlight(null);
+        return;
+      }
+      els.status.textContent = state.status + (state.autoAccepted ? '  (自动接收入场)' : '');
+      els.status.className = 'badge ' + state.status;
+      var pct = state.total ? Math.round(state.received / state.total * 100) : 0;
+      els.bar.style.width = pct + '%';
+      els.prog.textContent = state.received + ' / ' + state.total;
+      els.path.textContent = state.filePath || 'null';
+      els.path.className = 'val' + (state.filePath ? '' : ' nil');
+      els.err.textContent = state.errorReason || 'null';
+      els.err.className = 'val' + (state.errorReason ? '' : ' nil');
+      // 三态回执:未派发 / 合法(报回执:事件 → 结果状态) / 非法(红字给原因)
+      if (state.illegal) {
+        els.illegal.textContent = '⚠ ' + state.illegal;
+        els.illegal.className = 'illegal bad';
+      } else if (lastEvent) {
+        els.illegal.innerHTML = '已派发 <span class="ev">' + lastEvent + '</span> → ' + state.status;
+        els.illegal.className = 'illegal ok';
+      } else {
+        els.illegal.textContent = '尚未派发事件';
+        els.illegal.className = 'illegal idle';
+      }
+      applyReachability();
+      highlight(state.status);
+    }
+
+    // 按钮可用性由模型派生:legal(state) 说不合法就置灰,悬停给原因
+    function applyReachability(){
+      var perm = SM.legal(state);
+      var stress = document.getElementById('stress').checked;
+      document.querySelectorAll('[data-act]').forEach(function(b){
+        var info = perm[b.getAttribute('data-act')] || { legal: true, why: null };
+        // 用 aria-disabled 而非原生 disabled:disabled 按钮不触发 hover,tooltip 就出不来
+        b.setAttribute('aria-disabled', String(!info.legal && !stress));
+        // 自定义 tooltip(data-tip + CSS):原生 title 有约 1s 延迟,置灰原因要即时可见
+        if (info.legal) b.removeAttribute('data-tip');
+        else b.setAttribute('data-tip', (stress ? '压测:强行派发 — ' : '不可达:') + (info.why || ''));
+      });
+    }
+
+    // 在渲染好的 mermaid 图里高亮当前状态节点(按节点文本匹配)
+    function highlight(status){
+      var svg = document.querySelector('.dg svg');
+      if (!svg) return;
+      svg.querySelectorAll('g.node').forEach(function(n){
+        var t = (n.textContent || '').trim();
+        n.classList.toggle('cur', status !== null && t === status);   // 空态:全不高亮
+      });
+    }
+
+    document.querySelectorAll('[data-act]').forEach(function(b){
+      b.addEventListener('click', function(){
+        if (b.getAttribute('aria-disabled') === 'true') return;   // 置灰即不可达,拦截派发
+        var t = b.getAttribute('data-act');
+        var action = t === 'progress' ? { type:'progress', bytes: Math.round(TOTAL*0.3) }
+                   : t === 'fileFail' ? { type:'fileFail', reason:'enospc' }
+                   : { type: t };
+        lastEvent = t;
+        state = SM.reduce(state, action);
+        render();
+      });
+    });
+    document.querySelectorAll('[data-new]').forEach(function(b){
+      b.addEventListener('click', function(){
+        lastEvent = null;                    // 新消息:回执归零
+        state = SM.initial(b.getAttribute('data-new') === 'auto', TOTAL);
+        render();
+      });
+    });
+    // 重置:回到本次驾驶的入场初态(保留 manual/auto),清空进度/路径/错误/非法提示
+    document.getElementById('btn-reset').addEventListener('click', function(){
+      lastEvent = null;                      // 清空:回执归零
+      state = null;                          // 回到空态,入场下次重选
+      render();
+    });
+    document.getElementById('stress').addEventListener('change', applyReachability);
+
+    render();
+    // 图异步渲染完后补一次高亮
+    var tries = 0;
+    var t = setInterval(function(){
+      if (document.querySelector('.dg svg') || ++tries > 40) { clearInterval(t); highlight(state.status); }
+    }, 100);
+  })();
+</script>
+</body>
+</html>

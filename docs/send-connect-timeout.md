@@ -69,20 +69,6 @@ ChatService 侧新增 `classifyError(message): ErrorReason`:按错误串/关键�
 `db/messages.ts` `ErrorReason` 现为 `busy|enospc|sha256|network|no-file|unknown`。
 新增:`timeout | refused | cert-mismatch`。
 
-## 改动清单
-
-1. **`src/shared/protocol.ts`**:新增 `T_CONNECT_MS = 10000`。
-2. **`src/main/transfer/http-client.ts`** `pinnedAgent`(L53-88):
-   - `tls.connect` 后 `socket.setTimeout(T_CONNECT_MS)` + `'timeout'` handler → destroy + cb(ETIMEDOUT err)。
-   - 指纹校验失败的 destroy err 附 `code='ECERT'`(或 message 含 `fingerprint`,已有)。
-   - **握手成功、cb(null,socket) 前 `socket.setTimeout(0)`**(清 connect 超时,回归红线)。
-3. **`src/main/db/messages.ts`**:`ErrorReason` 加 `timeout | refused | cert-mismatch`。
-4. **`src/main/chat-service.ts`**:
-   - 新增 `classifyError(message: string): ErrorReason`(字符串匹配)。
-   - `applySendResult`(L372):error 分支从写死 `network` 改为 `classifyError(res.message)`。
-     → 需 `applySendResult` 收到原始 message(现在只传 `res.kind`,要改为传整个 res 或 message)。
-   - sendFiles 映射(L343):`error` 分支同样用 `classifyError(res.message)`。
-5. **`src/renderer/src/App.tsx`** `statusLabel`(L1067):为 `timeout/refused/cert-mismatch` 加文案 case。
 
 ## 边界 / 失败模式
 
@@ -97,14 +83,3 @@ ChatService 侧新增 `classifyError(message): ErrorReason`:按错误串/关键�
   测试要覆盖各关键词命中。
 - **探测成功但真正传输时对端下线**:仍走原 error 路径,映射 network/timeout,可接受。
 
-## 测试计划
-
-- http-client `pinnedAgent`:
-  - 连不可达 IP → 10s 内(而非 6min)以 ETIMEDOUT 失败。
-  - **大文件慢传不被 connect timeout 误杀**(回归红线,关键测试:模拟握手后 >10s 的慢传输仍成功)。
-  - 指纹不符 → err 含 fingerprint/ECERT。
-- chat-service `classifyError`:ETIMEDOUT→timeout、ECONNREFUSED→refused、
-  fingerprint→cert-mismatch、其他→network,各一测。
-- chat-service:sendText/sendFiles error 结果 → 正确细分 errorReason(不再一律 network)。
-- chat-service:done/rejected/busy 路径回归(原有测试应仍绿)。
-- App.tsx statusLabel:新 errorReason → 正确文案。

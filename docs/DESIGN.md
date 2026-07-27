@@ -13,10 +13,10 @@
 | 技术栈 | Electron + TypeScript + pnpm | |
 | 连接 | 局域网直连 | 无服务器/账号 |
 | **发现机制** | **UDP 多播 + 子网广播双通道**(LocalSend 协议 v2,回应用 HTTP 定向 register) | `224.0.0.167:53317` + 各网卡子网广播;可与 LocalSend App 互通;详见 §1.1 |
-| **传输加密** | **HTTPS**(自签名证书 + 指纹 TOFU pinning) | 见 [https-migration.md](./https-migration.md);~~原 MVP 用 HTTP 明文,已升级~~ |
+| **传输加密** | **HTTPS**(自签名证书 + 指纹 TOFU pinning) | 见 [ADR-0004](./adr/0004-https-self-signed-tofu.md);~~原 MVP 用 HTTP 明文,已升级~~ |
 | **接收确认** | **弹框确认** | 收到 prepare-upload 时本机弹框,用户点了才收 |
 | 笔记存储 | 本地 Markdown 文件 | |
-| 截屏 | **快捷键(默认 F1,可设置里自定义)→ 区域框选 + 全套标注 + 发聊天/复制/存文件(已实现)** | 详见 [screenshot-feature.md](./screenshot-feature.md) + [custom-shortcut.md](./custom-shortcut.md);层级检测/多屏跨屏/滚动长图为后续 P2 |
+| 截屏 | **快捷键(默认 F1,可设置里自定义)→ 区域框选 + 全套标注 + 发聊天/复制/存文件(已实现)** | 详见 [ADR-0008](./adr/0008-screenshot-scope.md) 与 [features/screenshot.md](./features/screenshot.md);实现踩坑见 [gotchas.md](./gotchas.md);层级检测/多屏跨屏/滚动长图为后续 P2 |
 | **MVP** | **文件传送优先** | 两台设备互相发现 + 传文件/文本 |
 
 ---
@@ -38,8 +38,8 @@
 - `announce: true` = 主动广播;收到后对方应回应,回应方式二选一:
   1. 回一个 `announce: false` 的 UDP 报文(同字段),或
   2. 向对方 `POST /api/localsend/v2/register`。
-- **发现走多播 + 子网广播双通道**(本项目):每次主动 announce **同时**发多播(224.0.0.167)+ 对每个真实网卡的**子网广播地址**(如 192.168.3.255)各发一份同内容报文。理由:多播依赖交换机 IGMP/AP 不过滤,常被限;广播是网络基础功能、不走代理隧道,互补覆盖(见 `docs/discovery-broadcast-fallback.md`)。用 `socket.setBroadcast(true)` + `pickBroadcastTargets`(排除隧道段,`broadcast=address|~netmask`)。收侧不区分来源(同一 handleMessage,幂等 upsert)。**只广播不扫网段**(扫网段像端口扫描,触发企业 EDR)。
-- **本项目实现选方式 2(HTTP 定向 register),不发方式 1(UDP 回应)**:多播回应常单向丢包,定向 TCP 更可靠(收到 announce=true → `registerTo` 对方,`multicast.ts` onRespond→`app-core.respondViaRegister`)。仍能**接收**别人发来的 announce=false(兼容官方客户端)。⚠️ **register 响应体省略 port,不能拿它刷新登记**(会用 DEFAULT_PORT 覆盖真实端口),对方登记只靠其 announce。详见 `docs/discovery-http-register-response.md`。
+- **发现走多播 + 子网广播双通道**(本项目):每次主动 announce **同时**发多播(224.0.0.167)+ 对每个真实网卡的**子网广播地址**(如 192.168.3.255)各发一份同内容报文。理由:多播依赖交换机 IGMP/AP 不过滤,常被限;广播是网络基础功能、不走代理隧道,互补覆盖(见 [ADR-0006](./adr/0006-broadcast-fallback-dual-channel.md);实测限度见 [lan-discovery-limits.md](./lan-discovery-limits.md))。用 `socket.setBroadcast(true)` + `pickBroadcastTargets`(排除隧道段,`broadcast=address|~netmask`)。收侧不区分来源(同一 handleMessage,幂等 upsert)。**只广播不扫网段**(扫网段像端口扫描,触发企业 EDR)。
+- **本项目实现选方式 2(HTTP 定向 register),不发方式 1(UDP 回应)**:多播回应常单向丢包,定向 TCP 更可靠(收到 announce=true → `registerTo` 对方,`multicast.ts` onRespond→`app-core.respondViaRegister`)。仍能**接收**别人发来的 announce=false(兼容官方客户端)。⚠️ **register 响应体省略 port,不能拿它刷新登记**(会用 DEFAULT_PORT 覆盖真实端口),对方登记只靠其 announce。详见 [ADR-0005](./adr/0005-discovery-respond-via-http-register.md)。
 - Fallback(用法 B,**本项目未实现**):多播完全不可用时,HTTP POST `/register` 到局域网各 IP 主动扫描发现。当前只做用法 A(定向回应),不扫网段。
 
 **传输握手(确认),端点前缀 `/api/localsend/v2/`:**
@@ -137,7 +137,7 @@
 - **主进程**:所有网络能力(UDP 发现、HTTP server/client)、文件读写、系统能力(截屏、快捷键、权限)。这些都需要 Node/系统权限,必须在主进程。
 - **渲染进程**:UI —— 设备列表、传输进度、接收弹框、笔记、截屏标注。通过 IPC 与主进程通信。
 - **preload**:用 `contextBridge` 暴露受限 IPC API(`contextIsolation: true`,不开 `nodeIntegration`)。
-- **渲染页加载(dev / prod)**:dev 走 `ELECTRON_RENDERER_URL`(`http://localhost`,HMR);**prod 走自定义 `app://bundle/<entry>.html`**,由 `src/main/app-protocol.ts` 的 `protocol.handle('app')` 映射到 `out/renderer/*`(读盘用 `net.fetch(file://)`,免维护 MIME 表;`resolveAppPath` 做目录穿越防护)。scheme 在模块顶层(app ready 前)`registerSchemesAsPrivileged` 为 `standard+secure`,让渲染页拿到**非 opaque origin** —— **不用 `file://`**,因为 `file://` 是 opaque origin,web storage(localStorage 等)首访阻塞数秒卡首屏(Electron #24441,主窗 + 截图 overlay 均走此机制)。详见 `docs/app-scheme-migration.md`。
+- **渲染页加载(dev / prod)**:dev 走 `ELECTRON_RENDERER_URL`(`http://localhost`,HMR);**prod 走自定义 `app://bundle/<entry>.html`**,由 `src/main/app-protocol.ts` 的 `protocol.handle('app')` 映射到 `out/renderer/*`(读盘用 `net.fetch(file://)`,免维护 MIME 表;`resolveAppPath` 做目录穿越防护)。scheme 在模块顶层(app ready 前)`registerSchemesAsPrivileged` 为 `standard+secure`,让渲染页拿到**非 opaque origin** —— **不用 `file://`**,因为 `file://` 是 opaque origin,web storage(localStorage 等)首访阻塞数秒卡首屏(Electron #24441,主窗 + 截图 overlay 均走此机制)。详见 [ADR-0007](./adr/0007-app-scheme-replaces-file.md)。
 
 ---
 
@@ -272,14 +272,14 @@ export const T_UPLOAD_MS = 5 * 60_000    // 单个 upload 超时(S4:防接收方
 
 - 首次启动生成并持久化(userData 目录 `identity.json`):
   - `alias`:默认取机器名或随机生成(如 "Loong's Mac"),用户可改。
-  - `fingerprint`:**证书 SHA-256(DER 整证书)**,由自签名证书派生(HTTPS 改造后;~~原 HTTP 模式为随机串~~,见 [https-migration.md](./https-migration.md) §3.2)。
+  - `fingerprint`:**证书 SHA-256(DER 整证书)**,由自签名证书派生(HTTPS 改造后;~~原 HTTP 模式为随机串~~,见 [ADR-0002](./adr/0002-fingerprint-as-device-identity.md))。
   - `cert` / `privateKey`:EC P-256 自签名证书(PEM),首启生成一次,10 年有效期。
   - `deviceType`:固定 `"desktop"`。
   - `deviceModel`:`process.platform` 映射("darwin"→"macOS","win32"→"Windows")。
 - fingerprint 用于**防止发现到自己**:收到多播 announce **或** `/register` 请求时,若对端 fingerprint == 本机,忽略(H4:两条发现入口都要做此比对,不只多播)。
 - **为何同机也必需(②-a 事实层):** 多播 `IP_MULTICAST_LOOP` **默认开启**,本机会收到自己发的广告,同机另一实例也会收到——所以防自发现必须在应用层用 fingerprint 过滤;`setMulticastLoopback(false)` 只关本 socket 的回环,防不住同机另一进程,不能替代 fingerprint 过滤。
 - **多实例同机测试注意(M4)**:fingerprint 持久化在 userData,同机两实例默认共享 userData → 同 fingerprint → 互判为"自己"而互相隐藏。测试多实例时必须用**不同 userData 目录 / 不同 fingerprint**(通过 env 覆盖,见 §9 验收前置)。
-- **userData 目录名统一(`app.setName('Transfer')`)**:index.ts 顶部(override/单实例锁/首次读 userData 之前)显式 `app.setName('Transfer')`。否则 dev 未打包时 `getName()` 读 `package.json` name=`transfer`(小写)、打包版读 `productName='Transfer'`(大写),两者 userData 目录名不一致。统一后 dev 与打包共用同一目录(mac 大小写不敏感,dev 原数据无缝复用)。`TRANSFER_USERDATA` override 仍优先,不受影响。详见 `docs/userdata-dirname-and-settings.md`。
+- **userData 目录名统一(`app.setName('Transfer')`)**:index.ts 顶部(override/单实例锁/首次读 userData 之前)显式 `app.setName('Transfer')`。否则 dev 未打包时 `getName()` 读 `package.json` name=`transfer`(小写)、打包版读 `productName='Transfer'`(大写),两者 userData 目录名不一致。统一后 dev 与打包共用同一目录(mac 大小写不敏感,dev 原数据无缝复用)。`TRANSFER_USERDATA` override 仍优先,不受影响。详见 [CONTEXT.md](../CONTEXT.md) 的 userData 条目。
 
 ---
 
@@ -318,7 +318,7 @@ export const T_UPLOAD_MS = 5 * 60_000    // 单个 upload 超时(S4:防接收方
 - **多播报文伪造 / 放大攻击**:发现层 DoS,MVP 不处理。
 - **IPv6**:`224.0.0.167` 为 IPv4 多播,**MVP 仅 IPv4**;IPv6 留待后续。
 
-**安全提醒(HTTPS + 指纹 pinning):** 传输已加密(自签名证书 + 指纹 TOFU pinning),防被动窃听。但 fingerprint 经**明文 UDP 广播**,同网段主动攻击者可冒充任意 alias/指纹的对端,发送方无法察觉(与官方 LocalSend 同级局限,见 [https-migration.md](./https-migration.md) §4.1)。**弹框确认仍是防主动冒充的唯一人肉防线**;请在可信局域网使用。后续可加 PIN / 带外指纹验证。
+**安全提醒(HTTPS + 指纹 pinning):** 传输已加密(自签名证书 + 指纹 TOFU pinning),防被动窃听。但 fingerprint 经**明文 UDP 广播**,同网段主动攻击者可冒充任意 alias/指纹的对端,发送方无法察觉(与官方 LocalSend 同级局限,见 [ADR-0004](./adr/0004-https-self-signed-tofu.md) 的后果段)。**弹框确认仍是防主动冒充的唯一人肉防线**;请在可信局域网使用。后续可加 PIN / 带外指纹验证。
 
 ---
 
@@ -370,7 +370,7 @@ export const T_UPLOAD_MS = 5 * 60_000    // 单个 upload 超时(S4:防接收方
 1. **与真实 LocalSend App 互通(B1 替代方案)**:挂起 prepare-upload 等弹框的模型对第三方 App 秒级超时不成立。互通需改为「prepare-upload **立即返回**占位/待定,用户确认异步进行」的方案(或参考 LocalSend App 实际的默认接受/快速拒绝行为)。在实现互通前,§0 的互通承诺仅在自家两端(可控超时)成立。
 2. 文本/剪贴板传送(prepare-upload 里 fileType=text 或专门端点)
 3. `/register` HTTP fallback 发现 + IPv6 支持
-4. ~~HTTPS + fingerprint TOFU 校验~~ ✅ **已实现**(见 [https-migration.md](./https-migration.md))
+4. ~~HTTPS + fingerprint TOFU 校验~~ ✅ **已实现**(见 [ADR-0004](./adr/0004-https-self-signed-tofu.md))
 5. 截屏(区域 → 全屏/窗口 → 标注 → 滚动长图)
 6. 笔记(Markdown 本地文件 + 搜索)
 7. 打通:截屏 → 标注 → 一键发送到某设备 / 存入笔记
@@ -536,7 +536,7 @@ settings.ts            # 自动接收开关+阈值(持久化,复用 identity.jso
 
 ### 11.8 新消息提醒(未读角标 + Dock/任务栏)
 
-收到消息的提醒,分 app 内未读 + 系统级 Dock/任务栏两层。详见 `docs/unread-notification.md`。
+收到消息的提醒,分 app 内未读 + 系统级 Dock/任务栏两层。详见 [features/unread.md](./features/unread.md);实现踩坑见 [gotchas.md](./gotchas.md)。
 
 - **未读状态在 renderer**:`unread: Record<peerFp, number>`;每个 peer 一个未读数,侧栏 `DeviceRow` 显红底数字角标(>99→99+)。
 - **计未读门控**(纯函数 `shared/unread.ts` `shouldCountUnread`,有单测):`direction==='recv'` && 新消息(id 未见过) && **非**(窗口聚焦 && chat 视图 && 选中的就是该 peer)。即"正盯着该会话看"时不计。

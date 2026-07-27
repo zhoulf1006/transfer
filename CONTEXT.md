@@ -35,6 +35,37 @@ _Avoid_: "每次打开重新加载"——错误假设,曾因此出 bug。
 
 **app:// scheme**: 生产环境渲染页/overlay 用自定义 privileged scheme `app://` 加载(替代 `file://`,根治启动慢,见 ADR-0007)。
 
+## Invariants(不变量)
+
+违反即出错、且多为"不知道就会踩"的约束。不含 file:line 与常量值(那些在代码里)。
+
+**发现与信任**
+
+- **register 是 pinning 的唯一例外**:回应 announce 时本机 registry 里**还没有该 peer**,无指纹可 pin;强套 pin 会 fail-closed → 对方永远发现不了我方,**双向发现塌一半**。故 register 走不 pin 的通道,prepare/upload/cancel 走 pin 通道(ADR-0004 未含此例外)。
+- **只对 `announce=true` 回应**:收到 `announce=false` 不再回,否则两端无限对回。
+- **register 响应体省略 port**,不能拿它刷新登记,否则会用默认端口覆盖真实端口、连错端口。
+
+**会话与传输**
+
+- **单会话**:同一时刻只接受一个传输会话,重复请求 409;同 IP+fingerprint 的重试覆盖旧 PENDING。
+- **待收集合 = 接受集合**(非请求全集):用户可只接受部分文件;"传输完成"的判据是**待收集合清空**,不是请求列表跑完(upload 可并行、乱序)。
+- **upload 绑定来源 IP**,且**状态门控**:PENDING 期的 upload 一律 403。
+- **所有会话必有超时**,无永不过期的挂起。
+- **三态 respond**:拒绝 → 403;**接受但无文件要传 → 204 且立即清理、不进 active**(文本消息永远走这条,不占单会话锁);接受且有文件 → 200 + token。
+- **发送方本地串行化**:同一 peer 的发送在发送方排队,避免自己的第二条撞自己造成 409(纯本地,不动协议)。
+
+**持久化与运行时**
+
+- **进度不落库**:progress 只走 IPC 实时推,DB 只存最终 status;节流状态在**任意终态**统一清理,不依赖 100% 帧。
+- **`Infinity` 绝不进 settings.json**:`JSON.stringify(Infinity)` 得 `"null"` 会损坏持久化;`0 → Infinity` 的换算只存在于运行时。
+- **macOS 文件名大小写不敏感**:`transfer` 与 `Transfer` 同目录,故 dev 改名无缝、不需迁移;Win/Linux 大小写敏感,若遇到才需迁移。
+
+**构建与发布**
+
+- **签名后禁改产物**:签名把框架内文件哈希封进 CodeResources;裁剪(locale/架构)**必须在签名前由 electron-builder 完成**,禁 post-build 删文件、禁事后 `lipo` 抽薄、禁 `codesign --deep` 补签。顺序恒定:裁剪 → 签名 → DMG → 公证 staple。
+- **安装包只能放 R2,不能进 Pages**:Cloudflare Pages 单文件上限 25 MiB,安装包 81–177 MiB;落地页在 Pages、安装包在 R2,二者不可合并。
+- **两个下载源永远都显示**,只调默认高亮,**不做地区强制重定向**(`navigator.language`/时区判地区不可靠,VPN 会干扰)。
+
 ## Relationships(关系)
 
 - **发现** = announce(UDP 多播+广播双发) + register(HTTP 定向回应),组成双向发现;发现结果进 `DeviceRegistry`(`Map<fingerprint, RemoteDevice>`)。
