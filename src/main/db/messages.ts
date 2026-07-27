@@ -6,33 +6,15 @@
 import { createRequire } from 'node:module'
 import { renameSync, existsSync } from 'node:fs'
 
+// 状态词汇是 main 与 renderer 共享的同一份(见 shared/message-state 头部说明),
+// 不在此重复声明——否则两侧各改各的、编译器不会察觉。
+import type { Direction, ErrorReason, MessageStatus, MessageType } from '@shared/message-state'
+
 // node:sqlite 用动态 require 加载,避开打包器(vite/rollup)对 `node:sqlite` 的静态解析
 // (它会误把前缀剥成 'sqlite' 当本地模块找)。运行时是 Electron 35 / Node 22 内置。
 const require = createRequire(import.meta.url)
 const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite')
 type DatabaseSyncInstance = InstanceType<typeof DatabaseSync>
-
-export type MessageType = 'text' | 'file'
-export type Direction = 'sent' | 'recv'
-export type MessageStatus =
-  | 'pending'
-  | 'accepted'
-  | 'rejected'
-  | 'sent'
-  | 'done'
-  | 'failed'
-  | 'expired'
-export type ErrorReason =
-  | 'busy'
-  | 'enospc'
-  | 'sha256'
-  | 'network'
-  | 'no-file'
-  | 'unknown'
-  | 'timeout'
-  | 'refused'
-  | 'cert-mismatch'
-  | 'offline'
 
 export interface Message {
   id: string

@@ -24,4 +24,4 @@
 
 ## 来源
 
-[app-scheme-migration.md](../app-scheme-migration.md)。
+app-scheme-migration.md。

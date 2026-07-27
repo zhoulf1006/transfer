@@ -255,7 +255,7 @@ function registerIpc(): void {
     const effective = resolveSystemEffective(pref)
     setMainLang(effective) // 更新主进程内存态,后续 dialog/文件名用新语言
     // 广播给所有 window(主窗自身 + 常驻 overlay):后者只在首次 F1 mount 时拉过语言,
-    // 无此广播则改语言后再截图仍显旧语言(见 docs/i18n-follow-system.md B6/B11)。
+    // 无此广播则改语言后再截图仍显旧语言。
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(EVT.languageChanged, effective)
     return { pref, effective }
   })

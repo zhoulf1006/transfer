@@ -24,4 +24,4 @@ ADR-0005 修好了"回应"通道,但主动 announce 仍只走多播,发现的第
 
 ## 来源
 
-[discovery-broadcast-fallback.md](../discovery-broadcast-fallback.md);排查背景见 memory「局域网发现三层坑」。
+discovery-broadcast-fallback.md;排查背景见 memory「局域网发现三层坑」。

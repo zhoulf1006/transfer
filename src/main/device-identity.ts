@@ -1,4 +1,4 @@
-// 本机身份持久化(见 docs/DESIGN §6、docs/https-migration.md §3.3)
+// 本机身份持久化(见 docs/DESIGN §6、docs/adr/0004-https-self-signed-tofu.md)
 //
 // HTTPS 改造:identity.json 除 alias/fingerprint 外,新增 cert/privateKey(EC P-256 自签名证书)。
 // fingerprint = certFingerprint(cert)(SHA-256 of DER 整证书),不再是随机串。

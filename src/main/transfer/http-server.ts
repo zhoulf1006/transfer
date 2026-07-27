@@ -12,7 +12,7 @@ import { isTextMessage, extractText } from './text-message'
 
 export interface HttpServerDeps {
   sessions: SessionManager
-  /** 本机 TLS 证书(PEM):HTTPS server 用(docs/https-migration.md §3.5) */
+  /** 本机 TLS 证书(PEM):HTTPS server 用(docs/adr/0004-https-self-signed-tofu.md) */
   tls: { key: string; cert: string }
   /** 本机设备信息(GET /info 用) */
   selfInfo: () => DeviceInfo

@@ -25,4 +25,4 @@ macOS universal 安装后 `.app` 达 451MB,需要瘦身,同时不能让不懂架
 
 ## 来源
 
-[electron-slimming.md](../electron-slimming.md) §6;memory「locale裁剪版本门槛」「electron-builder CI打包坑」。
+electron-slimming.md §6;memory「locale裁剪版本门槛」「electron-builder CI打包坑」。

@@ -23,4 +23,4 @@
 
 ## 来源
 
-memory「overlay常驻非重建」;[screenshot-feature.md](../screenshot-feature.md)。
+memory「overlay常驻非重建」;screenshot-feature.md。

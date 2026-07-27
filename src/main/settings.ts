@@ -23,11 +23,11 @@ export const DEFAULT_SHORTCUT_CAPTURE = 'F1'
 export interface AppSettings {
   autoAccept: AutoAcceptSettings
   theme: ThemePref
-  /** 界面语言偏好:跟随系统 / 中文 / 英文。默认 system(见 docs/i18n-follow-system.md)。 */
+  /** 界面语言偏好:跟随系统 / 中文 / 英文。默认 system(见 docs/features/general.md)。 */
   language: LangPref
   /** 截图快捷键(Electron accelerator 字符串,如 'F1' / 'Command+Shift+A') */
   shortcutCapture: string
-  /** 远端设备备注:key = 设备 fingerprint,value = 备注(非空;空即删除该键)。见 docs/device-alias.md */
+  /** 远端设备备注:key = 设备 fingerprint,value = 备注(非空;空即删除该键)。见 CONTEXT.md「备注(远端设备别名)」 */
   deviceAliases: Record<string, string>
   /**
    * 离线设备在列表里保留的时长(**分钟**);超时后自动从发现表删除。0 = 从不删除(永久灰置底保留)。
@@ -178,7 +178,8 @@ export class SettingsStore {
   /**
    * 设置设备备注(key = fingerprint)。空串(trim 后)→ 删除该键(恢复默认名)。
    * 返回是否持久化成功:失败则**回滚 cache**并返回 false(不留"内存改了盘没存"的假成功),
-   * 供 renderer 就地反馈失败。⚠️ 与 setTheme/setAutoAccept 的"不 catch 抛异常"有意不同(见 docs/device-alias.md §2.2)。
+   * 供 renderer 就地反馈失败。⚠️ 与 setTheme/setAutoAccept 的"不 catch 抛异常"有意不同:
+   * 本方法特意 catch + 回滚 + 返回 bool,因为要给 renderer 失败反馈。这是有意的不一致,不是疏漏。
    */
   setDeviceAlias(fingerprint: string, alias: string): boolean {
     const trimmed = alias.trim()

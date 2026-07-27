@@ -1,5 +1,5 @@
 // 主进程 i18n:持有“当前有效语言”内存态,供主进程文案(dialog/文件名前缀)读取。
-// 与两个渲染 window 共享同一份字典 DICT(见 docs/i18n-follow-system.md §2.4)。
+// 与两个渲染 window 共享同一份字典 DICT。
 
 import { app } from 'electron'
 import { DICT } from '@shared/i18n/dict'

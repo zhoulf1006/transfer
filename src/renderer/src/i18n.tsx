@@ -1,6 +1,5 @@
 // 渲染层 i18n:React context 持有当前有效语言,驱动整树热切换。
 // 两个 window(index + overlay)各包一个 <I18nProvider>;它们读同一 settings,effective 一致。
-// 见 docs/i18n-follow-system.md §2.3。
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { DICT, type TKey } from '@shared/i18n/dict'

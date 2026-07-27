@@ -32,4 +32,4 @@
 
 ## 来源
 
-[https-migration.md](../https-migration.md) §0 决策表、§3.6 实测、安全边界章节。
+https-migration.md §0 决策表、§3.6 实测、安全边界章节。

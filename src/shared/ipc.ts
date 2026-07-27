@@ -1,19 +1,10 @@
 // IPC 契约(main ↔ renderer,见 docs/DESIGN §8、§11.5)
 
 import type { RemoteDevice } from './types'
+import type { Direction, ErrorReason, MessageStatus, MessageType } from './message-state'
 
-// ── 消息(聊天流)UI 数据模型(与 main/db/messages 的 Message 对齐)──
-export type MessageType = 'text' | 'file'
-export type Direction = 'sent' | 'recv'
-export type MessageStatus =
-  | 'pending'
-  | 'accepted'
-  | 'rejected'
-  | 'sent'
-  | 'done'
-  | 'failed'
-  | 'expired'
-
+// ── 消息(聊天流)UI 数据模型 ──
+// 状态词汇取自 shared/message-state(与 main/db/messages 的 Message 同源,不再各抄一份)。
 export interface UiMessage {
   id: string
   type: MessageType
@@ -25,7 +16,7 @@ export interface UiMessage {
   fileSize: number | null
   filePath: string | null
   status: MessageStatus
-  errorReason: string | null
+  errorReason: ErrorReason | null
   transferId: string | null
   createdAt: number
 }

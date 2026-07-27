@@ -439,7 +439,7 @@ describe('文件收发(集成)', () => {
   })
 })
 
-// TLS 指纹 pinning(HTTPS 改造核心安全断言,docs/https-migration.md §3.6)。
+// TLS 指纹 pinning(核心安全断言,docs/adr/0004-https-self-signed-tofu.md)。
 // 独立 describe:各自起 server,精确控制 target.fingerprint。
 describe('TLS 指纹 pinning', () => {
   let server: FastifyInstance

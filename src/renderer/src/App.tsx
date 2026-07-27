@@ -5,6 +5,9 @@ import { pickImageItemIndices } from '@shared/clipboard-image'
 import { eventToAccelerator, acceleratorRejectReason } from '@shared/accelerator'
 import { shouldCountUnread } from '@shared/unread'
 import { OFFLINE_KEEP_PRESETS } from '@shared/offline-keep'
+import { isTerminal, isTransferring, canRespond } from '@shared/message-state'
+import type { ErrorReason } from '@shared/message-state'
+import { failedLabelKey } from '@shared/i18n/failed-label'
 import type {
   IdentityInfo,
   UiMessage,
@@ -130,7 +133,7 @@ export function App(): JSX.Element {
           return [...prev, m].sort((a, b) => a.createdAt - b.createdAt)
         })
         // 消息进入终态 → 清理残留进度条(失败/拒绝/超时不会有 done 进度帧)
-        if (['done', 'failed', 'rejected', 'expired'].includes(m.status)) {
+        if (isTerminal(m.status)) {
           setProgress((prev) => {
             if (!(m.id in prev)) return prev
             const { [m.id]: _drop, ...rest } = prev
@@ -258,7 +261,7 @@ function Sidebar(props: {
   const themeLabel =
     themePref === 'system' ? t('theme.system') : themePref === 'light' ? t('theme.light') : t('theme.dark')
 
-  // ── 设备备注:右键菜单 + 行内编辑(见 docs/device-alias.md §4)──
+  // ── 设备备注:右键菜单 + 行内编辑(见 docs/features/device-alias.md)──
   const [menuFp, setMenuFp] = useState<string | null>(null)
   const [menuPos, setMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const [menuClearError, setMenuClearError] = useState(false) // 「清除备注」失败(Bug#2)
@@ -452,7 +455,7 @@ function Sidebar(props: {
   )
 }
 
-/** 自绘右键菜单:改/清除备注。定位在鼠标处,超出视口回弹;点外/Esc 关闭。见 docs/device-alias.md §4.2。 */
+/** 自绘右键菜单:改/清除备注。定位在鼠标处,超出视口回弹;点外/Esc 关闭。见 docs/features/device-alias.md。 */
 function DeviceContextMenu(props: {
   pos: { x: number; y: number }
   hasCustomAlias: boolean
@@ -739,10 +742,10 @@ function FileBubble({
   own: boolean
 }): JSX.Element {
   const { t } = useI18n()
-  const canRespond = msg.direction === 'recv' && msg.status === 'pending'
+  const respondable = canRespond(msg)
   const canOpen = msg.status === 'done' && msg.filePath
   // 传输中(pending/accepted)且有进度 → 百分比进度条(§12.3)
-  const transferring = msg.status === 'pending' || msg.status === 'accepted'
+  const transferring = isTransferring(msg.status)
   const pct = prog && prog.total > 0 ? Math.min(100, Math.round((prog.sent / prog.total) * 100)) : null
   // 图片消息(已完成落盘)尝试缩略图;拿不到(GIF/WEBP/失败)由 ImageThumb 回退文件行
   const showThumb = canOpen && isImageFile(msg.fileName)
@@ -768,7 +771,7 @@ function FileBubble({
         </>
       )}
       {/* 接收确认按钮只出现在 recv(对方=灰底气泡),用中性描边按钮 */}
-      {canRespond && (
+      {respondable && (
         <div style={S.actions}>
           <button
             className="tf-btn"
@@ -1116,22 +1119,9 @@ function SettingsModal(props: {
 }
 
 // ── helpers ──
-/** failed 消息按 errorReason 给明确文案(区分离线/超时/拒连/证书)。 */
-function failedLabel(t: TFn<TKey>, reason: string | null): string {
-  switch (reason) {
-    case 'busy':
-      return t('chat.failed.busy')
-    case 'offline':
-      return t('chat.failed.offline')
-    case 'timeout':
-      return t('chat.failed.timeout')
-    case 'refused':
-      return t('chat.failed.refused')
-    case 'cert-mismatch':
-      return t('chat.failed.certMismatch')
-    default:
-      return t('chat.failed.default')
-  }
+/** failed 消息按 errorReason 给明确文案(映射表与兜底见 @shared/i18n/failed-label)。 */
+function failedLabel(t: TFn<TKey>, reason: ErrorReason | null): string {
+  return t(failedLabelKey(reason))
 }
 function statusLabel(t: TFn<TKey>, m: UiMessage): string {
   switch (m.status) {
@@ -1149,8 +1139,12 @@ function statusLabel(t: TFn<TKey>, m: UiMessage): string {
       return t('chat.status.expired')
     case 'failed':
       return failedLabel(t, m.errorReason)
-    default:
-      return m.status
+    default: {
+      // 无 default 兜底:MessageStatus 新增成员时此处编译报错,
+      // 强制补上对应文案,而不是把状态原始字符串("paused" 之类)漏到界面上。
+      const exhaustive: never = m.status
+      return exhaustive
+    }
   }
 }
 function fmtTime(ts: number): string {

@@ -24,4 +24,4 @@
 
 ## 来源
 
-[device-alias.md](../device-alias.md) §1.1;[https-migration.md](../https-migration.md)。
+device-alias.md §1.1;https-migration.md。

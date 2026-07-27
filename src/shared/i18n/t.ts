@@ -1,5 +1,5 @@
 // 极简 i18n 运行时:查表 + {var} 插值 + 回退。零依赖、不含 React。
-// 主进程与两个渲染 window 共享同一份字典(见 docs/i18n-follow-system.md §2.1)。
+// 主进程与两个渲染 window(index + overlay)共享同一份字典 @shared/i18n/dict。
 //
 // 选型:自研而非 i18next —— 调研显示一线开源 Electron 应用(VS Code/Signal/Joplin/
 // Element/Bitwarden/Logseq)无一用 i18next;55 条/中英/无复数的规模,引擎卖点全用不上。

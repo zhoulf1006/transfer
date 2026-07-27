@@ -1,5 +1,7 @@
 // 翻译字典(单一数据源,main + 两个 renderer 共享 import)。
-// 命名空间见 docs/i18n-follow-system.md §4。
+// 键名格式 `<命名空间>.<短名>`,命名空间按界面区域划分
+// (common / sidebar / chat / settings / overlay / shortcut / downloads / image / theme / error / main),
+// 下方分组注释即索引。
 //
 // 完整性由类型保证:TKey 取自 zh 的键集合,en 必须实现同一组键(Record<TKey,string>),
 // 缺键编译报错——自研相比 i18next 的优势(引擎多为运行时键、漏译静默回退)。
@@ -55,6 +57,10 @@ const zh = {
   'chat.failed.timeout': '连接超时',
   'chat.failed.refused': '对方未在监听',
   'chat.failed.certMismatch': '证书不匹配',
+  // 以下两条是接收方本机的错误(写盘/校验失败),措辞不能写"对方"
+  'chat.failed.enospc': '磁盘空间不足',
+  'chat.failed.sha256': '文件校验失败',
+  'chat.failed.network': '网络错误',
   'chat.failed.default': '失败',
 
   // downloads:已接收文件页
@@ -206,6 +212,9 @@ const en: Record<TKey, string> = {
   'chat.failed.timeout': 'Connection timed out',
   'chat.failed.refused': 'Recipient is not listening',
   'chat.failed.certMismatch': 'Certificate mismatch',
+  'chat.failed.enospc': 'Not enough disk space',
+  'chat.failed.sha256': 'File verification failed',
+  'chat.failed.network': 'Network error',
   'chat.failed.default': 'Failed',
 
   'downloads.title': 'Received Files',

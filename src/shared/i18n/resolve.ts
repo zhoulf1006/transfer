@@ -1,5 +1,5 @@
 // 语言偏好 → 有效语言的解析(纯逻辑,注入 langs 便于测,不直接依赖 Electron)。
-// main 侧 wrapper 传入 app.getPreferredSystemLanguages() 的结果调用(见 docs/i18n-follow-system.md §3)。
+// main 侧 wrapper 传入 app.getPreferredSystemLanguages() 的结果调用。
 
 import type { Lang } from './t'
 

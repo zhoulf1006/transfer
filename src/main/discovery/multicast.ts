@@ -199,7 +199,8 @@ export class MulticastDiscovery {
 
     // 收到别人的主动广播 → **HTTP 定向回应**(POST /register 到对方),让对方也能发现我们。
     // 替代原 UDP 多播回应(announce:false):定向 TCP 比多播可靠。announce=false(别人的回应)
-    // 不再回,防无限对回。见 docs/discovery-http-register-response.md。
+    // 不再回,防无限对回(CONTEXT.md 不变量「只对 announce=true 回应」;
+    // 回应改走 HTTP 定向 register 的决策见 docs/adr/0005-discovery-respond-via-http-register.md)。
     if (msg.announce === true) {
       this.opts.onRespond?.(info, address)
     }
