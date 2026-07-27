@@ -80,7 +80,7 @@
 - 拿全分辨率(推断/社区经验):把 `screen.getPrimaryDisplay().size` 作为 `thumbnailSize`,高 DPI 需 `size × scaleFactor` 取物理像素。
 - **区域截图(推断):** Electron 无原生 API。做法:全屏截图 → `nativeImage.crop()` 裁剪;选区 UI 用透明全屏窗口自实现。
 - **滚动长截图(确认):** Electron 不支持,必须自实现(自动滚动 + 逐帧 + 拼接)。
-- **macOS 屏幕录制权限(确认):** 需用户授权;`systemPreferences.getMediaAccessStatus('screen')` 检测;**不能弹窗请求**,只能引导去系统设置手动开,授权后常需重启 App。已知 bug:授权后状态有时不刷新。
+- **macOS 屏幕录制权限(2026-07 实测修正):** 需用户授权。`systemPreferences.getMediaAccessStatus('screen')` **对从未询问过的 app 返回 `'denied'` 而非 `'not-determined'`**(底层是 `CGPreflightScreenCaptureAccess` 的布尔,没有第三态),故不能把非 granted 当"用户拒绝过"。**能弹窗请求**——真的调一次 `desktopCapturer.getSources()` 会触发系统授权框,**且这是让 macOS 把 app 登记进「屏幕录制」列表的唯一途径**;不调就引导用户去列表里找它 = 死锁(旧描述"不能弹窗请求"即由此致 bug,见 docs/postmortems/)。授权后仍需重启 App:进程内状态缓存到重启才刷新(electron#36722)。
 - **Windows(推断):** 截屏无特殊系统权限。
 
 **全局快捷键(确认):** 用 `CommandOrControl`(跨平台);`register()` 静默失败,**必须检查返回值**;macOS 可能需 Accessibility 权限;`app.whenReady()` 后注册,退出前 `unregisterAll()`。

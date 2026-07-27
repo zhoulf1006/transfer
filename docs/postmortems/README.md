@@ -31,3 +31,4 @@
 | [screenshot-overlay-behaviors.md](screenshot-overlay-behaviors.md) | 遮罩窗四个反直觉行为:panel 致 Dock 图标消失、自截时序、冒泡清选区、autoFocus 不可靠 |
 | [unread-react-pitfalls.md](unread-react-pitfalls.md) | StrictMode 双调致未读翻倍;effect 依赖写"最小集"致呼出后不清零;flashFrame 在 mac 持续跳 |
 | [global-shortcut-limits.md](global-shortcut-limits.md) | globalShortcut 只能"注册试错" → 产品只能提示换键;改键失败必须回滚 |
+| [screen-permission-preflight-deadlock.md](screen-permission-preflight-deadlock.md) | preflight 检查堵死唯一授权入口 → 新用户永远开不了截图;含 tccutil reset 复现手法与同 bundle id 抢 TCC 的连带坑 |

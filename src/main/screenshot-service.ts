@@ -47,6 +47,66 @@ export function shouldRestoreMain(mainHidden: boolean, winExists: boolean, winVi
   return mainHidden && winExists && !winVisible
 }
 
+/** 屏幕录制权限的下一步动作(§4.5)。 */
+export type ScreenPermissionAction = 'proceed' | 'probe' | 'guide'
+
+/**
+ * 屏幕录制权限决策(§4.5,纯函数便于单测)。
+ *
+ * 关键前提:macOS 上 `getMediaAccessStatus('screen')` 对**从未询问过**的 app 返回
+ * `'denied'` 而非 `'not-determined'`(底层是 CGPreflightScreenCaptureAccess 的布尔,
+ * 没有第三态)。因此不能把非 granted 直接当"用户拒绝过"处理——那会形成死锁:
+ * 不调 desktopCapturer → macOS 不把 app 登记进「屏幕录制」列表 → 引导用户去列表里
+ * 找它却找不到 → 永远无法授权。**真的调一次 desktopCapturer 是让系统弹授权框并
+ * 登记 app 的唯一途径**,故未授权时先 probe,探测后仍未授权才 guide。
+ */
+export function decideScreenPermission(
+  platform: string,
+  status: string,
+  probed: boolean
+): ScreenPermissionAction {
+  if (platform !== 'darwin') return 'proceed' // 仅 macOS 有屏幕录制授权
+  if (status === 'granted') return 'proceed'
+  return probed ? 'guide' : 'probe'
+}
+
+/** 屏幕录制探测的等待上限(ms)。见 probeScreenAccess 的"有界"理由。 */
+const PROBE_TIMEOUT_MS = 3000
+
+/**
+ * 有界地跑一次屏幕采集探测(纯函数便于单测),用于触发 macOS 授权流程。
+ *
+ * **必须有界**:探测发生在 beginSession 置 `capturing = true` 之后的 await 里。
+ * TCC 授权框弹出后 getSources 是否挂起等用户回应,未实测确认;若挂起且用户一直不理,
+ * promise 永不 settle —— 走不到 catch/finally,会从「任何失败分支都回 idle,否则
+ * state 卡死会让 F1 被永久吞」(§4.2)那条保护下面绕过去,F1 只能靠重启恢复。
+ * 加超时后该问题的答案不再影响正确性。
+ *
+ * **异常一律吞掉**:未授权时 getSources 可能抛,但那不是判据 —— 授权结果只以随后的
+ * getMediaAccessStatus 复查为准。抛出去反而会把整个截图会话打成失败。吞但要记日志:
+ * 静默失败正是本仓库栽过的坑。
+ */
+export async function probeScreenAccess(
+  probe: () => Promise<unknown>,
+  timeoutMs: number
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const attempt = (async () => {
+    try {
+      await probe()
+    } catch (err) {
+      console.error('[screenshot] 屏幕录制探测失败(不致命,以权限状态复查为准)', err)
+    }
+  })()
+  await Promise.race([
+    attempt,
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs)
+    })
+  ])
+  if (timer) clearTimeout(timer)
+}
+
 export interface ScreenshotDeps {
   /** dev 时的 renderer origin(ELECTRON_RENDERER_URL),prod 为 undefined */
   rendererUrl?: string
@@ -162,8 +222,8 @@ export class ScreenshotService {
     this.capturing = true
     this.state = 'capturing'
     try {
-      // ① mac 权限先查:denied → 根本不 show 遮罩,引导系统设置,回 idle(§4.5)。
-      if (!this.ensureScreenPermission()) {
+      // ① mac 权限先查:未授权 → 探测/引导,不 show 遮罩,回 idle(§4.5)。
+      if (!(await this.ensureScreenPermission())) {
         this.endSession()
         return
       }
@@ -204,13 +264,32 @@ export class ScreenshotService {
   }
 
   /**
-   * mac 屏幕录制权限(§4.5)。granted/not-determined 放行(后者首次调用系统会自动弹);
-   * denied/restricted → 引导系统设置并返回 false。Windows 恒 granted。
+   * mac 屏幕录制权限(§4.5)。决策见 decideScreenPermission —— 未授权时**先探测**
+   * (真调一次 desktopCapturer,那是让系统弹授权框并把 app 登记进「屏幕录制」列表的
+   * 唯一途径),探测后仍未授权才引导系统设置。返回 false 表示本次不该继续截图。
+   *
+   * 注意探测后 status 通常仍不是 granted:用户还没点允许,且 Electron 的状态在进程内
+   * 缓存到重启才更新(electron#36722)。这是预期的——引导文案本就要求重启应用,
+   * 而经过探测,用户这次能在列表里找到本 app 了。
    */
-  private ensureScreenPermission(): boolean {
-    if (process.platform !== 'darwin') return true
-    const status = systemPreferences.getMediaAccessStatus('screen')
-    if (status === 'granted' || status === 'not-determined') return true
+  private async ensureScreenPermission(): Promise<boolean> {
+    const read = (): string => systemPreferences.getMediaAccessStatus('screen')
+    const first = decideScreenPermission(process.platform, read(), false)
+    if (first === 'proceed') return true
+    if (first === 'probe') {
+      // 1x1 缩略图:只为触发授权流程,不需要真实画面。
+      await probeScreenAccess(
+        () => desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }),
+        PROBE_TIMEOUT_MS
+      )
+      if (decideScreenPermission(process.platform, read(), true) === 'proceed') return true
+    }
+    this.showPermissionGuide()
+    return false
+  }
+
+  /** 引导用户去「系统设置 → 隐私与安全性 → 屏幕录制」开权限(fire-and-forget)。 */
+  private showPermissionGuide(): void {
     void dialog
       .showMessageBox({
         type: 'warning',
@@ -227,7 +306,6 @@ export class ScreenshotService {
           )
         }
       })
-    return false
   }
 
   /**
