@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Electron 的 helper 子进程(renderer/GPU/plugin):继承父进程沙盒,不自带权限。
+       给子进程配上父进程那套 entitlements 会让它们起不来。 -->
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+  <key>com.apple.security.inherit</key>
+  <true/>
+</dict>
+</plist>

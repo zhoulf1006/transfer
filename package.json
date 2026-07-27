@@ -17,7 +17,9 @@
     "dist:mac:package-signed": "electron-vite build && electron-builder --mac --publish never -c.mac.notarize=false",
     "notarize:mac:dmgs": "node build/notarize-dmgs.cjs release/*/*.dmg",
     "dist:mac:sign": "pnpm run dist:mac:package-signed && pnpm run notarize:mac:dmgs",
-    "dist:win": "electron-vite build && electron-builder --win --publish never"
+    "dist:win": "electron-vite build && electron-builder --win --publish never",
+    "dist:mas:dev": "electron-vite build && electron-builder --mac mas-dev --publish never",
+    "dist:mas": "electron-vite build && electron-builder --mac mas --universal --publish never"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

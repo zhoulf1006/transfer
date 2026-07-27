@@ -8,7 +8,8 @@ release/
 # 本地签名/公证凭据(Apple ID、专用密码等),绝不提交
 .env.local
 .env.*.local
-# provisioning profile:含团队标识与设备清单,按开发者/机器各不相同,绝不提交
+# provisioning profile:含团队标识与设备清单,按开发者/机器各不相同,绝不提交。
+# 获取方式见 electron-builder.yml 的 mas/masDev 段。
 build/*.provisionprofile
 # 施工文档(spec/tickets),用完即丢,不入库
 .scratch/

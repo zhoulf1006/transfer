@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Mac App Store 强制沙盒;entitlements.mac.plist 是 Developer ID 用的加固运行时那套,
+       两者不可互换(cs.allow-unsigned-executable-memory / cs.disable-library-validation 不进 MAS)。 -->
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+
+  <!-- 局域网发现与传输:UDP 多播/广播 announce + HTTPS 直连收发。
+       实测(macOS 26.0.1)沙盒不额外拦截多播,network.client/server 即够,
+       不需要 iOS 那个受限的 com.apple.developer.networking.multicast。 -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <key>com.apple.security.network.server</key>
+  <true/>
+
+  <!-- 收到的文件落 ~/Downloads(app.getPath('downloads')) -->
+  <key>com.apple.security.files.downloads.read-write</key>
+  <true/>
+  <!-- dialog.showOpenDialog / showSaveDialog 选中的文件 -->
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+
+  <!-- Electron MAS 构建要求;与 provisioning profile 里的 App Group 一致。
+       沙盒放行以 TeamID 打头的 Mach 服务名(MachPortRendezvousServer)靠 profile 下发的
+       application-identifier —— 没有 profile 就起不来,本地无法伪造。 -->
+  <key>com.apple.security.application-groups</key>
+  <array>
+    <string>RHQ28XS7D9.com.loong.transfer</string>
+  </array>
+</dict>
+</plist>
