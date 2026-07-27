@@ -23,4 +23,4 @@
 
 ## 来源
 
-[landing-page-plan.md](../landing-page-plan.md) 决策变更声明(2026-07-20)。
+landing-page-plan.md 决策变更声明(2026-07-20)。

@@ -16,7 +16,8 @@ export interface DeviceInfo {
   protocol?: 'http' | 'https'
   download?: boolean
   /**
-   * 以下两字段仅由 main 侧 applyAliases 在发给 renderer 前填充(见 docs/device-alias.md §3.1),
+   * 以下两字段仅由 main 侧 applyAliases 在发给 renderer 前填充
+   * (字段语义见 CONTEXT.md「alias / defaultAlias / hasCustomAlias」),
    * 不参与协议报文收发。原始 announce/register 的 info 里没有它们。
    */
   /** 对端广播的原始默认名(有备注时,alias 已被备注覆盖,原名存这里) */

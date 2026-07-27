@@ -23,4 +23,4 @@
 
 ## 来源
 
-[screenshot-feature.md](../screenshot-feature.md) §0 功能表、§1.4 明确不做;memory「截图功能范围」。
+screenshot-feature.md §0 功能表、§1.4 明确不做;memory「截图功能范围」。

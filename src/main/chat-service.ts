@@ -6,7 +6,8 @@
 import { randomUUID } from 'node:crypto'
 import type { DeviceInfo, PrepareUploadRequest } from '@shared/types'
 import { T_ACCEPT_MS } from '@shared/protocol'
-import { MessageStore, type Message, type ErrorReason } from './db/messages'
+import { MessageStore } from './db/messages'
+import { isTerminal, type ErrorReason, type Message } from '@shared/message'
 import { SettingsStore } from './settings'
 import { isTextMessage } from './transfer/text-message'
 import type { SendTarget, SendResult, SendTextResult } from './transfer/http-client'
@@ -57,7 +58,7 @@ interface PendingResolver {
  *  - ECONNREFUSED       → 对方未在监听(应用未开)
  *  - ECERT / fingerprint / certificate → 证书不匹配(安全语义)
  *  - 其他               → 泛化 network
- * 见 docs/send-preflight-probe.md。
+ * 见 docs/postmortems/send-connect-timeout.md。
  */
 export function classifyError(message: string): ErrorReason {
   const m = message.toLowerCase()
@@ -106,13 +107,10 @@ export class ChatService {
     }
   }
 
-  /** 终态集合:进入这些状态后传输已结束,清理节流状态防泄漏(2-C) */
-  private static readonly TERMINAL = new Set(['done', 'failed', 'rejected', 'expired'])
-
   private upsert(msg: Message): void {
     // 消息进入终态 → 清理进度节流条目(覆盖发送失败/拒绝/超时、接收 total=0 等所有路径,
     // 这些路径不会有 sent>=total 的完成帧来触发 emitProgress 里的清理)
-    if (ChatService.TERMINAL.has(msg.status)) this.lastProgressAt.delete(msg.id)
+    if (isTerminal(msg.status)) this.lastProgressAt.delete(msg.id)
     this.d.onMessageUpserted(msg)
   }
 

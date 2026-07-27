@@ -1,4 +1,4 @@
-// 设备备注(applyAliases 合并 + setRemoteAlias 刷新)单测。见 docs/device-alias.md。
+// 设备备注(applyAliases 合并 + setRemoteAlias 刷新)单测。见 docs/features/device-alias.md。
 // 不起网络(不 call start):只驱动 handleDevice(填 registry + 触发 emitDevices)、listDevices、setRemoteAlias。
 
 import { test, expect, describe, afterEach } from 'vitest'

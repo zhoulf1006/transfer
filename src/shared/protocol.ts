@@ -23,7 +23,8 @@ export const T_IDLE_MS = 30_000
 /**
  * 连接级建连超时:只管"TCP+TLS 建连到握手完成"这段,连不上时快速失败(而非干等 T_SENDER_MS 6min)。
  * 主治对端开 VPN(如 F5 full-tunnel)时到局域网 IP 被灌进隧道黑洞导致的静默长挂。
- * ⚠️ 只在 pinnedAgent 建连阶段生效,握手成功后必须清除,否则大文件上传空闲期会被误杀(见 docs/send-preflight-probe.md)。
+ * ⚠️ 只在 pinnedAgent 建连阶段生效,握手成功后必须清除,否则大文件上传空闲期会被误杀
+ * (见 docs/postmortems/send-connect-timeout.md)。
  */
 export const T_CONNECT_MS = 10_000
 /** 单个 upload 请求超时(S4:防接收方异常挂起时发送方永挂)。大文件留足余量 */

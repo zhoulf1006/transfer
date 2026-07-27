@@ -1,4 +1,5 @@
-// 未读消息判定(纯逻辑,便于单测)。见 docs/unread-notification.md。
+// 未读消息判定(纯逻辑,便于单测)。行为见 docs/features/unread.md,
+// 踩过的坑见 docs/postmortems/unread-react-pitfalls.md。
 //
 // 门控:一条到达的消息是否应计入未读(并触发提醒)。
 // 规则:只对**收到的新消息**计未读,且当"用户正看着这条消息所属的会话且窗口聚焦"时不计。

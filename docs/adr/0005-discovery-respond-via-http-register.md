@@ -24,4 +24,4 @@
 
 ## 来源
 
-[discovery-http-register-response.md](../discovery-http-register-response.md)。
+discovery-http-register-response.md。

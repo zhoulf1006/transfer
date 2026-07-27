@@ -18,7 +18,7 @@ export function platformToModel(platform: NodeJS.Platform): string {
 
 /**
  * HTTPS 模式下 fingerprint = 证书的 SHA-256(DER 整证书),冒号分隔大写 hex。
- * 用途:①自发现去重 ②TLS 指纹 pinning(见 docs/https-migration.md §3.2)。
+ * 用途:①自发现去重 ②TLS 指纹 pinning(见 docs/adr/0004-https-self-signed-tofu.md)。
  * 格式与 Node getPeerCertificate().fingerprint256 一致,两端可直接比对。
  */
 export function certFingerprint(certPem: string): string {

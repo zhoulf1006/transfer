@@ -17,7 +17,7 @@ import { sendFiles, sendText, registerTo, type SendTarget } from './transfer/htt
 import { ChatService } from './chat-service'
 import type { MessageStore } from './db/messages'
 import type { SettingsStore } from './settings'
-import type { Message } from './db/messages'
+import type { Message } from '@shared/message'
 
 export interface AppCoreEvents {
   onDevicesUpdated: (devices: RemoteDevice[]) => void
@@ -247,7 +247,7 @@ export class AppCore {
   }
 
   /**
-   * 把用户自定义备注合并进设备列表(发给 renderer 前)。见 docs/device-alias.md §3.1。
+   * 把用户自定义备注合并进设备列表(发给 renderer 前)。见 CONTEXT.md「备注(远端设备别名)」。
    * 只产出新对象,不写回 registry(registry 恒存对端原始 info)。
    */
   private applyAliases(devices: RemoteDevice[]): RemoteDevice[] {
@@ -273,7 +273,7 @@ export class AppCore {
 
   /**
    * 设置远端设备备注 + 立即刷新列表。返回 {ok}(持久化失败为 false,供 renderer 反馈)。
-   * 见 docs/device-alias.md §3.2。不校验 fingerprint 是否在线:允许给离线/已删设备写(永久保留)。
+   * 见 docs/features/device-alias.md。不校验 fingerprint 是否在线:允许给离线/已删设备写(永久保留)。
    */
   setRemoteAlias(fingerprint: string, alias: string): { ok: boolean } {
     const ok = this.opts.settings.setDeviceAlias(fingerprint, alias)

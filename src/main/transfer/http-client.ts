@@ -1,4 +1,4 @@
-// 发送方 HTTPS client(见 docs/DESIGN §1.1、§5.1、docs/https-migration.md §3.6)
+// 发送方 HTTPS client(见 docs/DESIGN §1.1、§5.1、docs/adr/0004-https-self-signed-tofu.md)
 //
 // 流程:prepare-upload → 对每个被接受的 fileId 并行 upload(裸二进制)。
 // 超时契约:prepare-upload 用 T_SENDER_MS(≥ 接收方弹框超时,DESIGN §5.1)。
@@ -22,7 +22,7 @@ export interface SendTarget {
   address: string
   port: number
   protocol: 'http' | 'https'
-  /** 对端证书指纹(发现阶段记住),用于 TLS pinning(docs/https-migration.md §3.4)。
+  /** 对端证书指纹(发现阶段记住),用于 TLS pinning(docs/adr/0004-https-self-signed-tofu.md)。
    *  register 路径不 pin(discoveryAgent),此字段可为占位。 */
   fingerprint: string
 }
@@ -357,7 +357,8 @@ const T_REGISTER_MS = 2000
 
 /**
  * 双向发现"用法 A":收到对方多播 announce 后,向对方定向 `POST /register` 回应本机信息,
- * 让对方也能发现我们(替代原 UDP 多播回应,定向 TCP 更可靠;见 docs/discovery-http-register-response.md)。
+ * 让对方也能发现我们(替代原 UDP 多播回应,定向 TCP 更可靠;
+ * 见 docs/adr/0005-discovery-respond-via-http-register.md)。
  * **fire-and-forget**:超时/失败/解析异常一律静默返 null,绝不影响发现主流程。
  * **用 discoveryAgent(不 pin,B1)**:此刻可能还没登记对方,无指纹可 pin;register 只传公开信息。
  * @returns 对方在响应体回的 DeviceInfo(可用于顺带刷新登记),失败返 null。
