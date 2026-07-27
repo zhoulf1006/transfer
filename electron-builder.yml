@@ -47,7 +47,7 @@ mac:
   category: public.app-category.utilities
   target:
     - target: dmg
-      # 三个产物,用户按机器自选(见 docs/electron-slimming.md):
+      # 三个产物,用户按机器自选(见 docs/adr/0010):
       #   universal 保底(不确定架构就下它,Intel+Apple 芯片通吃,单包 ~410MB)
       #   arm64     Apple 芯片专用(M 系列,~230MB,最小)
       #   x64       Intel 芯片专用(~230MB)

@@ -1,0 +1,112 @@
+<!doctype html>
+<!-- 原型:设置弹层 — 用户选定方向:单列分区(现状风)。单变体,零后端,交互仅视觉反馈。
+     防真空:弹层压在仿主窗外壳上评判。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>原型 — 设置弹层(单列分区)</title>
+<style>
+  :root{
+    --bg:#f7f8f9; --card:#ffffff; --text:#37352f; --text-2:#787774;
+    --line:#e8eaed; --line-strong:#d9dce0;
+    --accent:#8a67ab; --accent-hover:#7c5a9c; --accent-soft:#f0ebf6; --danger:#dc2626; --ok:#3fb950;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#18191b; --card:#1f2124; --text:#e6e6e5; --text-2:#9b9a97;
+      --line:#2a2c30; --line-strong:#34373c; --accent:#a084c7; --accent-soft:#2c2733; }
+  }
+  *{box-sizing:border-box;margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+  body{background:var(--bg);color:var(--text);height:100vh;overflow:hidden;font-size:13px}
+
+  /* 仿主窗外壳(评判语境) */
+  .shell{display:flex;height:100vh}
+  .side{width:230px;border-right:1px solid var(--line);padding:12px;background:var(--card)}
+  .side h1{font-size:14px;margin:6px 4px 14px}
+  .dev{display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px}
+  .dev.on{background:var(--accent-soft)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}.dot.off{background:var(--line-strong)}
+  .main{flex:1;display:flex;flex-direction:column;padding:14px 18px;gap:10px}
+  .bub{max-width:46%;padding:8px 12px;border-radius:10px;background:var(--card);border:1px solid var(--line)}
+  .bub.me{align-self:flex-end;background:var(--accent-soft)}
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.35)}
+
+  .modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--card);
+    border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 48px rgba(0,0,0,.22);width:520px;max-height:80vh;overflow:auto}
+  .m-h{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}
+  .m-h b{font-size:15px}.x{cursor:pointer;color:var(--text-2)}
+  .m-f{display:flex;justify-content:flex-end;gap:10px;padding:12px 18px;border-top:1px solid var(--line)}
+  .btn{border:1px solid var(--line-strong);background:var(--card);color:var(--text);padding:6px 16px;border-radius:6px;cursor:pointer}
+  .btn.p{background:var(--accent);border-color:var(--accent);color:#fff}.btn.p:hover{background:var(--accent-hover)}
+  .sec{padding:14px 18px}.sec h3{font-size:12px;color:var(--text-2);margin-bottom:10px;font-weight:600}
+  .sec + .sec{border-top:1px solid var(--line)}
+  .row{display:flex;align-items:center;gap:10px;padding:7px 0}
+  .row .lab{width:120px}
+  .hint{font-size:12px;color:var(--text-2)}
+  .sw{width:34px;height:20px;border-radius:10px;background:var(--line-strong);position:relative;cursor:pointer;transition:.15s}
+  .sw::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s}
+  .sw.on{background:var(--accent)}.sw.on::after{left:16px}
+  .num{width:80px;padding:5px 8px;border:1px solid var(--line-strong);border-radius:6px;background:var(--card);color:var(--text)}
+  .num:focus{outline:none;border-color:var(--accent)}
+  .seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:6px;overflow:hidden}
+  .seg span{padding:5px 12px;font-size:12px;cursor:pointer;border-right:1px solid var(--line-strong)}
+  .seg span:last-child{border-right:0}.seg span.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .rec{min-width:130px;padding:5px 10px;border:1px dashed var(--line-strong);border-radius:6px;font-size:12px;
+    color:var(--text-2);cursor:pointer;text-align:center}
+  .rec.armed{border-color:var(--accent);color:var(--accent)}
+  .path{direction:rtl;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;max-width:200px;color:var(--text-2);font-size:12px}
+  .open{cursor:pointer;color:var(--accent);font-size:12px}
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <div class="side">
+    <h1>Transfer</h1>
+    <div class="dev on"><span class="dot"></span>客厅 Mac</div>
+    <div class="dev"><span class="dot"></span>Work-PC</div>
+    <div class="dev"><span class="dot off"></span>旧笔记本</div>
+  </div>
+  <div class="main">
+    <div class="bub">给你发了刚才那份合同</div>
+    <div class="bub me">收到,我看下</div>
+  </div>
+</div>
+<div class="mask"></div>
+
+<div class="modal">
+  <div class="m-h"><b>设置</b><span class="x">✕</span></div>
+  <div class="sec"><h3>接收</h3>
+    <div class="row"><span class="lab">自动接收</span><span class="sw on" onclick="this.classList.toggle('on')"></span><span class="hint">文本始终自动接收</span></div>
+    <div class="row"><span class="lab">文件大小上限</span><input class="num" type="number" value="100"><span class="hint">MB,超过则需确认</span></div>
+  </div>
+  <div class="sec"><h3>截图</h3>
+    <div class="row"><span class="lab">截图快捷键</span><span class="rec" onclick="arm(this)">F1</span><span class="hint">点击后按下新组合键,Esc 取消</span></div>
+  </div>
+  <div class="sec"><h3>外观与语言</h3>
+    <div class="row"><span class="lab">主题</span><span class="seg" onclick="seg(event)"><span class="on">跟随系统</span><span>浅色</span><span>深色</span></span></div>
+    <div class="row"><span class="lab">语言</span><span class="seg" onclick="seg(event)"><span class="on">跟随系统</span><span>中文</span><span>English</span></span></div>
+  </div>
+  <div class="sec"><h3>存储与设备</h3>
+    <div class="row"><span class="lab">文件</span><span class="path">/Users/loong/Downloads</span><span class="open">打开</span></div>
+    <div class="row"><span class="lab">离线设备保留</span><input class="num" type="number" value="60"><span class="hint">分钟,0=永不移除</span></div>
+  </div>
+  <div class="m-f"><button class="btn">取消</button><button class="btn p" id="save" onclick="saved()">保存</button></div>
+</div>
+
+<script>
+  function seg(ev){ if(ev.target.tagName!=='SPAN'||ev.target.classList.contains('seg')) return;
+    ev.currentTarget.querySelectorAll('span').forEach(s=>s.classList.remove('on')); ev.target.classList.add('on'); }
+  let armed=null;
+  function arm(el){ if(armed) disarm(); armed=el; el.dataset.old=el.textContent; el.textContent='按下快捷键…'; el.classList.add('armed'); }
+  function disarm(){ if(!armed) return; armed.textContent=armed.dataset.old; armed.classList.remove('armed'); armed=null; }
+  addEventListener('keydown',(e)=>{ if(!armed) return; e.preventDefault();
+    if(e.key==='Escape'){ disarm(); return; }
+    const mods=[e.metaKey&&'⌘',e.ctrlKey&&'Ctrl',e.altKey&&'⌥',e.shiftKey&&'⇧'].filter(Boolean);
+    const k=/^[a-z0-9]$|^F\d+$/i.test(e.key)?e.key.toUpperCase():null;
+    if(k){ armed.textContent=[...mods,k].join('+'); armed.classList.remove('armed'); armed=null; }
+  },true);
+  function saved(){ const b=document.getElementById('save'); b.textContent='已保存 ✓';
+    setTimeout(()=>{ b.textContent='保存'; },900); }
+</script>
+</body>
+</html>

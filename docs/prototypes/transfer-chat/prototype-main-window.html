@@ -1,0 +1,96 @@
+<!doctype html>
+<!-- 原型:主界面 — 用户选定方向:双栏(现状风)。单变体,零后端,交互仅视觉反馈。 -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>原型 — 主界面(双栏)</title>
+<style>
+  :root{
+    --bg:#f7f8f9; --card:#ffffff; --text:#37352f; --text-2:#787774;
+    --line:#e8eaed; --line-strong:#d9dce0;
+    --accent:#8a67ab; --accent-hover:#7c5a9c; --accent-soft:#f0ebf6; --danger:#dc2626; --ok:#3fb950;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#18191b; --card:#1f2124; --text:#e6e6e5; --text-2:#9b9a97;
+      --line:#2a2c30; --line-strong:#34373c; --accent:#a084c7; --accent-soft:#2c2733; }
+  }
+  *{box-sizing:border-box;margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+  body{background:var(--bg);color:var(--text);height:100vh;overflow:hidden;font-size:13px;display:flex}
+
+  .side{width:230px;border-right:1px solid var(--line);background:var(--card);padding:12px;display:flex;flex-direction:column;gap:2px}
+  .side h1{font-size:14px;margin:4px 4px 12px;display:flex;align-items:center}
+  .gear{margin-left:auto;color:var(--text-2);cursor:pointer}.gear:hover{color:var(--accent)}
+  .dev{display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;cursor:pointer}
+  .dev:hover{background:var(--bg)}
+  .dev.on{background:var(--accent-soft)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}.dot.off{background:var(--line-strong)}
+  .sub{font-size:11px;color:var(--text-2)}
+  .badge{margin-left:auto;background:var(--danger);color:#fff;border-radius:9px;font-size:11px;padding:0 6px;line-height:16px}
+
+  .chat{flex:1;display:flex;flex-direction:column;min-width:0}
+  .c-h{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--card);font-weight:600}
+  .flow{flex:1;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:16px}
+  .bub{max-width:52%;padding:9px 12px;border-radius:10px;background:var(--card);border:1px solid var(--line);line-height:1.5}
+  .bub.me{align-self:flex-end;background:var(--accent-soft);border-color:transparent}
+  .file{display:flex;align-items:center;gap:10px}
+  .fic{width:34px;height:34px;border-radius:8px;background:var(--accent-soft);color:var(--accent);
+    display:flex;align-items:center;justify-content:center;font-size:16px;flex:none}
+  .fbtns{display:flex;gap:8px;margin-top:8px}
+  .sm{font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid var(--line-strong);background:var(--card);color:var(--text);cursor:pointer}
+  .sm.p{background:var(--accent);border-color:var(--accent);color:#fff}.sm.p:hover{background:var(--accent-hover)}
+  .img{width:180px;height:110px;border-radius:8px;background:linear-gradient(135deg,var(--accent-soft),var(--line));
+    display:flex;align-items:center;justify-content:center;color:var(--text-2)}
+  .time{align-self:center;font-size:11px;color:var(--text-2)}
+  .inp{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--line);background:var(--card)}
+  .inp input{flex:1;border:1px solid var(--line-strong);border-radius:8px;padding:8px 12px;background:var(--bg);color:var(--text);outline:none}
+  .inp input:focus{border-color:var(--accent)}
+  .ico{width:30px;height:30px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+    color:var(--text-2);cursor:pointer;flex:none}
+  .ico:hover{background:var(--accent-soft);color:var(--accent)}
+  .send{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px 18px;cursor:pointer}
+  .send:hover{background:var(--accent-hover)}
+</style>
+</head>
+<body>
+  <div class="side">
+    <h1>Transfer<span class="gear" title="设置">⚙</span></h1>
+    <div class="dev on" onclick="pick(this,'客厅 Mac')"><span class="dot"></span><span>客厅 Mac<div class="sub">MacBook Pro · 192.168.3.24</div></span><span class="badge">2</span></div>
+    <div class="dev" onclick="pick(this,'Work-PC')"><span class="dot"></span><span>Work-PC<div class="sub">Windows · 192.168.3.31</div></span></div>
+    <div class="dev" onclick="pick(this,'旧笔记本')"><span class="dot off"></span><span>旧笔记本<div class="sub">离线 · 保留中</div></span></div>
+  </div>
+  <div class="chat">
+    <div class="c-h"><span class="dot" id="hdot"></span><span id="hname">客厅 Mac</span></div>
+    <div class="flow">
+      <div class="time">14:02</div>
+      <div class="bub">给你发了刚才那份合同</div>
+      <div class="bub file"><span class="fic">📄</span><span>合同-final.pdf<div class="sub" id="fsub">2.1 MB · 等待确认</div><span class="fbtns" id="fb"><button class="sm p" onclick="acc()">接收</button><button class="sm" onclick="rej()">拒绝</button></span></span></div>
+      <div class="bub me">收到,我看下</div>
+      <div class="bub me img">📷 截图预览</div>
+      <div class="time">14:05</div>
+      <div class="bub">图里第二段要改一下</div>
+    </div>
+    <div class="inp">
+      <span class="ico" title="截图">✂</span><span class="ico" title="发送文件">📎</span>
+      <input placeholder="输入消息,Enter 发送;可直接粘贴图片">
+      <button class="send">发送</button>
+    </div>
+  </div>
+<script>
+  function pick(el, name){
+    document.querySelectorAll('.dev').forEach(d=>d.classList.remove('on'));
+    el.classList.add('on');
+    const b = el.querySelector('.badge'); if(b) b.remove();          // 进入会话未读清零
+    document.getElementById('hname').textContent = name;
+    document.getElementById('hdot').className = el.querySelector('.dot').className;
+  }
+  function acc(){
+    document.getElementById('fsub').textContent = '2.1 MB · 已接收';
+    document.getElementById('fb').innerHTML = '<button class="sm">打开所在文件夹</button>';
+  }
+  function rej(){
+    document.getElementById('fsub').textContent = '2.1 MB · 已拒绝';
+    document.getElementById('fb').remove();
+  }
+</script>
+</body>
+</html>

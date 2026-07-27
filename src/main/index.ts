@@ -41,7 +41,7 @@ const portOverride = process.env['TRANSFER_PORT'] ? Number(process.env['TRANSFER
 
 // 自定义 app:// scheme 注册为 privileged —— **必须在 app ready 之前**(此处模块顶层)调用,否则无效。
 // standard:true 让渲染页拿到真正的非 opaque origin(app://bundle),Web Storage 走快路径,
-// 根治 file:// 下 localStorage 首访卡数秒的坑(#24441,见 docs/app-scheme-migration.md)。
+// 根治 file:// 下 localStorage 首访卡数秒的坑(#24441,见 docs/adr/0007)。
 // dev 走 ELECTRON_RENDERER_URL(http://localhost),不加载 app://,注册也无副作用。
 protocol.registerSchemesAsPrivileged([
   {
@@ -99,7 +99,7 @@ const PRELOAD = join(__dirname, '../preload/index.cjs')
 /**
  * 按窗口加载 renderer 入口(§4.1)。
  * dev:主窗用裸 ELECTRON_RENDERER_URL(保持根路由不变),overlay 拼 /overlay.html。
- * prod:走 app://bundle/<entry>.html(自定义 scheme,标准安全 origin;见 docs/app-scheme-migration.md)。
+ * prod:走 app://bundle/<entry>.html(自定义 scheme,标准安全 origin;见 docs/adr/0007)。
  */
 function loadRenderer(win: BrowserWindow, entry: 'index' | 'overlay'): void {
   const devUrl = process.env['ELECTRON_RENDERER_URL']

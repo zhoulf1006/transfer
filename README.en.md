@@ -55,7 +55,7 @@ Good for:
 - **Transfer**: follows the LocalSend v2 handshake over **HTTPS** (self-signed certificate + fingerprint TOFU pinning) — `prepare-upload` (negotiate + confirm) → `upload` (raw binary streamed to disk, can be parallel) → SHA-256 verification on completion. Text goes in the `preview` field of `prepare-upload` and does not use `upload`.
 - **Process split**: the main process handles all networking / file / system capabilities; the renderer only does UI and communicates via restricted IPC through `contextBridge`.
 
-See [`docs/DESIGN.md`](docs/DESIGN.md) for the detailed design; see [`docs/screenshot-feature.md`](docs/screenshot-feature.md) for the screenshot feature.
+See [`docs/features/`](docs/features/) for the feature catalog, [`docs/adr/`](docs/adr/) for architecture decisions, and [`docs/DESIGN.md`](docs/DESIGN.md) for the detailed design.
 
 ## Tech stack
 

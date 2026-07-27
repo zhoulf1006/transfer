@@ -28,7 +28,7 @@ export default defineConfig({
     plugins: [react()],
     build: {
       rollupOptions: {
-        // 多入口:主窗 index.html + 截图遮罩 overlay.html(见 docs/screenshot-feature §4.1)
+        // 多入口:主窗 index.html + 截图遮罩 overlay.html(见 docs/adr/0009 overlay 常驻)
         input: {
           index: resolve('src/renderer/index.html'),
           overlay: resolve('src/renderer/overlay.html')

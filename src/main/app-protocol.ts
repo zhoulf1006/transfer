@@ -1,7 +1,7 @@
 // 自定义 app:// scheme:让打包版渲染页跑在**标准安全 origin**(app://bundle)上,
 // 根治 file:// opaque origin 下 localStorage 首访卡数秒的坑(electron/electron#24441)。
 //
-// 设计见 docs/app-scheme-migration.md。两步:
+// 设计见 docs/adr/0007。两步:
 //   1) 模块顶层(app ready 前)registerSchemesAsPrivileged —— 由 index.ts 调
 //   2) app ready 后 registerAppProtocol —— 把 app://bundle/<path> 映射到 out/renderer/<path>
 
