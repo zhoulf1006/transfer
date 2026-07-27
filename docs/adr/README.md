@@ -21,3 +21,4 @@
 | [0011](0011-remove-gitee-mirror.md) | 移除 Gitee,下载源 R2 主 + GitHub 兜底 | 已接受 |
 | [0012](0012-notarization-gate-fail-closed.md) | 正式版公证门禁 fail-closed | 已接受 |
 | [0013](0013-docs-lifecycle-by-rot-risk.md) | 文档体系按腐烂速度分类(本体系的元决策) | 已接受 |
+| [0014](0014-prototypes-as-persistent-asset.md) | 原型目录 docs/prototypes/ 作为持久资产保留 | 已接受 |

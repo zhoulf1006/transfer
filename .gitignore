@@ -10,3 +10,6 @@ release/
 .env.*.local
 # 施工文档(spec/tickets),用完即丢,不入库
 .scratch/
+# 原型画廊的第三方渲染库(3.4MB,可再生;缺失时画廊降级显示图源文本)
+# 还原:curl -sL -o docs/prototypes/vendor/mermaid.min.js https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js
+docs/prototypes/vendor/
