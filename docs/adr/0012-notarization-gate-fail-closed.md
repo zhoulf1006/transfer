@@ -28,4 +28,4 @@ macOS 分发需要 Apple 公证才能双击即开,但公证要等 Apple 审核(2
 
 ## 来源
 
-[dmg-notarization-pipeline.md](../dmg-notarization-pipeline.md);[mac-signing.md](../mac-signing.md)。
+[ops/dmg-notarization-pipeline.md](../ops/dmg-notarization-pipeline.md);[ops/mac-signing.md](../ops/mac-signing.md)。

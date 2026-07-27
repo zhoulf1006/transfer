@@ -98,7 +98,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # mac 打包分三档互斥(见 docs/mac-signing.md):
+      # mac 打包分三档互斥(见 docs/ops/mac-signing.md):
       #  ① 预发布/手动运行且无证书:生成未签名 artifact；正式版禁止进入此路径。
       #  ② 预发布/手动运行且有证书:只签名，不公证。
       #  ③ 正式版:凭据必须齐全；签名 App → 生成 DMG → 公证/staple/验证最终 DMG。
