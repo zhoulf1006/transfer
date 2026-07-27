@@ -15,10 +15,7 @@ describe('failedLabelKey', () => {
     'cert-mismatch': 'chat.failed.certMismatch',
     enospc: 'chat.failed.enospc',
     sha256: 'chat.failed.sha256',
-    network: 'chat.failed.network',
-    // 这两个是显式选择走通用文案,不是遗漏
-    'no-file': 'chat.failed.default',
-    unknown: 'chat.failed.default'
+    network: 'chat.failed.network'
   }
 
   for (const [reason, key] of Object.entries(EXPECTED)) {

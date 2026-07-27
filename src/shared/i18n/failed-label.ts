@@ -16,10 +16,7 @@ const FAILED_KEY: Record<ErrorReason, TKey> = {
   // 以下两条是接收方本机写盘/校验失败,文案不写"对方"
   enospc: 'chat.failed.enospc',
   sha256: 'chat.failed.sha256',
-  network: 'chat.failed.network',
-  // 这两个成员当前无任何产生点(全仓库只在类型声明处出现),保留但走通用文案
-  'no-file': 'chat.failed.default',
-  unknown: 'chat.failed.default'
+  network: 'chat.failed.network'
 }
 
 /**

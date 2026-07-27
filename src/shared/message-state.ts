@@ -27,8 +27,6 @@ export type ErrorReason =
   | 'enospc'
   | 'sha256'
   | 'network'
-  | 'no-file'
-  | 'unknown'
   | 'timeout'
   | 'refused'
   | 'cert-mismatch'
