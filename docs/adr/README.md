@@ -25,3 +25,4 @@
 | [0013](0013-docs-lifecycle-by-rot-risk.md) | 文档体系按腐烂速度分类(本体系的元决策) | 已接受 |
 | [0014](0014-prototypes-as-persistent-asset.md) | 原型目录 docs/prototypes/ 作为持久资产保留 | 已接受 |
 | [0015](0015-ops-runbooks-as-fifth-doc-class.md) | 运维手册作为第五类文档,就地更新 | 已接受 |
+| [0016](0016-mas-separate-bundle-id.md) | App Store 版用独立 bundle id com.aloongplanet.transfer,DMG 线不动 | 已接受 |

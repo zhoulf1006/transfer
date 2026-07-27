@@ -80,6 +80,11 @@ mac:
 # com.apple.application-identifier;没有它主进程启动即 FATAL(bootstrap_check_in 1100),
 # 且该 entitlement 无法手工伪造(AMFI 会直接拒绝加载二进制)。实测记录见 docs/postmortems/。
 mas:
+  # App Store 版用独立 bundle id(见 ADR-0016),与顶层的 com.loong.transfer 分开:
+  #   ① 反向 DNS 该用实际持有的域名 aloongplanet.com,顶层那个是历史遗留;
+  #   ② 同 bundle id 不同签名会让 TCC 混乱 —— 两个版本并存时权限互相顶掉(实测)。
+  # 不改顶层:那会重置所有现存 DMG 用户的 TCC 授权,代价远大于收益。
+  appId: com.aloongplanet.transfer
   # 架构走 CLI 的 --universal(见 package.json 的 dist:mas)。
   # 不写在这里:`--mac mas` 会覆盖配置里的 target 列表,写了也不生效,只会误导后来人。
   # 必须 universal —— Mac App Store 一个 app 只收一份二进制,arm64-only 会把 Intel 机器
