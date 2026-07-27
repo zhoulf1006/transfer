@@ -16,7 +16,7 @@
 | **传输加密** | **HTTPS**(自签名证书 + 指纹 TOFU pinning) | 见 [ADR-0004](./adr/0004-https-self-signed-tofu.md);~~原 MVP 用 HTTP 明文,已升级~~ |
 | **接收确认** | **弹框确认** | 收到 prepare-upload 时本机弹框,用户点了才收 |
 | 笔记存储 | 本地 Markdown 文件 | |
-| 截屏 | **快捷键(默认 F1,可设置里自定义)→ 区域框选 + 全套标注 + 发聊天/复制/存文件(已实现)** | 详见 [ADR-0008](./adr/0008-screenshot-scope.md) 与 [features/screenshot.md](./features/screenshot.md);实现踩坑见 [gotchas.md](./gotchas.md);层级检测/多屏跨屏/滚动长图为后续 P2 |
+| 截屏 | **快捷键(默认 F1,可设置里自定义)→ 区域框选 + 全套标注 + 发聊天/复制/存文件(已实现)** | 详见 [ADR-0008](./adr/0008-screenshot-scope.md) 与 [features/screenshot.md](./features/screenshot.md);实现踩坑见 [postmortems/](./postmortems/);层级检测/多屏跨屏/滚动长图为后续 P2 |
 | **MVP** | **文件传送优先** | 两台设备互相发现 + 传文件/文本 |
 
 ---
@@ -38,7 +38,7 @@
 - `announce: true` = 主动广播;收到后对方应回应,回应方式二选一:
   1. 回一个 `announce: false` 的 UDP 报文(同字段),或
   2. 向对方 `POST /api/localsend/v2/register`。
-- **发现走多播 + 子网广播双通道**(本项目):每次主动 announce **同时**发多播(224.0.0.167)+ 对每个真实网卡的**子网广播地址**(如 192.168.3.255)各发一份同内容报文。理由:多播依赖交换机 IGMP/AP 不过滤,常被限;广播是网络基础功能、不走代理隧道,互补覆盖(见 [ADR-0006](./adr/0006-broadcast-fallback-dual-channel.md);实测限度见 [lan-discovery-limits.md](./lan-discovery-limits.md))。用 `socket.setBroadcast(true)` + `pickBroadcastTargets`(排除隧道段,`broadcast=address|~netmask`)。收侧不区分来源(同一 handleMessage,幂等 upsert)。**只广播不扫网段**(扫网段像端口扫描,触发企业 EDR)。
+- **发现走多播 + 子网广播双通道**(本项目):每次主动 announce **同时**发多播(224.0.0.167)+ 对每个真实网卡的**子网广播地址**(如 192.168.3.255)各发一份同内容报文。理由:多播依赖交换机 IGMP/AP 不过滤,常被限;广播是网络基础功能、不走代理隧道,互补覆盖(见 [ADR-0006](./adr/0006-broadcast-fallback-dual-channel.md);实测限度见 [postmortems/lan-discovery-limits.md](./postmortems/lan-discovery-limits.md))。用 `socket.setBroadcast(true)` + `pickBroadcastTargets`(排除隧道段,`broadcast=address|~netmask`)。收侧不区分来源(同一 handleMessage,幂等 upsert)。**只广播不扫网段**(扫网段像端口扫描,触发企业 EDR)。
 - **本项目实现选方式 2(HTTP 定向 register),不发方式 1(UDP 回应)**:多播回应常单向丢包,定向 TCP 更可靠(收到 announce=true → `registerTo` 对方,`multicast.ts` onRespond→`app-core.respondViaRegister`)。仍能**接收**别人发来的 announce=false(兼容官方客户端)。⚠️ **register 响应体省略 port,不能拿它刷新登记**(会用 DEFAULT_PORT 覆盖真实端口),对方登记只靠其 announce。详见 [ADR-0005](./adr/0005-discovery-respond-via-http-register.md)。
 - Fallback(用法 B,**本项目未实现**):多播完全不可用时,HTTP POST `/register` 到局域网各 IP 主动扫描发现。当前只做用法 A(定向回应),不扫网段。
 
@@ -536,7 +536,7 @@ settings.ts            # 自动接收开关+阈值(持久化,复用 identity.jso
 
 ### 11.8 新消息提醒(未读角标 + Dock/任务栏)
 
-收到消息的提醒,分 app 内未读 + 系统级 Dock/任务栏两层。详见 [features/unread.md](./features/unread.md);实现踩坑见 [gotchas.md](./gotchas.md)。
+收到消息的提醒,分 app 内未读 + 系统级 Dock/任务栏两层。详见 [features/unread.md](./features/unread.md);实现踩坑见 [postmortems/unread-react-pitfalls.md](./postmortems/unread-react-pitfalls.md)。
 
 - **未读状态在 renderer**:`unread: Record<peerFp, number>`;每个 peer 一个未读数,侧栏 `DeviceRow` 显红底数字角标(>99→99+)。
 - **计未读门控**(纯函数 `shared/unread.ts` `shouldCountUnread`,有单测):`direction==='recv'` && 新消息(id 未见过) && **非**(窗口聚焦 && chat 视图 && 选中的就是该 peer)。即"正盯着该会话看"时不计。

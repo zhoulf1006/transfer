@@ -19,7 +19,7 @@
 ## 后果
 
 - 正面:零原生依赖,打包/多架构无 rebuild 负担。
-- 负面:绑定 Electron ≥35;node:sqlite 是全同步 API 跑在主进程事件循环(用 created_at 索引 + list 分页上限控制);打包器对 `node:sqlite` 静态解析有坑,需动态 require;退出时序需先摘 store 引用再 close,防晚到 IPC 报 "database is not open"(见 [electron-graceful-quit.md](../electron-graceful-quit.md))。
+- 负面:绑定 Electron ≥35;node:sqlite 是全同步 API 跑在主进程事件循环(用 created_at 索引 + list 分页上限控制);打包器对 `node:sqlite` 静态解析有坑,需动态 require;退出时序需先摘 store 引用再 close,防晚到 IPC 报 "database is not open"(见 [postmortems/electron-graceful-quit.md](../postmortems/electron-graceful-quit.md))。
 
 ## 来源
 

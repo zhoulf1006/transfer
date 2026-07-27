@@ -3,7 +3,7 @@
 本目录描述**当前版本已具备功能的现行行为**,面向用户的产品全景。
 
 - 不变量:出现在本目录 = 当前版本可用;行为变更就地改写;功能移除删除文件。
-- 历史见 git/Release Notes;实现与决策见 [docs/adr](../adr/);实现踩坑见 [gotchas.md](../gotchas.md)。
+- 历史见 git/Release Notes;实现与决策见 [docs/adr](../adr/);实现踩坑见 [postmortems/](../postmortems/)。
 - 内容规则:只写用户可见行为,零实现细节;术语从 [CONTEXT.md](../../CONTEXT.md);设置项写在其所属功能内,分发渠道不入目录。
 
 | 功能 | 一句话 |
