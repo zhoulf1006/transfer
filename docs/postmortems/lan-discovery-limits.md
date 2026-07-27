@@ -17,6 +17,30 @@ sudo tcpdump -i any -n 'udp port 53317'
 - 广播**按目标地址路由**,无需 `setMulticastInterface`——原实现里的这段是冗余,已去掉;
 - 广播**复用现有多播 socket 零冲突**,不必另开 socket。
 
+## 多播 sendto 报 EHOSTUNREACH 的两种成因(别混为一谈)
+
+`sendto()` 到 `224.0.0.167` 返回 `errno 65 / No route to host`,有两种完全不同的来源,
+症状一样但处置相反:
+
+**① 没设出接口(确定性,必现)**——不调 `IP_MULTICAST_IF`(Node 侧即
+`socket.setMulticastInterface`)时,多播交给默认路由;本机装了代理/VPN 时默认路由指向
+隧道网卡,多播直接无路可走。生产代码已设(见 `multicast.ts` 的 `setMulticastInterface`),
+但**写探针或最小复现时极易漏掉,然后把自己的疏忽当成环境问题**。
+
+**② 显式设了出接口仍间歇失败(与"运行期发现丢失"同源,根因仍未实锤)**——
+2026-07 实测:已 `IP_MULTICAST_IF(en0)` 的前提下,`sendto` 仍偶发 EHOSTUNREACH;
+数分钟后同一程序连跑 6 次全部成功。**同一时刻的无沙盒对照组表现一致,可排除 App Sandbox**。
+
+### 秒级复现手法(不必等 app 退化,也不必抓包)
+
+写一个百来行的 C 程序直接走系统调用序列 —— `bind(53317)` → 逐网卡 `IP_ADD_MEMBERSHIP`
+→ `IP_MULTICAST_IF` → `sendto` 多播与子网广播 → 收包 —— **每一步都打 errno**。
+相比之下照 `multicast.ts` 看不出任何异常:它把这些失败全吞了(`setBroadcast` 失败只清空
+目标列表、每个 `send` 裹空 catch、bind 后 error handler 换成空函数)。
+
+收包务必开 `IP_RECVDSTADDR`,**按目的地址分类**才能分清一条 announce 是从多播还是广播
+通道来的;按 payload 内容猜会把两条通道混作一谈,得出"多播还活着"的错误结论。
+
 ## 能力限度(广播兜底不是万能)
 
 广播确实提升多播弱网络的发现成功率(不依赖交换机 IGMP,常比多播通),但以下场景**广播同样无能为力**:
