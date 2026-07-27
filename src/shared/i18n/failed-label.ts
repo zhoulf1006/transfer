@@ -17,7 +17,7 @@ const FAILED_KEY: Record<ErrorReason, TKey> = {
   enospc: 'chat.failed.enospc',
   sha256: 'chat.failed.sha256',
   network: 'chat.failed.network',
-  // 当前无任何产生点(全仓库仅类型声明处出现),保留成员但走通用文案
+  // 这两个成员当前无任何产生点(全仓库只在类型声明处出现),保留但走通用文案
   'no-file': 'chat.failed.default',
   unknown: 'chat.failed.default'
 }
