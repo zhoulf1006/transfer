@@ -1,8 +1,12 @@
-// 消息状态词汇 + 状态派生判断(main 与 renderer 共享的唯一数据源)。
+// 消息领域模型(main 与 renderer 共享的唯一数据源):形状 + 状态词汇 + 状态派生判断。
 //
-// 为什么在 shared:状态枚举原本在 main/db/messages.ts 与 shared/ipc.ts 各声明一份,
-// 二者之间只有 preload 处的 any 断言(ipcRenderer.invoke 返回 any),编译器从不校验一致性。
-// 新增状态时只改一侧不会报错,renderer 的派生判断静默漏改。
+// 为什么在 shared:消息形状与状态枚举原本在 main/db/messages.ts 与 shared/ipc.ts 各声明
+// 一份,二者之间只有 preload 处的 any 断言(ipcRenderer.invoke 返回 any),编译器从不校验
+// 一致性。改一侧不会报错:枚举漏改让 renderer 的派生判断静默失灵,字段漏改让 main 发出的
+// 数据在 renderer 类型上根本看不见。
+//
+// 为什么不放 shared/types.ts:那里限定是 LocalSend 协议 DTO,聊天记录不是协议报文。
+// 为什么不放 shared/ipc.ts:那是传输契约,让持久化层依赖线缆契约是分层倒置。
 //
 // 为什么派生判断用 Record<MessageStatus, boolean> 而不是 Set / ||:
 // Set.has() 和 === 比较都是**偏函数**——对未知成员一律返回 false,新增状态照样编译通过。
@@ -31,6 +35,31 @@ export type ErrorReason =
   | 'refused'
   | 'cert-mismatch'
   | 'offline'
+
+/**
+ * 一条消息(文本或文件)的完整形状。
+ *
+ * 这**同时**是 SQLite 行的对象形态与过 IPC 发给 renderer 的形态——两者不是碰巧一致:
+ * 取消息的查询全是 `SELECT *`,`messageUpserted` 送的是完整对象,全链路无投影无转换。
+ * 故此处是唯一定义,`main/db/messages` 的 `Message` 与 `shared/ipc` 的 `UiMessage`
+ * 都是它的别名。将来若 UI 真的需要库里没有的字段(或反之),那才是引入映射函数的时机;
+ * 在那之前多留一份手抄的接口只会漂移。
+ */
+export interface Message {
+  id: string
+  type: MessageType
+  direction: Direction
+  peerFp: string
+  peerAlias: string
+  content: string | null
+  fileName: string | null
+  fileSize: number | null
+  filePath: string | null
+  status: MessageStatus
+  errorReason: ErrorReason | null
+  transferId: string | null
+  createdAt: number
+}
 
 /** 终态:传输已结束,不会再有进度帧(进度节流状态与进度条都在此清理) */
 const TERMINAL: Record<MessageStatus, boolean> = {

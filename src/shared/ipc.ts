@@ -1,25 +1,14 @@
 // IPC 契约(main ↔ renderer,见 docs/DESIGN §8、§11.5)
 
 import type { RemoteDevice } from './types'
-import type { Direction, ErrorReason, MessageStatus, MessageType } from './message-state'
+import type { Message } from './message'
 
 // ── 消息(聊天流)UI 数据模型 ──
-// 状态词汇取自 shared/message-state(与 main/db/messages 的 Message 同源,不再各抄一份)。
-export interface UiMessage {
-  id: string
-  type: MessageType
-  direction: Direction
-  peerFp: string
-  peerAlias: string
-  content: string | null
-  fileName: string | null
-  fileSize: number | null
-  filePath: string | null
-  status: MessageStatus
-  errorReason: ErrorReason | null
-  transferId: string | null
-  createdAt: number
-}
+// 就是 shared/message 的 Message,别名只为在渲染侧保留习惯叫法。**刻意完全相同**:
+// main 把 Message 原样过 IPC 送来,中间无转换,所以这里再手抄一份字段只会漂移
+// (preload 那句 Promise<UiMessage[]> 是 any 断言,漏字段编译器不会报)。
+// 若将来 UI 确实需要库里没有的字段,那时才拆开并引入映射函数。
+export type UiMessage = Message
 
 // ── 主 → 渲染 事件 channel ──
 export const EVT = {

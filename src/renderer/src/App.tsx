@@ -5,8 +5,8 @@ import { pickImageItemIndices } from '@shared/clipboard-image'
 import { eventToAccelerator, acceleratorRejectReason } from '@shared/accelerator'
 import { shouldCountUnread } from '@shared/unread'
 import { OFFLINE_KEEP_PRESETS } from '@shared/offline-keep'
-import { isTerminal, isTransferring, canRespond } from '@shared/message-state'
-import type { ErrorReason } from '@shared/message-state'
+import { isTerminal, isTransferring, canRespond } from '@shared/message'
+import type { ErrorReason } from '@shared/message'
 import { failedLabelKey } from '@shared/i18n/failed-label'
 import type {
   IdentityInfo,

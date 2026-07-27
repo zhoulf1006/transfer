@@ -14,8 +14,8 @@
 // chat-service 侧的 isTerminal 调用点有行为覆盖(chat-service.test.ts「失败后同一 fileId 重试(2-C)」)。
 
 import { test, expect, describe } from 'vitest'
-import { isTerminal, isTransferring, canRespond } from './message-state'
-import type { Direction, MessageStatus } from './message-state'
+import { isTerminal, isTransferring, canRespond } from './message'
+import type { Direction, MessageStatus } from './message'
 
 /** 七个状态,手写枚举(与 MessageStatus 联合成员一一对应) */
 const STATUSES: readonly MessageStatus[] = [

@@ -17,7 +17,7 @@ import { sendFiles, sendText, registerTo, type SendTarget } from './transfer/htt
 import { ChatService } from './chat-service'
 import type { MessageStore } from './db/messages'
 import type { SettingsStore } from './settings'
-import type { Message } from './db/messages'
+import type { Message } from '@shared/message'
 
 export interface AppCoreEvents {
   onDevicesUpdated: (devices: RemoteDevice[]) => void

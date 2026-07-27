@@ -1,7 +1,7 @@
 // failed 消息的 errorReason → 文案键映射(纯逻辑,便于单测)。
 
 import type { TKey } from './dict'
-import type { ErrorReason } from '../message-state'
+import type { ErrorReason } from '../message'
 
 /**
  * 全覆盖表:ErrorReason 新增成员时此处漏填即编译报错,不会静默落到通用文案。

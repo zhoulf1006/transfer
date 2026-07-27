@@ -1,6 +1,7 @@
 import { test, expect, describe, beforeEach, afterEach } from 'vitest'
 import { ChatService, classifyError } from './chat-service'
-import { MessageStore, type Message } from './db/messages'
+import { MessageStore } from './db/messages'
+import type { Message } from '@shared/message'
 import { SettingsStore } from './settings'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

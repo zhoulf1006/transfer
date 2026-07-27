@@ -4,7 +4,7 @@
 
 import { test, expect, describe } from 'vitest'
 import { failedLabelKey } from './failed-label'
-import type { ErrorReason } from '../message-state'
+import type { ErrorReason } from '../message'
 
 describe('failedLabelKey', () => {
   const EXPECTED: Record<ErrorReason, string> = {
