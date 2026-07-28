@@ -376,6 +376,8 @@ app.whenReady().then(async () => {
   // 代价:启动后极短时间内(窗口已显示到服务就绪之间)可能收不到连接,可接受。
   const startCore = (): void => {
     core?.start().catch((err) => dialog.showErrorBox(t('main.dialog.startFailTitle'), String(err)))
+    // 屏幕录制授权询问同样要等主窗显示:app 未成为前台应用时,系统不会弹出授权框。
+    screenshot?.primeScreenPermission()
   }
   if (mainWindow && !mainWindow.isVisible()) {
     mainWindow.once('show', startCore)

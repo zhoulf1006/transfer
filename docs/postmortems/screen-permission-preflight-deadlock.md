@@ -39,21 +39,42 @@ if (status === 'granted' || status === 'not-determined') return true
 
 **检查本身把唯一的授权入口堵死了。** 老机器不暴露,是因为早年通过别的路径授过权。
 
-## 做法
+## 做法:把"询问"和"使用"在时间上分开
 
-未授权时**先探测**——真调一次 `desktopCapturer.getSources()`(1x1 缩略图即可,不需要真实画面),
-那是让 macOS 弹授权框并登记 app 的唯一途径;探测后复查 status,仍未授权才弹引导框
-(此时用户在列表里**找得到**本 app 了)。
+**启动时**(主窗显示之后)调一次 `desktopCapturer.getSources()`(1x1 缩略图即可,不需要
+真实画面)。那是让 macOS 弹授权框并登记 app 的唯一途径。**按快捷键时只做检查与引导**,
+不再触发询问——此时 app 已在列表里,引导才有意义。
 
-决策抽成纯函数 `decideScreenPermission(platform, status, probed)`,三态返回
-`proceed | probe | guide`。**关键是不按 status 细分**:非 granted 一律先探测。旧实现给
-`denied` / `restricted` 写专门分支,正是 bug 的一部分。
+决策收敛成一个纯函数 `needsScreenPermission(platform, status)`,只回答"够不够用"。
+**关键是不按 status 细分**:非 granted 一律同等对待。旧实现给 `denied` / `restricted`
+写专门分支,正是 bug 的一部分。
 
-探测**必须有界**(`probeScreenAccess(probe, timeoutMs)`):它发生在 `beginSession` 置
-`capturing = true` 之后的 await 里。TCC 弹框后 `getSources` 是否挂起等用户回应未实测确认;
-若挂起且用户不理,promise 永不 settle —— 走不到 catch/finally,会从「任何失败分支都回
-idle,否则 state 卡死会让 F1 被永久吞」那条保护下面绕过去。加超时后这个问题的答案不再
-影响正确性。
+### 为什么不能在按快捷键时触发询问(走过的死路,实测两轮)
+
+第一版把探测放在 F1 路径里,探测后复查 status、仍未授权就弹引导框。结果**两个框同时出现**,
+用户点了我们的、系统那个被晾着没答复,**TCC 不落记录,app 照样进不了列表**——死锁绕回原点。
+这不只是难看,是功能性阻断。
+
+第二版试图用"探测是否超时"推断系统框在不在:超时=系统正在等用户,就闭嘴。**这个判据从根上
+不成立**——`CGRequestScreenCaptureAccess`(以及 `getSources`)**在任何情况下都立即返回**,
+从不阻塞等待用户;授权框由另一个进程异步绘制,你的 app 退出了它还挂在屏幕上。所以那个
+`timeout` 分支是死代码,实测仍然弹两个框。
+
+结论:**同一次调用里没有任何时机能安全地叠自家对话框**。只能靠把询问提前到启动来错开。
+
+### 调用时机:必须等主窗显示之后
+
+挂在 `start()` 里(窗口显示之前)调,**静默无框**——授权框由另一进程绘制,app 尚未成为
+前台应用时 macOS 不会弹。故与网络服务一样挂在主窗 show 之后。
+
+### 被否掉的方案:引入 `mac-screen-capture-permissions`
+
+社区包提供 `hasPromptedForPermission()`,看似是"系统还会不会问"的准确信号。读源码后否决:
+它就是**在 userData 写一个点文件、然后 `existsSync` 查它**,并非原生能力;唯一真正原生的
+`hasPermissions()` 走 `CGPreflightScreenCaptureAccess`,而 Electron 的
+`getMediaAccessStatus('screen')` 已经提供了同一个东西。代价却是引入首个随包分发的原生模块
+(预编译产物停留在 Electron 18–21 一代、无 x64 预编译、2023-09 后无维护)加三个运行时依赖。
+**严格劣于自己实现,不是权衡问题。**
 
 ## 诊断手法(可复用)
 
@@ -86,4 +107,5 @@ tccutil reset ScreenCapture <bundleId>   # 清空该 bundle id 的全部授权�
 自己修不好。表现为"明明加过权限却还是弹框"。
 
 这不只是调试期的麻烦——App Store 版与 DMG 版若共用 bundle id,**任何同时装了两者的
-用户都会撞上**。相关决策见 ADR。
+用户都会撞上**:其中一个的截图功能会莫名失效。处置办法是给不同分发渠道用不同的
+bundle id(该决策另行落 ADR,与本次修复不在同一批改动里)。

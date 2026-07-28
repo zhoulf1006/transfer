@@ -1,11 +1,11 @@
-// 已知覆盖缺口:ensureScreenPermission 的**接线**无自动化覆盖 —— 它直接调模块顶层
-// import 的 systemPreferences / desktopCapturer / dialog,没有注入 seam。因此
-// "probe 分支真的调了 desktopCapturer"、"guide 分支真的弹了对话框" 只有决策
-// (decideScreenPermission)被测到,动作本身没有。
+// 已知覆盖缺口:屏幕录制权限的两个**动作**无自动化覆盖 —— primeScreenPermission 真的
+// 调了 desktopCapturer、ensureScreenPermission 真的弹了引导框,都直接依赖模块顶层 import
+// 的 systemPreferences / desktopCapturer / dialog,没有注入 seam;被测到的只有决策
+// (needsScreenPermission)。
 // 补测条件:若将来这三者经 ScreenshotDeps 注入(与 getMainWindow / sendFiles 同法),
-// 即可对 ensureScreenPermission 写行为测试。在此之前,该分支靠真机验证:
-// `tccutil reset ScreenCapture <bundleId>` 后启动打包版按 F1,断言 app 出现在
-// 「系统设置 → 隐私与安全性 → 屏幕录制」列表中(修复前不会出现,这正是死锁所在)。
+// 即可对二者写行为测试。在此之前靠真机验证:`tccutil reset ScreenCapture <bundleId>`
+// 后启动打包版,断言①启动即弹系统授权框且不伴随自家引导框 ②app 出现在
+// 「系统设置 → 隐私与安全性 → 屏幕录制」列表中(修复前不会出现,正是死锁所在)。
 import { describe, it, expect, afterEach } from 'vitest'
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -13,8 +13,7 @@ import { join } from 'node:path'
 import {
   shouldStartSession,
   shouldRestoreMain,
-  decideScreenPermission,
-  probeScreenAccess,
+  needsScreenPermission,
   persistAndSend,
   type ShotState
 } from './screenshot-service'
@@ -59,68 +58,38 @@ describe('shouldRestoreMain — 隐主窗恢复守卫', () => {
   })
 })
 
-// 截图"发到聊天"的原图落盘策略(§4.2):成功保留原图(否则发送端缩略图读空文件→回退图标,
-// 即本次修的 bug),失败删副本免碎片。dir 首次不存在需自动建。
-// 屏幕录制权限决策(§4.5)。macOS 上 getMediaAccessStatus('screen') 对**从未询问过**的
-// app 返回 'denied' 而非 'not-determined'(底层是 CGPreflightScreenCaptureAccess 的布尔),
-// 据此直接引导用户去系统设置会形成死锁:不调 desktopCapturer → macOS 不把 app 登记进
-// 「屏幕录制」列表 → 用户在列表里找不到它 → 永远无法授权。
-describe('decideScreenPermission — 屏幕录制权限决策', () => {
-  it('未授权且尚未尝试采集 → 先探测(而非直接引导设置)', () => {
-    // 真的调一次 desktopCapturer 是让 macOS 弹授权框并登记 app 的唯一途径。
-    expect(decideScreenPermission('darwin', 'denied', false)).toBe('probe')
+// 屏幕录制权限(§4.5)。macOS 上 getMediaAccessStatus('screen') 对**从未询问过**的 app
+// 返回 'denied' 而非 'not-determined'(底层是 CGPreflightScreenCaptureAccess 的布尔,没有
+// 第三态),所以"非 granted"既可能是没问过、也可能是问过被拒,单看它分不出来——本函数
+// 因此不做区分,只回答"够不够用",由两个调用点各自决定怎么办:
+//   启动时 → 触发一次系统询问(把 app 登记进「屏幕录制」列表)
+//   按 F1 时 → 引导去系统设置
+describe('needsScreenPermission — 是否缺屏幕录制权限', () => {
+  it('macOS 未授权 → 缺', () => {
+    expect(needsScreenPermission('darwin', 'denied')).toBe(true)
   })
 
-  it('已授权 → 直接放行(不多做一次探测)', () => {
-    expect(decideScreenPermission('darwin', 'granted', false)).toBe('proceed')
+  it('macOS 已授权 → 不缺', () => {
+    expect(needsScreenPermission('darwin', 'granted')).toBe(false)
   })
 
-  it('已探测过仍未授权 → 引导系统设置(此时 app 已被登记,用户找得到它)', () => {
-    expect(decideScreenPermission('darwin', 'denied', true)).toBe('guide')
-  })
-
-  // 回归锁:旧实现对 denied / restricted 写了专门分支,是 bug 的一部分。
-  // 现在的意图是"非 granted 一律同等对待",未来任何按 status 细分的改动都该在此处红。
+  // 回归锁:最初的 bug 就是给 denied / restricted / not-determined 写了不同分支。
+  // 意图是"非 granted 一律同等对待",未来任何按 status 细分的改动都该在此处红。
   it.each(['denied', 'restricted', 'not-determined', 'unknown', '未来新增的状态'])(
-    '非 granted 的任何 status(%s)一律先探测,不按状态细分',
+    '非 granted 的任何 status(%s)一律视为缺,不按状态细分',
     (status) => {
-      expect(decideScreenPermission('darwin', status, false)).toBe('probe')
-      expect(decideScreenPermission('darwin', status, true)).toBe('guide')
+      expect(needsScreenPermission('darwin', status)).toBe(true)
     }
   )
 
-  it('非 macOS 恒放行:没有这项权限,任何 status 都不该拦', () => {
+  it('非 macOS 恒不缺:平台没有这项权限', () => {
     // Windows 上 getMediaAccessStatus 恒 'granted',但不能靠它——真值是"平台没这个概念"。
-    expect(decideScreenPermission('win32', 'denied', false)).toBe('proceed')
-    expect(decideScreenPermission('win32', 'denied', true)).toBe('proceed')
+    expect(needsScreenPermission('win32', 'denied')).toBe(false)
   })
 })
 
-// 探测必须有界(§4.2 不变量:任何路径都不能让 state 卡在 capturing,否则 F1 被永久吞)。
-// 探测发生在 beginSession 置 capturing=true 之后的 await 里 —— 挂起走不到 catch/finally,
-// 会从"失败分支都回 idle"那条保护下面绕过去。
-describe('probeScreenAccess — 探测有界', () => {
-  it('探测永不返回 → 超时后仍然返回(不把 capturing 卡死)', async () => {
-    const never = (): Promise<never> => new Promise<never>(() => {})
-    await expect(probeScreenAccess(never, 10)).resolves.toBeUndefined()
-  })
-
-  it('探测已完成 → 立即返回,不干等满超时(已授权时不该白卡几秒)', async () => {
-    const t0 = Date.now()
-    await probeScreenAccess(async () => [], 10_000)
-    // 显式断言耗时,不靠 vitest 全局 testTimeout 兜底 —— 那个一旦被调大,
-    // 本条就会在实现坏掉(无条件等满超时)的情况下静默变绿。
-    expect(Date.now() - t0).toBeLessThan(1_000)
-  })
-
-  it('探测抛异常 → 吞掉不外抛(授权与否以 status 复查为准,抛出去会把会话打成失败)', async () => {
-    const boom = async (): Promise<never> => {
-      throw new Error('not authorized')
-    }
-    await expect(probeScreenAccess(boom, 10_000)).resolves.toBeUndefined()
-  })
-})
-
+// 截图"发到聊天"的原图落盘策略(§4.2):成功保留原图(否则发送端缩略图读空文件→回退图标),
+// 失败删副本免碎片。dir 首次不存在需自动建。
 describe('persistAndSend — 截图原图持久化', () => {
   const dirs: string[] = []
   function freshDir(): string {

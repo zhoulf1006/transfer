@@ -47,64 +47,19 @@ export function shouldRestoreMain(mainHidden: boolean, winExists: boolean, winVi
   return mainHidden && winExists && !winVisible
 }
 
-/** 屏幕录制权限的下一步动作(§4.5)。 */
-export type ScreenPermissionAction = 'proceed' | 'probe' | 'guide'
-
 /**
- * 屏幕录制权限决策(§4.5,纯函数便于单测)。
+ * macOS 是否缺屏幕录制权限(§4.5,纯函数便于单测)。
  *
- * 关键前提:macOS 上 `getMediaAccessStatus('screen')` 对**从未询问过**的 app 返回
- * `'denied'` 而非 `'not-determined'`(底层是 CGPreflightScreenCaptureAccess 的布尔,
- * 没有第三态)。因此不能把非 granted 直接当"用户拒绝过"处理——那会形成死锁:
- * 不调 desktopCapturer → macOS 不把 app 登记进「屏幕录制」列表 → 引导用户去列表里
- * 找它却找不到 → 永远无法授权。**真的调一次 desktopCapturer 是让系统弹授权框并
- * 登记 app 的唯一途径**,故未授权时先 probe,探测后仍未授权才 guide。
+ * 关键前提:`getMediaAccessStatus('screen')` 对**从未询问过**的 app 返回 `'denied'`
+ * 而非 `'not-determined'`(底层是 CGPreflightScreenCaptureAccess 的布尔,没有第三态)。
+ * 也就是说"非 granted"既可能是从没问过、也可能是问过被拒,**单看它分不出来**。
+ * 因此本函数不做区分,只回答"够不够用";怎么办由两个调用点分头决定:
+ * 启动时触发系统询问、按 F1 时引导去系统设置。二者在时间上分开,是为了不让
+ * 系统授权框与自家引导框同时出现抢用户的点击(见 primeScreenPermission)。
  */
-export function decideScreenPermission(
-  platform: string,
-  status: string,
-  probed: boolean
-): ScreenPermissionAction {
-  if (platform !== 'darwin') return 'proceed' // 仅 macOS 有屏幕录制授权
-  if (status === 'granted') return 'proceed'
-  return probed ? 'guide' : 'probe'
-}
-
-/** 屏幕录制探测的等待上限(ms)。见 probeScreenAccess 的"有界"理由。 */
-const PROBE_TIMEOUT_MS = 3000
-
-/**
- * 有界地跑一次屏幕采集探测(纯函数便于单测),用于触发 macOS 授权流程。
- *
- * **必须有界**:探测发生在 beginSession 置 `capturing = true` 之后的 await 里。
- * TCC 授权框弹出后 getSources 是否挂起等用户回应,未实测确认;若挂起且用户一直不理,
- * promise 永不 settle —— 走不到 catch/finally,会从「任何失败分支都回 idle,否则
- * state 卡死会让 F1 被永久吞」(§4.2)那条保护下面绕过去,F1 只能靠重启恢复。
- * 加超时后该问题的答案不再影响正确性。
- *
- * **异常一律吞掉**:未授权时 getSources 可能抛,但那不是判据 —— 授权结果只以随后的
- * getMediaAccessStatus 复查为准。抛出去反而会把整个截图会话打成失败。吞但要记日志:
- * 静默失败正是本仓库栽过的坑。
- */
-export async function probeScreenAccess(
-  probe: () => Promise<unknown>,
-  timeoutMs: number
-): Promise<void> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const attempt = (async () => {
-    try {
-      await probe()
-    } catch (err) {
-      console.error('[screenshot] 屏幕录制探测失败(不致命,以权限状态复查为准)', err)
-    }
-  })()
-  await Promise.race([
-    attempt,
-    new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, timeoutMs)
-    })
-  ])
-  if (timer) clearTimeout(timer)
+export function needsScreenPermission(platform: string, status: string): boolean {
+  if (platform !== 'darwin') return false // 仅 macOS 有屏幕录制授权
+  return status !== 'granted'
 }
 
 export interface ScreenshotDeps {
@@ -149,7 +104,8 @@ export class ScreenshotService {
 
   constructor(private readonly deps: ScreenshotDeps) {}
 
-  /** app ready 后调用一次:注册 F1(幂等)+ 挂 IPC。 */
+  /** app ready 后调用一次:注册 F1(幂等)+ 挂 IPC。
+   *  屏幕录制授权询问**不在这里**——见 primeScreenPermission 的时机要求。 */
   start(): void {
     this.registerShortcut()
     this.registerIpc()
@@ -223,7 +179,7 @@ export class ScreenshotService {
     this.state = 'capturing'
     try {
       // ① mac 权限先查:未授权 → 探测/引导,不 show 遮罩,回 idle(§4.5)。
-      if (!(await this.ensureScreenPermission())) {
+      if (!this.ensureScreenPermission()) {
         this.endSession()
         return
       }
@@ -264,28 +220,49 @@ export class ScreenshotService {
   }
 
   /**
-   * mac 屏幕录制权限(§4.5)。决策见 decideScreenPermission —— 未授权时**先探测**
-   * (真调一次 desktopCapturer,那是让系统弹授权框并把 app 登记进「屏幕录制」列表的
-   * 唯一途径),探测后仍未授权才引导系统设置。返回 false 表示本次不该继续截图。
+   * mac 屏幕录制权限(§4.5)。只做检查与引导,**不在此触发系统询问**——询问由
+   * primeScreenPermission 在启动时做完了。返回 false 表示本次不该继续截图。
    *
-   * 注意探测后 status 通常仍不是 granted:用户还没点允许,且 Electron 的状态在进程内
-   * 缓存到重启才更新(electron#36722)。这是预期的——引导文案本就要求重启应用,
-   * 而经过探测,用户这次能在列表里找到本 app 了。
+   * 走到引导这一步时 app 已被登记进「屏幕录制」列表(启动时那次探测的功劳),
+   * 用户照提示去找得到它。文案里"授权后需重启应用"要保留:Electron 的权限状态
+   * 在进程内缓存到重启才更新(electron#36722)。
    */
-  private async ensureScreenPermission(): Promise<boolean> {
-    const read = (): string => systemPreferences.getMediaAccessStatus('screen')
-    const first = decideScreenPermission(process.platform, read(), false)
-    if (first === 'proceed') return true
-    if (first === 'probe') {
-      // 1x1 缩略图:只为触发授权流程,不需要真实画面。
-      await probeScreenAccess(
-        () => desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }),
-        PROBE_TIMEOUT_MS
-      )
-      if (decideScreenPermission(process.platform, read(), true) === 'proceed') return true
+  private ensureScreenPermission(): boolean {
+    if (!needsScreenPermission(process.platform, systemPreferences.getMediaAccessStatus('screen'))) {
+      return true
     }
     this.showPermissionGuide()
     return false
+  }
+
+  /**
+   * 启动时触发一次系统授权询问(§4.5,fire-and-forget)。
+   *
+   * **只有真的调用一次采集,macOS 才会弹授权框并把 app 登记进「屏幕录制」列表**;
+   * 纯查询(getMediaAccessStatus)不触发登记。不做这一步,引导用户去列表里找本 app
+   * 就会找不到,形成无解死锁(见 docs/postmortems/screen-permission-preflight-deadlock.md)。
+   *
+   * **调用时机:必须等主窗已显示之后**。授权框由另一个进程绘制,app 尚未成为前台应用时
+   * macOS 不会把它弹出来(实测:挂在 start() 里、窗口显示之前调,静默无框)。故与网络服务
+   * 一样挂在主窗 show 之后(见 index.ts)。
+   *
+   * **为什么放在启动而不是按 F1 时**:系统授权框是**异步**弹出的、且由另一个进程绘制
+   * (CGRequestScreenCaptureAccess 立即返回,从不阻塞等待用户)。若在 F1 路径里触发,
+   * 我们的引导框必然与它同时出现抢点击——实测中用户点了我们的,系统那个被晾着没答复,
+   * TCC 不落记录,app 照样进不了列表,死锁绕回原点。把询问提前到启动,两者在时间上
+   * 自然分开。系统只会询问一次,已问过的用户不会被重复打扰。
+   */
+  primeScreenPermission(): void {
+    if (!needsScreenPermission(process.platform, systemPreferences.getMediaAccessStatus('screen'))) {
+      return
+    }
+    // 1x1 缩略图:只为触发授权流程,不需要真实画面。结果无关紧要,登记这个副作用才是目的。
+    void desktopCapturer
+      .getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } })
+      .catch((err) => {
+        // 未授权时此调用可能抛,不致命;吞但记日志——静默失败是本仓库栽过的坑。
+        console.error('[screenshot] 启动时触发屏幕录制授权询问失败(不致命)', err)
+      })
   }
 
   /** 引导用户去「系统设置 → 隐私与安全性 → 屏幕录制」开权限(fire-and-forget)。 */
