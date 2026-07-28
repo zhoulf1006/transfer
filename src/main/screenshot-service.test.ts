@@ -1,3 +1,11 @@
+// 已知覆盖缺口:屏幕录制权限的两个**动作**无自动化覆盖 —— primeScreenPermission 真的
+// 调了 desktopCapturer、ensureScreenPermission 真的弹了引导框,都直接依赖模块顶层 import
+// 的 systemPreferences / desktopCapturer / dialog,没有注入 seam;被测到的只有决策
+// (needsScreenPermission)。
+// 补测条件:若将来这三者经 ScreenshotDeps 注入(与 getMainWindow / sendFiles 同法),
+// 即可对二者写行为测试。在此之前靠真机验证:`tccutil reset ScreenCapture <bundleId>`
+// 后启动打包版,断言①启动即弹系统授权框且不伴随自家引导框 ②app 出现在
+// 「系统设置 → 隐私与安全性 → 屏幕录制」列表中(修复前不会出现,正是死锁所在)。
 import { describe, it, expect, afterEach } from 'vitest'
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -5,6 +13,7 @@ import { join } from 'node:path'
 import {
   shouldStartSession,
   shouldRestoreMain,
+  needsScreenPermission,
   persistAndSend,
   type ShotState
 } from './screenshot-service'
@@ -49,8 +58,38 @@ describe('shouldRestoreMain — 隐主窗恢复守卫', () => {
   })
 })
 
-// 截图"发到聊天"的原图落盘策略(§4.2):成功保留原图(否则发送端缩略图读空文件→回退图标,
-// 即本次修的 bug),失败删副本免碎片。dir 首次不存在需自动建。
+// 屏幕录制权限(§4.5)。macOS 上 getMediaAccessStatus('screen') 对**从未询问过**的 app
+// 返回 'denied' 而非 'not-determined'(底层是 CGPreflightScreenCaptureAccess 的布尔,没有
+// 第三态),所以"非 granted"既可能是没问过、也可能是问过被拒,单看它分不出来——本函数
+// 因此不做区分,只回答"够不够用",由两个调用点各自决定怎么办:
+//   启动时 → 触发一次系统询问(把 app 登记进「屏幕录制」列表)
+//   按 F1 时 → 引导去系统设置
+describe('needsScreenPermission — 是否缺屏幕录制权限', () => {
+  it('macOS 未授权 → 缺', () => {
+    expect(needsScreenPermission('darwin', 'denied')).toBe(true)
+  })
+
+  it('macOS 已授权 → 不缺', () => {
+    expect(needsScreenPermission('darwin', 'granted')).toBe(false)
+  })
+
+  // 回归锁:最初的 bug 就是给 denied / restricted / not-determined 写了不同分支。
+  // 意图是"非 granted 一律同等对待",未来任何按 status 细分的改动都该在此处红。
+  it.each(['denied', 'restricted', 'not-determined', 'unknown', '未来新增的状态'])(
+    '非 granted 的任何 status(%s)一律视为缺,不按状态细分',
+    (status) => {
+      expect(needsScreenPermission('darwin', status)).toBe(true)
+    }
+  )
+
+  it('非 macOS 恒不缺:平台没有这项权限', () => {
+    // Windows 上 getMediaAccessStatus 恒 'granted',但不能靠它——真值是"平台没这个概念"。
+    expect(needsScreenPermission('win32', 'denied')).toBe(false)
+  })
+})
+
+// 截图"发到聊天"的原图落盘策略(§4.2):成功保留原图(否则发送端缩略图读空文件→回退图标),
+// 失败删副本免碎片。dir 首次不存在需自动建。
 describe('persistAndSend — 截图原图持久化', () => {
   const dirs: string[] = []
   function freshDir(): string {
