@@ -1,6 +1,6 @@
 {
   "name": "transfer",
-  "version": "0.9.1",
+  "version": "1.0.0",
   "description": "跨平台局域网工具:文件传送 + 截屏 + 笔记(MVP:文件传送)",
   "license": "MIT",
   "main": "./out/main/index.js",
@@ -19,7 +19,8 @@
     "dist:mac:sign": "pnpm run dist:mac:package-signed && pnpm run notarize:mac:dmgs",
     "dist:win": "electron-vite build && electron-builder --win --publish never",
     "dist:mas:dev": "electron-vite build && electron-builder --mac mas-dev --publish never",
-    "dist:mas": "electron-vite build && electron-builder --mac mas --universal --publish never"
+    "dist:mas": "electron-vite build && electron-builder --mac mas --universal --publish never",
+    "pkg:mas": "node build/make-mas-pkg.cjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
