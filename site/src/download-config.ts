@@ -3,11 +3,14 @@
  *
  * - `VERSION`:**手动维护**。CI 不会改它(build.yml 里的 VERSION 取自 tag,只用于 R2
  *   上传路径,与本文件无关)。**发版时必须手动同步这里**,否则落地页的下载链接仍指向
- *   上一版产物、全部 404。接入 latest.json 后可改为运行时拉取,届时本行可删。
+ *   上一版产物、全部 404。
+ *   **顺序有讲究**:必须先确认 Release 产物已上传到 R2 且可下载,再改这里并部署。
+ *   站点走 Pages 几十秒就上线,而 DMG 要签名 + 三架构各自公证(等 Apple 几十分钟),
+ *   反过来做会留下一段真实的 404 窗口。接入 latest.json 后可改为运行时拉取,届时本行可删。
  * - `sources`:每个平台构建在「R2(主) / GitHub(兜底)」两处的下载 URL。
  */
 
-export const VERSION = '0.9.1'
+export const VERSION = '1.0.0'
 
 // 两个下载来源的 base
 const R2_BASE = 'https://dl.aloongplanet.com/releases' // Cloudflare R2 自定义域(主)
