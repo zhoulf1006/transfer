@@ -70,6 +70,40 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   # notarize:正式版打包显式关闭内置 App 公证，最终 DMG 由独立脚本提交 Apple。
 
+# Mac App Store —— 与上面的 Developer ID/DMG 线并行,两套产物互不影响。
+# 继承 mac 的 category/icon/electronLanguages;下面只写必须覆盖的部分。
+# 前置条件(缺任一项都跑不起来,不是配置能绕过的):
+#   ① Apple Development 证书(mas-dev)/ Apple Distribution + Mac Installer Distribution(mas)
+#   ② developer.apple.com 建 App ID com.loong.transfer,开 App Groups
+#   ③ provisioning profile 放到下面指定的路径
+# profile 是硬前置:沙盒放行 Electron MachPortRendezvousServer 的 Mach 名靠 profile 下发的
+# com.apple.application-identifier;没有它主进程启动即 FATAL(bootstrap_check_in 1100),
+# 且该 entitlement 无法手工伪造(AMFI 会直接拒绝加载二进制)。实测记录见 docs/postmortems/。
+mas:
+  # App Store 版用独立 bundle id(见 ADR-0016),与顶层的 com.loong.transfer 分开:
+  #   ① 反向 DNS 该用实际持有的域名 aloongplanet.com,顶层那个是历史遗留;
+  #   ② 同 bundle id 不同签名会让 TCC 混乱 —— 两个版本并存时权限互相顶掉(实测)。
+  # 不改顶层:那会重置所有现存 DMG 用户的 TCC 授权,代价远大于收益。
+  appId: com.aloongplanet.transfer
+  # 架构走 CLI 的 --universal(见 package.json 的 dist:mas)。
+  # 不写在这里:`--mac mas` 会覆盖配置里的 target 列表,写了也不生效,只会误导后来人。
+  # 必须 universal —— Mac App Store 一个 app 只收一份二进制,arm64-only 会把 Intel 机器
+  # 排除在外(与 DMG 线不同,那边靠三个产物让用户自选,见 ADR-0010)。
+  entitlements: build/entitlements.mas.plist
+  entitlementsInherit: build/entitlements.mas.inherit.plist
+  provisioningProfile: build/embedded.provisionprofile
+  # 加固运行时是 Developer ID 公证那条线的要求,MAS 走沙盒,不启用。
+  hardenedRuntime: false
+  extendInfo:
+    # macOS 15+ 本地网络隐私:访问局域网前系统会据此向用户说明用途。
+    NSLocalNetworkUsageDescription: Transfer 需要访问本地网络来发现同一局域网内的设备并直接传输文件。
+    # 沙盒只放行以 Team ID 打头的 Mach 服务名,Electron 靠这个键给 rendezvous server 命名。
+    ElectronTeamID: RHQ28XS7D9
+
+masDev:
+  # 继承 mas,只换成开发用 profile(本机测沙盒行为,不上传)
+  provisioningProfile: build/development.provisionprofile
+
 dmg:
   # mac- 系统标识 + ${arch} 架构后缀。${arch} 必需:多架构时无它会同名互相覆盖。
   # 三产物解析为 -mac-universal / -mac-arm64 / -mac-x64(dmg 上 x64 保持 x64,不变 x86_64)。

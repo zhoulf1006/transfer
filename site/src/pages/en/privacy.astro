@@ -1,0 +1,120 @@
+---
+import Base from '../../layouts/Base.astro'
+
+const locale = 'en' as const
+const updated = 'July 28, 2026'
+---
+
+<Base
+  locale={locale}
+  title="Privacy Policy — Transfer"
+  description="Transfer collects no personal data. Files and messages travel directly between your own devices on your local network, never through a server."
+>
+  <section class="container legal">
+    <h1>Privacy Policy</h1>
+    <p class="text-muted">Last updated: {updated}</p>
+
+    <p class="lead">
+      Transfer does not collect, store, or transmit any of your personal data. That is not a
+      promise — it is a consequence of how the app is built. There is no server and no account
+      system, so there is nowhere for your data to go.
+    </p>
+
+    <h2>What the app collects</h2>
+    <p>
+      <strong>Nothing.</strong> Transfer contains no analytics, no tracking, and no crash
+      reporting. It sends no data to us or to any third party.
+    </p>
+
+    <h2>Where your data lives</h2>
+    <ul>
+      <li><strong>Message history and file records</strong> are stored in a local database on your own computer.</li>
+      <li><strong>Received files</strong> are written to the download folder you choose.</li>
+      <li><strong>Screenshots</strong> are sent, copied, or saved at your direction.</li>
+      <li><strong>Settings and this device's identity</strong> (device name, self-signed certificate) are kept in the app's local data folder.</li>
+    </ul>
+    <p>
+      Uninstalling the app or deleting those folders removes this data. We hold no copy of any of
+      it.
+    </p>
+
+    <h2>How data travels</h2>
+    <p>
+      Files and messages move <strong>directly between two devices</strong> over an encrypted
+      (TLS) connection, trusted on first use by pinning the peer's certificate fingerprint. No
+      relay server is involved, and the traffic does not leave your local network.
+    </p>
+
+    <h2>What is broadcast on your local network</h2>
+    <p>
+      So that devices on the same network can find each other automatically, Transfer broadcasts
+      — <strong>within your local network only</strong> — the device name, its IP address and
+      port, and its certificate fingerprint. This is used solely for discovery and connection
+      setup. It <strong>never leaves the local network</strong> and is never sent to us.
+    </p>
+
+    <h2>System permissions</h2>
+    <ul>
+      <li><strong>Local Network</strong> — required to discover peers and establish direct connections. Core functionality depends on it.</li>
+      <li><strong>Screen Recording</strong> — used only by the built-in screenshot feature. File transfer works without it.</li>
+    </ul>
+
+    <h2>About this website</h2>
+    <p>
+      This site is hosted on Cloudflare, which produces standard access logs (IP address, browser
+      identifier, timestamp) used for security and to count downloads. Those logs are used in
+      aggregate, are not used to identify individuals, and are not linked to anything inside the
+      app.
+    </p>
+
+    <h2>Third parties</h2>
+    <p>We do not sell, share, or transfer any data — there is none to share.</p>
+
+    <h2>Children's privacy</h2>
+    <p>
+      This app is not directed at children and collects no personal information from users of any
+      age.
+    </p>
+
+    <h2>Changes to this policy</h2>
+    <p>If this policy changes, the updated text and a new date will appear on this page.</p>
+
+    <h2>Contact</h2>
+    <p>
+      Questions? Reach us through
+      <a href="https://github.com/zhoulf1006/transfer/issues" target="_blank" rel="noopener">
+        GitHub Issues
+      </a>.
+    </p>
+  </section>
+</Base>
+
+<style>
+  .legal {
+    max-width: 760px;
+    padding-top: 56px;
+    padding-bottom: 72px;
+    line-height: 1.8;
+  }
+  .legal h1 {
+    margin-bottom: 6px;
+  }
+  .legal h2 {
+    margin-top: 34px;
+    margin-bottom: 10px;
+    font-size: 1.15rem;
+  }
+  .legal .lead {
+    margin-top: 22px;
+    padding: 16px 18px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-soft);
+  }
+  .legal ul {
+    padding-left: 1.2em;
+  }
+  .legal li {
+    margin: 6px 0;
+  }
+</style>

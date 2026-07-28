@@ -1,0 +1,108 @@
+---
+import Base from '../layouts/Base.astro'
+
+const locale = 'zh' as const
+const updated = '2026 年 7 月 28 日'
+---
+
+<Base
+  locale={locale}
+  title="隐私政策 — Transfer"
+  description="Transfer 不收集任何个人数据。文件与消息只在你的局域网内直接传输,不经过任何服务器。"
+>
+  <section class="container legal">
+    <h1>隐私政策</h1>
+    <p class="text-muted">最后更新:{updated}</p>
+
+    <p class="lead">
+      Transfer 不收集、不存储、不传输你的任何个人数据。这不是一句承诺,而是设计使然——
+      这个应用没有服务器,也没有账号系统,数据没有可以去的地方。
+    </p>
+
+    <h2>应用收集的数据</h2>
+    <p><strong>没有。</strong>Transfer 不含分析、埋点或崩溃上报组件,不会向我们或任何第三方发送数据。</p>
+
+    <h2>你的数据存在哪里</h2>
+    <ul>
+      <li><strong>聊天记录与文件信息</strong>只保存在你自己电脑的本地数据库中。</li>
+      <li><strong>接收到的文件</strong>存放在你指定的下载目录。</li>
+      <li><strong>截图</strong>由你决定发送、复制或另存,应用不会额外留存副本以外的内容。</li>
+      <li><strong>设置与本机身份</strong>(设备名、自签名证书)保存在应用的本地数据目录。</li>
+    </ul>
+    <p>卸载应用或删除对应目录,这些数据即随之消失。我们没有任何副本。</p>
+
+    <h2>数据如何传输</h2>
+    <p>
+      文件与消息在两台设备之间<strong>直接传输</strong>,走加密连接(TLS),
+      信任模型为首次使用时固定对方证书指纹。全过程不经过任何中转服务器,
+      流量不离开你所在的局域网。
+    </p>
+
+    <h2>局域网内广播的信息</h2>
+    <p>
+      为了让同一网络下的设备自动发现彼此,Transfer 会在<strong>本地网络内</strong>广播:
+      设备名称、本机 IP 与端口、以及本机证书指纹。这些信息仅用于发现与建立连接,
+      <strong>不会离开局域网</strong>,也不会被发送给我们。
+    </p>
+
+    <h2>系统权限</h2>
+    <ul>
+      <li><strong>本地网络</strong>:用于发现同网设备并建立直连,是核心功能的前提。</li>
+      <li><strong>屏幕录制</strong>:仅用于内置截图功能。不授权不影响文件传输。</li>
+    </ul>
+
+    <h2>关于本网站</h2>
+    <p>
+      本站由 Cloudflare 托管,会产生标准的访问日志(IP 地址、浏览器标识、访问时间),
+      用于安全防护与统计下载量。这些数据以聚合形式使用,不用于识别个人,也不与应用内的任何内容关联。
+    </p>
+
+    <h2>第三方共享</h2>
+    <p>不出售、不共享、不转让任何数据——因为我们本就没有可供共享的数据。</p>
+
+    <h2>儿童隐私</h2>
+    <p>本应用不面向儿童设计,也不收集任何年龄段用户的个人信息。</p>
+
+    <h2>政策变更</h2>
+    <p>若本政策发生变更,将在本页更新并修改顶部的日期。</p>
+
+    <h2>联系方式</h2>
+    <p>
+      有任何疑问,请通过
+      <a href="https://github.com/zhoulf1006/transfer/issues" target="_blank" rel="noopener">
+        GitHub Issues
+      </a>
+      与我们联系。
+    </p>
+  </section>
+</Base>
+
+<style>
+  .legal {
+    max-width: 760px;
+    padding-top: 56px;
+    padding-bottom: 72px;
+    line-height: 1.8;
+  }
+  .legal h1 {
+    margin-bottom: 6px;
+  }
+  .legal h2 {
+    margin-top: 34px;
+    margin-bottom: 10px;
+    font-size: 1.15rem;
+  }
+  .legal .lead {
+    margin-top: 22px;
+    padding: 16px 18px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-soft);
+  }
+  .legal ul {
+    padding-left: 1.2em;
+  }
+  .legal li {
+    margin: 6px 0;
+  }
+</style>

@@ -79,6 +79,7 @@ export const ui: Record<Locale, Dict> = {
     'footer.opensource': '开源项目',
     'footer.license': 'MIT 协议',
     'footer.madeby': '由 loong_zhou 开发',
+    'footer.privacy': '隐私政策',
   },
 
   en: {
@@ -150,6 +151,7 @@ export const ui: Record<Locale, Dict> = {
     'footer.opensource': 'Open source',
     'footer.license': 'MIT License',
     'footer.madeby': 'Made by loong_zhou',
+    'footer.privacy': 'Privacy Policy',
   },
 }
 
