@@ -1,0 +1,184 @@
+<!doctype html>
+<!--
+  原型:消息流「跳到最新」浮动按钮 — 无外描边的玻璃悬浮浮控。
+  质感方向已从「轻玻璃/厚玻璃/染色玻璃/深色玻璃」4 案中选定**染色玻璃**(2026-08-02)。
+  当前待决问题:染色玻璃的**深浅档** — 常态与悬浮态各该多深?
+  多变体并排对比(用户明确要求,UI.md §4 例外),3 档,全部无外描边。
+  深浅靠紫色底的不透明度调,不换色相——玻璃的通透感来自"能透出底下内容",压得太实就不是玻璃了。
+
+  演示基建(非设计的一部分,勿实现):
+  - 底部居中暗色 pill:变体切换(←/→)、未读圆点开关、内容底色切换。带 data-demo-harness。
+  - 「内容底色」在真 app 里不存在:玻璃质感只在有内容垫底时才显形,此开关用于把按钮分别放到
+    浅色留白 / 深色图片气泡 上检验,真实判定来源是用户滚到哪、底下恰好是什么内容。
+  - 「未读圆点」在真 app 里由「翻历史期间是否有新消息到达」决定,无此控件。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>原型 — 跳到最新按钮(染色玻璃深浅 3 档)</title>
+<style>
+  :root{
+    --bg:#f7f8f9; --card:#ffffff; --text:#1a1c1f; --text-2:#52565c; --muted:#868b93;
+    --line:#e8eaed; --line-strong:#d9dce0;
+    --accent:#8a67ab; --accent-soft:#f0ebf6; --bubble-me:#f6f3f8; --bubble-you:#eef0f3;
+    --shadow-md:0 4px 16px -6px rgba(20,22,26,.12);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#18191b; --card:#1f2124; --text:#e9eaed; --text-2:#b4b8bd; --muted:#7f858c;
+      --line:#2a2c30; --line-strong:#34373c; --accent:#a084c7; --accent-soft:#2a2430;
+      --bubble-me:#2a2430; --bubble-you:#26282c; --shadow-md:0 6px 20px -8px rgba(0,0,0,.5); }
+  }
+  *{box-sizing:border-box;margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+  body{background:var(--bg);color:var(--text);height:100vh;overflow:hidden;font-size:13px;display:flex}
+
+  /* ——— 语境外壳(防真空条款:简化版侧栏+聊天页,提供真实数据密度) ——— */
+  .side{width:210px;border-right:1px solid var(--line);background:var(--card);padding:12px;flex:none}
+  .side h1{font-size:14px;margin:4px 4px 14px}
+  .dev{display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px}
+  .dev.on{background:var(--accent-soft)}
+  .dot{width:8px;height:8px;border-radius:50%;background:#22c55e;flex:none}
+  .sub{font-size:11px;color:var(--muted)}
+  .chat{flex:1;display:flex;flex-direction:column;min-width:0}
+  .c-h{padding:12px 18px;border-bottom:1px solid var(--line);background:var(--card);font-weight:600}
+  .flow{flex:1;overflow:auto;display:flex;flex-direction:column;gap:12px;padding:16px 18px;background:var(--bg)}
+  .bub{max-width:56%;padding:9px 12px;border-radius:12px;background:var(--bubble-you);line-height:1.5}
+  .bub.me{align-self:flex-end;background:var(--bubble-me)}
+  .shot{width:300px;height:170px;border-radius:8px;background:#22242a;
+    display:flex;align-items:center;justify-content:center;color:#5c626e;font-size:11px}
+  .meta{font-size:11px;color:var(--muted);margin-top:6px}
+  .inp{display:flex;align-items:center;gap:10px;padding:12px 16px;border-top:1px solid var(--line);background:var(--card)}
+  .inp .box{flex:1;border:1px solid var(--line-strong);border-radius:9px;padding:9px 12px;color:var(--muted)}
+  .inp .snd{width:34px;height:34px;border-radius:50%;background:var(--accent-soft);color:var(--accent);
+    display:grid;place-items:center;flex:none}
+
+  /* ——— 被评判的对象:跳到最新按钮 ——— */
+  /* 定位技术四案共用,与真代码一致:sticky + flex-end + 负 margin 抵消占位;
+     flex-shrink:0 必需,否则 flex column 会把它压成椭圆。 */
+  .jump{position:sticky;bottom:14px;align-self:flex-end;flex-shrink:0;margin-bottom:-36px;margin-right:4px;
+    width:36px;height:36px;border-radius:50%;display:grid;place-items:center;border:0;padding:0;cursor:pointer;
+    transition:background .16s ease,color .16s ease,box-shadow .16s ease,transform .16s ease}
+  .jump svg{width:18px;height:18px;stroke-width:2.25}
+  .jump .badge{position:absolute;top:0;right:0;width:9px;height:9px;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 0 2px var(--bg);display:none}
+  body.has-unread .jump .badge{display:block}
+
+  /* 三档共用:模糊强度、色相、箭头色都不变,只调紫底的不透明度与阴影浓度 */
+  .jump{backdrop-filter:blur(16px) saturate(180%);-webkit-backdrop-filter:blur(16px) saturate(180%);
+    color:var(--accent)}
+
+  /* 档 A 现状:常态 .16 / 悬浮 .30 —— 已实现的那版,留作参照 */
+  .vA{background:rgba(138,103,171,.16);box-shadow:0 4px 14px -5px rgba(138,103,171,.45)}
+  .vA:hover{background:rgba(138,103,171,.30);box-shadow:0 6px 18px -5px rgba(138,103,171,.6)}
+  @media (prefers-color-scheme: dark){
+    .vA{background:rgba(160,132,199,.22);box-shadow:0 4px 14px -5px rgba(0,0,0,.5)}
+    .vA:hover{background:rgba(160,132,199,.36)}
+  }
+
+  /* 档 B 稍深:常态 .24 / 悬浮 .40 —— 存在感明确,仍能透出底下内容 */
+  .vB{background:rgba(138,103,171,.24);box-shadow:0 4px 14px -5px rgba(138,103,171,.5)}
+  .vB:hover{background:rgba(138,103,171,.4);box-shadow:0 6px 18px -5px rgba(138,103,171,.65)}
+  @media (prefers-color-scheme: dark){
+    .vB{background:rgba(160,132,199,.3);box-shadow:0 4px 14px -5px rgba(0,0,0,.55)}
+    .vB:hover{background:rgba(160,132,199,.46)}
+  }
+
+  /* 档 C 更深:常态 .32 / 悬浮 .50 —— 最醒目,深色内容垫底时接近实心 */
+  .vC{background:rgba(138,103,171,.32);box-shadow:0 4px 14px -5px rgba(138,103,171,.55)}
+  .vC:hover{background:rgba(138,103,171,.5);box-shadow:0 6px 18px -5px rgba(138,103,171,.7)}
+  @media (prefers-color-scheme: dark){
+    .vC{background:rgba(160,132,199,.38);box-shadow:0 4px 14px -5px rgba(0,0,0,.6)}
+    .vC:hover{background:rgba(160,132,199,.54)}
+  }
+
+  /* 演示:内容底色切换(把按钮放到深色图片上验玻璃) */
+  body.dark-bed .pad{display:none}
+  body:not(.dark-bed) .bed{display:none}
+
+  /* ——— 演示基建(独立悬浮层,非设计的一部分) ——— */
+  .harness{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:99;
+    display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:999px;
+    background:#1c1e23;color:#e7e9ee;font-size:12px;box-shadow:0 8px 26px -8px rgba(0,0,0,.6)}
+  .harness .tag{color:#8b919e;padding-right:2px}
+  .harness .sep{width:1px;height:16px;background:#33363d}
+  .harness .nav{display:flex;align-items:center;gap:6px}
+  .harness button{background:#2b2e35;color:#e7e9ee;border:0;border-radius:6px;width:24px;height:22px;cursor:pointer;font-size:13px}
+  .harness button:hover{background:#3a3e46}
+  .harness .name{min-width:118px;text-align:center}
+  .harness label{display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none}
+</style>
+</head>
+<body>
+  <div class="side">
+    <h1>Transfer</h1>
+    <div class="dev on"><span class="dot"></span><span>客厅 Mac<div class="sub">macOS · 192.168.3.24</div></span></div>
+    <div class="dev"><span class="dot"></span><span>Work-PC<div class="sub">Windows · 192.168.3.31</div></span></div>
+  </div>
+
+  <div class="chat">
+    <div class="c-h">客厅 Mac</div>
+    <div class="flow" id="flow">
+      <div class="bub">收到了,我这边看一下这几张截图。</div>
+      <div class="bub me"><div class="shot">截图 · 2560×1600</div><div class="meta">已送达 · 15:45</div></div>
+      <div class="bub">这版的间距比上一版舒服。</div>
+      <div class="bub me"><div class="shot">截图 · 2560×1600</div><div class="meta">已送达 · 15:45</div></div>
+      <!-- 演示:浅色留白垫底 -->
+      <div class="pad" style="height:150px"></div>
+      <!-- 演示:深色图片垫底 -->
+      <div class="bed bub me" style="max-width:56%"><div class="shot" style="height:230px">截图 · 深色内容垫底</div></div>
+
+      <button class="jump vA" id="jump" aria-label="跳到最新">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        <span class="badge"></span>
+      </button>
+    </div>
+    <div class="inp">
+      <div class="box">Type a message. Enter to send, Shift+Enter for newline</div>
+      <div class="snd">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="harness" data-demo-harness>
+    <span class="tag">演示·变体</span>
+    <div class="nav">
+      <button id="prev">←</button><span class="name" id="vname"></span><button id="next">→</button>
+    </div>
+    <span class="sep"></span>
+    <label><input type="checkbox" id="unread"> 未读圆点</label>
+    <span class="sep"></span>
+    <label><input type="checkbox" id="bed"> 深色内容垫底</label>
+  </div>
+
+<script>
+  const VARIANTS = [
+    { cls: 'vA', name: 'A · 现状 .16/.30' },
+    { cls: 'vB', name: 'B · 稍深 .24/.40' },
+    { cls: 'vC', name: 'C · 更深 .32/.50' }
+  ]
+  const jump = document.getElementById('jump')
+  const vname = document.getElementById('vname')
+  let i = Math.max(0, VARIANTS.findIndex((v) => v.cls === location.hash.slice(1)))
+
+  function render() {
+    jump.className = 'jump ' + VARIANTS[i].cls
+    vname.textContent = VARIANTS[i].name
+    location.hash = VARIANTS[i].cls
+  }
+  function step(d) { i = (i + d + VARIANTS.length) % VARIANTS.length; render() }
+
+  document.getElementById('prev').onclick = () => step(-1)
+  document.getElementById('next').onclick = () => step(1)
+  document.getElementById('unread').onchange = (e) => document.body.classList.toggle('has-unread', e.target.checked)
+  document.getElementById('bed').onchange = (e) => document.body.classList.toggle('dark-bed', e.target.checked)
+  addEventListener('keydown', (e) => {
+    if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable) return
+    if (e.key === 'ArrowLeft') step(-1)
+    if (e.key === 'ArrowRight') step(1)
+  })
+  render()
+  // 让按钮真的处于「用户已往上翻」的位置:流固定停在顶部
+  document.getElementById('flow').scrollTop = 0
+</script>
+</body>
+</html>

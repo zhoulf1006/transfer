@@ -7,6 +7,11 @@ window.PROTOTYPES = [
     path: 'transfer-chat/prototype-main-window.html'
   },
   {
+    module: 'transfer-chat', type: 'ui', id: 'jump-to-latest',
+    name: '跳到最新按钮(染色玻璃深浅)',
+    path: 'transfer-chat/prototype-jump-to-latest.html'
+  },
+  {
     module: 'transfer-chat', type: 'logic', id: 'message-state',
     name: '消息状态机',
     path: 'transfer-chat/message-state/index.html'

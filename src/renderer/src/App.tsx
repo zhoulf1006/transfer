@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { shouldStickToBottom, shouldAutoScrollOnNewMessage } from './scroll-stick'
 import type { RemoteDevice } from '@shared/types'
 import { isImageFile } from '@shared/ipc'
 import { pickImageItemIndices } from '@shared/clipboard-image'
@@ -28,8 +29,7 @@ import {
   CameraIcon,
   PaperclipIcon,
   InboxIcon,
-  SendIcon
-} from './icons'
+  SendIcon, ChevronDownIcon } from './icons'
 
 /** 传输进度快照:messageId → 已传/总字节(不落库,仅内存) */
 type ProgressMap = Record<string, { sent: number; total: number }>
@@ -539,8 +539,69 @@ function Chat(props: {
   const [dragging, setDragging] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  // 滚到最新。**不能只在消息条数变化时滚一次**:滚完之后气泡还会继续长高——图片气泡
+  // 要等缩略图加载完(占位 div 换成 <img>、像素到位)、文件气泡要渲出进度条。那样滚到的
+  // 是"旧的底部",新内容留在视口下方(即"发文件和图片时不滚到最新";文本气泡高度当场
+  // 确定,所以一直正常)。
+  //
+  // 关键:"用户是否在底部"必须在**内容长高之前**记录。若等观察到长高再算,那时正因为
+  // 这次长高而离底部很远,守卫会把自己否掉——第一版就栽在这里,实测不生效。
+  // 故用 ref 记状态,只由**用户的滚动动作**更新:内容长高不触发 scroll 事件(scrollTop
+  // 未变),所以不会污染该状态。
+  const stickRef = useRef(true)
+  const [atBottom, setAtBottom] = useState(true)
+  const [hasNewBelow, setHasNewBelow] = useState(false)
+
+  const jumpToBottom = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    stickRef.current = true
+    setAtBottom(true)
+    setHasNewBelow(false)
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  }, [])
+
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
+    const el = scrollRef.current
+    if (!el) return
+    const sync = (): void => {
+      const stuck = shouldStickToBottom(el.scrollTop, el.clientHeight, el.scrollHeight)
+      stickRef.current = stuck
+      setAtBottom(stuck)
+      if (stuck) setHasNewBelow(false) // 滚回底部即视为已看到
+    }
+    const repin = (): void => {
+      if (stickRef.current) el.scrollTo({ top: el.scrollHeight })
+    }
+    el.addEventListener('scroll', sync, { passive: true })
+    // MutationObserver 覆盖"占位换成 img""进度条出现"这类 DOM 变化;
+    // capture 阶段的 load 覆盖 <img> 像素到位(load 事件不冒泡,必须用捕获)。
+    const mo = new MutationObserver(repin)
+    mo.observe(el, { childList: true, subtree: true, attributes: true })
+    el.addEventListener('load', repin, true)
+    return () => {
+      el.removeEventListener('scroll', sync)
+      el.removeEventListener('load', repin, true)
+      mo.disconnect()
+    }
+  }, [])
+
+  // 新消息到达:自己发的无条件滚;收到的只在已贴底时滚,否则只亮"有新消息"圆点,
+  // 不打断正在翻历史的用户(判据见 shouldAutoScrollOnNewMessage)。
+  const lastDirection = messages.length ? messages[messages.length - 1].direction : null
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !lastDirection) return
+    if (shouldAutoScrollOnNewMessage(lastDirection, stickRef.current)) {
+      stickRef.current = true
+      setAtBottom(true)
+      setHasNewBelow(false)
+      el.scrollTo({ top: el.scrollHeight })
+    } else {
+      setHasNewBelow(true)
+    }
+    // 依赖只取条数:同一条消息的状态更新(pending→done)不该再次触发滚动
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length])
 
   const sendText = useCallback(async () => {
@@ -616,6 +677,18 @@ function Chat(props: {
           <Bubble key={m.id} msg={m} prog={progress[m.id]} />
         ))}
         {dragging && <div style={S.dropHint}>{t('chat.dropHint')}</div>}
+        {!atBottom && (
+          <button
+            className="tf-jump-btn"
+            onClick={jumpToBottom}
+            style={S.jumpBtn}
+            title={t('chat.jumpToLatest')}
+            aria-label={t('chat.jumpToLatest')}
+          >
+            <ChevronDownIcon size={18} />
+            {hasNewBelow && <span style={S.jumpDot} />}
+          </button>
+        )}
       </div>
       <div style={S.inputBar}>
         <button
@@ -1193,6 +1266,14 @@ const S: Record<string, React.CSSProperties> = {
   offlineTag: { fontSize: 10.5, fontWeight: 450, color: 'var(--muted)', border: '1px solid var(--line)', borderRadius: 5, padding: '1px 7px' },
   stream: { flex: 1, overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 9, position: 'relative' },
   streamDragging: { outline: '2px dashed var(--accent)', outlineOffset: -8, background: 'var(--accent-soft)' },
+  // 此处只放几何与定位;染色玻璃的底色/模糊/阴影/hover 在 theme.css 的 .tf-jump-btn
+  // (内联样式优先级高于 class,底色若写这里会把 :hover 压住)。三处易踩的坑:
+  // ① sticky 而非 absolute——absolute 的子元素在**可滚动容器内**相对内容盒定位,会跟着内容
+  //    滚走(实测:往上翻后按钮消失在视口下方);sticky 才钉在视口。dropHint 同法。
+  // ② 负 marginBottom 抵消自身高度,使它不在流中占位、纯浮于内容之上。
+  // ③ flexShrink: 0 不能省——消息流是 flex column,内容溢出时会把按钮的高压扁成椭圆。
+  jumpBtn: { position: 'sticky', bottom: 14, alignSelf: 'flex-end', flexShrink: 0, marginBottom: -36, marginRight: 4, width: 36, height: 36, borderRadius: '50%', display: 'grid', placeItems: 'center', color: 'var(--accent)', border: 0, cursor: 'pointer', padding: 0 },
+  jumpDot: { position: 'absolute', top: 0, right: 0, width: 9, height: 9, borderRadius: '50%', background: 'var(--accent)', boxShadow: '0 0 0 2px var(--bg)' },
   dropHint: { position: 'sticky', bottom: 8, alignSelf: 'center', background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent)', padding: '6px 16px', borderRadius: 18, fontSize: 12.5, pointerEvents: 'none', boxShadow: 'var(--shadow-md)' },
   bubbleRow: { display: 'flex' },
   bubble: { maxWidth: '74%', padding: '8px 12px', borderRadius: 14 },
