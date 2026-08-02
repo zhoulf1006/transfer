@@ -120,3 +120,6 @@ export function isTransferring(status: MessageStatus): boolean {
 export function canRespond(m: { direction: Direction; status: MessageStatus }): boolean {
   return m.direction === 'recv' && AWAITING_DECISION[m.status] === true
 }
+
+// 一次性验证用:故意的类型错误,验证门禁的 Typecheck 步骤会红。
+export const TYPE_GATE_PROBE: string = 42
