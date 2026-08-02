@@ -3,7 +3,7 @@
 // 为 node 无 DOM。补测条件:引入 jsdom 环境并把 include 扩到 .tsx 之后可对滚动行为写
 // 组件测试。在此之前靠真机验证:发一张图片,断言视口停在最新气泡而非其上方。
 import { test, expect, describe } from 'vitest'
-import { shouldStickToBottom, STICK_THRESHOLD_PX } from './scroll-stick'
+import { shouldStickToBottom, shouldAutoScrollOnNewMessage, STICK_THRESHOLD_PX } from './scroll-stick'
 
 // 消息流的"贴底"判定(纯函数便于单测;接线部分见 App.tsx,无自动化覆盖)。
 //
@@ -31,5 +31,26 @@ describe('shouldStickToBottom', () => {
 
   test('恰好在阈值边界外 → 不贴底(边界不含)', () => {
     expect(shouldStickToBottom(400 - STICK_THRESHOLD_PX - 1, 200, 600)).toBe(false)
+  })
+})
+
+// 新消息到达时是否自动滚到底。分两种,不能一视同仁:
+// 自己刚发的一定滚(用户刚做完动作,就该看到结果);收到对方的只在已贴底时滚——
+// 用户正翻历史时被弹到底部是实测确认过的现有毛病。
+describe('shouldAutoScrollOnNewMessage', () => {
+  test('自己发的:贴底时滚', () => {
+    expect(shouldAutoScrollOnNewMessage('sent', true)).toBe(true)
+  })
+
+  test('自己发的:即使正在翻历史也要滚(刚做完动作)', () => {
+    expect(shouldAutoScrollOnNewMessage('sent', false)).toBe(true)
+  })
+
+  test('收到的:已贴底 → 滚', () => {
+    expect(shouldAutoScrollOnNewMessage('recv', true)).toBe(true)
+  })
+
+  test('收到的:正在翻历史 → 不滚,不打断用户', () => {
+    expect(shouldAutoScrollOnNewMessage('recv', false)).toBe(false)
   })
 })

@@ -26,3 +26,17 @@ export function shouldStickToBottom(
   // 内容不足一屏时无从滚动,恒定视为贴底
   return scrollHeight - scrollTop - clientHeight <= STICK_THRESHOLD_PX
 }
+
+/**
+ * 新消息到达时是否自动滚到底。**必须分方向**:
+ * - `sent`(自己刚发的):无条件滚。用户刚做完动作,就该看到结果。
+ * - `recv`(收到对方的):只在已贴底时滚。用户正翻历史时把他弹到底部,是实测确认过的
+ *   现有毛病——多数聊天应用都不这么干。不滚时由"跳到最新"按钮上的圆点告知有新消息,
+ *   否则新消息会静默到达、用户无从察觉。
+ */
+export function shouldAutoScrollOnNewMessage(
+  direction: 'sent' | 'recv',
+  stuckToBottom: boolean
+): boolean {
+  return direction === 'sent' || stuckToBottom
+}
