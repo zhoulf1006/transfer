@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { shouldStickToBottom } from './scroll-stick'
 import type { RemoteDevice } from '@shared/types'
 import { isImageFile } from '@shared/ipc'
 import { pickImageItemIndices } from '@shared/clipboard-image'
@@ -539,6 +540,32 @@ function Chat(props: {
   const [dragging, setDragging] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  // 滚到最新。**不能只在消息条数变化时滚一次**:滚完之后气泡还会继续长高——图片气泡
+  // 要等缩略图加载完(占位 div 换成 <img>、像素到位)、文件气泡要渲出进度条。那样滚到的
+  // 是"旧的底部",新内容留在视口下方(即"发文件和图片时不滚到最新";文本气泡高度当场
+  // 确定,所以一直正常)。
+  //
+  // 故除条数变化外,还要在内容真正变高时补滚,并且只在**用户本来就在底部附近**时补——
+  // 他正翻历史时被硬拽回去比不滚更烦人(判据见 shouldStickToBottom)。
+  // MutationObserver 覆盖"占位换成 img""进度条出现"这类 DOM 变化;capture 阶段的 load
+  // 覆盖 <img> 像素到位(load 事件不冒泡,必须用捕获)。
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const toBottom = (): void => el.scrollTo({ top: el.scrollHeight })
+    const repinIfAtBottom = (): void => {
+      if (shouldStickToBottom(el.scrollTop, el.clientHeight, el.scrollHeight)) toBottom()
+    }
+    const mo = new MutationObserver(repinIfAtBottom)
+    mo.observe(el, { childList: true, subtree: true, attributes: true })
+    el.addEventListener('load', repinIfAtBottom, true)
+    return () => {
+      mo.disconnect()
+      el.removeEventListener('load', repinIfAtBottom, true)
+    }
+  }, [])
+
+  // 新消息(含自己刚发的)一律滚到底:这是用户刚做完动作的时刻,无条件贴底。
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [messages.length])
