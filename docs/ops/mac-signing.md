@@ -1,49 +1,49 @@
 # macOS 签名、公证与发布
 
-> - 正式版干净 tag（如 `v0.9.1`）：内部 App 使用 Developer ID 签名，最终三个 DMG 分别公证并 staple，发布到 GitHub Latest 和 Cloudflare R2。
-> - 预发布 tag（`-beta`、`-rc`、`-alpha`、`-dev`）：只签名、不公证，只发布到 GitHub Pre-release，不同步 R2。
-> - 手动运行 workflow：默认生成普通 Actions artifact；选择 `verify_formal_macos=true` 时执行完整签名/公证门禁。两者都不创建 GitHub Release，也不同步 R2。
-> - 正式版缺凭据或任一架构验证失败时 fail-closed，不发布任何 macOS DMG。
+> - 正式版干净 tag(如 `v0.9.1`):内部 App 使用 Developer ID 签名,最终三个 DMG 分别公证并 staple,发布到 GitHub Latest 和 Cloudflare R2。
+> - 预发布 tag(`-beta`、`-rc`、`-alpha`、`-dev`):只签名、不公证,只发布到 GitHub Pre-release,不同步 R2。
+> - 手动运行 workflow:默认生成普通 Actions artifact;选择 `verify_formal_macos=true` 时执行完整签名/公证门禁。两者都不创建 GitHub Release,也不同步 R2。
+> - 正式版缺凭据或任一架构验证失败时 fail-closed,不发布任何 macOS DMG。
 
 详细设计和失败路径见 [dmg-notarization-pipeline.md](./dmg-notarization-pipeline.md)。
 
 ## 签名、公证与 staple
 
-- **签名**：用 `Developer ID Application` 标识开发者并保护 App 与最外层 DMG 的完整性；Electron App 同时启用 Hardened Runtime 和所需 entitlements。
-- **公证**：把交付物提交 Apple 扫描。**`.app` 与最外层 DMG 都要公证**，两次提交缺一不可（原因见下）。
-- **staple**：把 Apple ticket 装订到交付物，使 Gatekeeper 在无法访问 Apple 服务时仍能验证公证结果。
+- **签名**:用 `Developer ID Application` 标识开发者并保护 App 与最外层 DMG 的完整性;Electron App 同时启用 Hardened Runtime 和所需 entitlements。
+- **公证**:把交付物提交 Apple 扫描。**`.app` 与最外层 DMG 都要公证**,两次提交缺一不可(原因见下)。
+- **staple**:把 Apple ticket 装订到交付物,使 Gatekeeper 在无法访问 Apple 服务时仍能验证公证结果。
 
-**为什么两处都要钉**：ticket 按被装订的那个文件走。只钉 DMG 的话，用户把 App 拖进「应用程序」之后 DMG 连同票据一起被丢掉，App 身上没有票据 → 首次启动 Gatekeeper 只能联网查，断网即判「无法验证是否包含恶意软件」。只钉 App 的话，DMG 自身没票据 → 双击打开 DMG 时 `spctl --type open` 判 rejected。**App 的票据管「拖出来之后」，DMG 的票据管「打开 DMG 时」。**
+**为什么两处都要钉**:ticket 按被装订的那个文件走。只钉 DMG 的话,用户把 App 拖进「应用程序」之后 DMG 连同票据一起被丢掉,App 身上没有票据 → 首次启动 Gatekeeper 只能联网查,断网即判「无法验证是否包含恶意软件」。只钉 App 的话,DMG 自身没票据 → 双击打开 DMG 时 `spctl --type open` 判 rejected。**App 的票据管「拖出来之后」,DMG 的票据管「打开 DMG 时」。**
 
-顺序固定为：
+顺序固定为:
 
 ```text
 签名 Transfer.app
-→ 提交 .app 给 notarytool 并等待 Accepted，staple 到 .app
-   （electron-builder 内置公证，mac.notarize: true，发生在 DMG 创建之前）
-→ 生成 arm64 / x64 / universal DMG（此时 DMG 内的 App 已自带票据）
+→ 提交 .app 给 notarytool 并等待 Accepted,staple 到 .app
+   (electron-builder 内置公证,mac.notarize: true,发生在 DMG 创建之前)
+→ 生成 arm64 / x64 / universal DMG(此时 DMG 内的 App 已自带票据)
 → 使用 Developer ID Application 签名每个 DMG
 → 提交每个 DMG 给 notarytool 并等待 Accepted
 → staple DMG
-→ 验证最终 DMG，并断言 DMG 内 App 自带 stapled ticket
+→ 验证最终 DMG,并断言 DMG 内 App 自带 stapled ticket
 → 上传 GitHub Release
 → 正式版同步 R2
 ```
 
-任何签名或公证都必须发生在最终上传之前；staple 后不能再修改 DMG 字节。
+任何签名或公证都必须发生在最终上传之前;staple 后不能再修改 DMG 字节。
 
 ## GitHub Actions 分档
 
-`.github/workflows/build.yml` 的 macOS job 使用以下状态：
+`.github/workflows/build.yml` 的 macOS job 使用以下状态:
 
-- `HAS_CSC`：是否有 `CSC_LINK`。
-- `HAS_APPLE`：`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` 是否全部存在。
-- `IS_PRERELEASE`：tag 是否以 `-beta`、`-rc`、`-alpha` 或 `-dev` 结尾。
-- `IS_RELEASE`：是否为干净正式版 tag，或手动运行时选择了 `verify_formal_macos=true`。
+- `HAS_CSC`:是否有 `CSC_LINK`。
+- `HAS_APPLE`:`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` 是否全部存在。
+- `IS_PRERELEASE`:tag 是否以 `-beta`、`-rc`、`-alpha` 或 `-dev` 结尾。
+- `IS_RELEASE`:是否为干净正式版 tag,或手动运行时选择了 `verify_formal_macos=true`。
 
-正式版和手动正式验证先检查 `HAS_CSC` 与 `HAS_APPLE`；缺任一项直接失败，不能落入仅签名或未签名分支。预发布和普通手动运行保留有证书时签名、无证书时生成未签名 artifact 的既有行为。
+正式版和手动正式验证先检查 `HAS_CSC` 与 `HAS_APPLE`;缺任一项直接失败,不能落入仅签名或未签名分支。预发布和普通手动运行保留有证书时签名、无证书时生成未签名 artifact 的既有行为。
 
-公证步骤位于 DMG 打包与 `actions/upload-artifact` 之间，因此公证、staple、Gatekeeper 或内部 App 验证失败都会阻止 GitHub Release 上传。R2 `sync` job 依赖两个平台构建成功，并且只对干净正式版 tag 运行。
+公证步骤位于 DMG 打包与 `actions/upload-artifact` 之间,因此公证、staple、Gatekeeper 或内部 App 验证失败都会阻止 GitHub Release 上传。R2 `sync` job 依赖两个平台构建成功,并且只对干净正式版 tag 运行。
 
 ## GitHub Secrets
 
@@ -53,11 +53,11 @@
 | `CSC_KEY_PASSWORD` | 导出 `.p12` 时设置的密码 |
 | `APPLE_ID` | Apple ID 邮箱 |
 | `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID App 专用密码 |
-| `APPLE_TEAM_ID` | Apple Developer Team ID，例如 `RHQ28XS7D9` |
+| `APPLE_TEAM_ID` | Apple Developer Team ID,例如 `RHQ28XS7D9` |
 
-空的 `CSC_LINK` 会被 electron-builder 当作证书路径，因此无证书分支不能设置该变量。Secrets 不直接出现在 step `if` 中，而是先转成 job env 布尔值。
+空的 `CSC_LINK` 会被 electron-builder 当作证书路径,因此无证书分支不能设置该变量。Secrets 不直接出现在 step `if` 中,而是先转成 job env 布尔值。
 
-一次性导出证书并生成 `CSC_LINK`：
+一次性导出证书并生成 `CSC_LINK`:
 
 ```bash
 security export -t identities -f pkcs12 -o /tmp/cert.p12
@@ -65,37 +65,39 @@ base64 -i /tmp/cert.p12 | pbcopy
 rm /tmp/cert.p12
 ```
 
-导出密码保存为 `CSC_KEY_PASSWORD`。证书私钥和 Apple 凭据只放 GitHub Secrets；Apple 登录使用 App 专用密码，不使用主密码。
+导出密码保存为 `CSC_KEY_PASSWORD`。证书私钥和 Apple 凭据只放 GitHub Secrets;Apple 登录使用 App 专用密码,不使用主密码。
 
 ## 发布用法
 
 ```bash
-# 正式版：GitHub Latest + R2，macOS DMG 必须通过完整公证门禁
+# 正式版:GitHub Latest + R2,macOS DMG 必须通过完整公证门禁
 git tag v0.9.1
 git push origin v0.9.1
 
-# 预发布：只到 GitHub Pre-release，不同步 R2
+# 预发布:只到 GitHub Pre-release,不同步 R2
 git tag v0.9.1-beta
 git push origin v0.9.1-beta
 ```
 
 ## 本地构建
 
-前置条件：
+前置条件:
 
-1. 登录钥匙串中存在 `Developer ID Application` 身份：
+1. 登录钥匙串中存在 `Developer ID Application` 身份:
 
    ```bash
-   security find-identity -v -p codesigning
+   security find-identity -v
    ```
 
-2. Xcode Command Line Tools 提供 `notarytool`：
+   **不要加 `-p codesigning`**:那样只列**有效**身份,会把 `CSSMERR_TP_NOT_TRUSTED` 的证书整条藏掉(典型成因是缺 WWDR 中间证书),排查时会误以为证书根本没装。见 [screen-permission-preflight-deadlock.md](../postmortems/screen-permission-preflight-deadlock.md)。
+
+2. Xcode Command Line Tools 提供 `notarytool`:
 
    ```bash
    xcrun --find notarytool
    ```
 
-3. 在不会提交的 `.env.local` 中配置三项 Apple 凭据：
+3. 在不会提交的 `.env.local` 中配置三项 Apple 凭据:
 
    ```text
    APPLE_ID=你的Apple ID邮箱
@@ -103,27 +105,27 @@ git push origin v0.9.1-beta
    APPLE_TEAM_ID=RHQ28XS7D9
    ```
 
-本地生成正式版等价产物：
+本地生成正式版等价产物:
 
 ```bash
 set -a; source .env.local; set +a
 pnpm run dist:mac:sign
 ```
 
-该命令等价于：
+该命令等价于:
 
 ```bash
 pnpm run dist:mac:package-signed
 pnpm run notarize:mac:dmgs
 ```
 
-`dist:mac:package-signed` **不关闭**内置公证（`electron-builder.yml` 的 `mac.notarize: true`），因此它会在**打 DMG 之前**把票据 staple 到 `.app` 上——这是用户把 app 拖出 DMG 后仍能离线通过 Gatekeeper 的前提；`dmg.sign=true` 使用同一 Developer ID Application 身份签名最终 DMG；`notarize:mac:dmgs` 对这三个已签名 DMG 执行完整门禁，并断言 DMG 内的 App 自带票据。
+`dist:mac:package-signed` **不关闭**内置公证(`electron-builder.yml` 的 `mac.notarize: true`),因此它会在**打 DMG 之前**把票据 staple 到 `.app` 上——这是用户把 app 拖出 DMG 后仍能离线通过 Gatekeeper 的前提;`dmg.sign=true` 使用同一 Developer ID Application 身份签名最终 DMG;`notarize:mac:dmgs` 对这三个已签名 DMG 执行完整门禁,并断言 DMG 内的 App 自带票据。
 
-预发布档走 `pnpm dist:mac`，它才传 `-c.mac.notarize=false`（只签名不公证）。
+预发布档走 `pnpm dist:mac`,它才传 `-c.mac.notarize=false`(只签名不公证)。
 
 ## 每个 DMG 的验证门禁
 
-`build/notarize-dmgs.cjs` 严格要求同一产品版本的 arm64、x64、universal 三个 DMG。每个文件依次执行：
+`build/notarize-dmgs.cjs` 严格要求同一产品版本的 arm64、x64、universal 三个 DMG。每个文件依次执行:
 
 ```bash
 hdiutil verify "$DMG"
@@ -144,7 +146,7 @@ xcrun notarytool log "$SUBMISSION_ID" \
   --password "$APPLE_APP_SPECIFIC_PASSWORD" \
   --team-id "$APPLE_TEAM_ID" \
   --output-format json
-# 自动断言 jobId、Accepted 状态和零 error，并留档为 *.notary-log.json
+# 自动断言 jobId、Accepted 状态和零 error,并留档为 *.notary-log.json
 
 xcrun stapler staple "$DMG"
 xcrun stapler validate "$DMG"
@@ -157,20 +159,20 @@ spctl --assess \
   "$DMG"
 ```
 
-随后只读挂载 DMG，并对其中的 App 执行：
+随后只读挂载 DMG,并对其中的 App 执行:
 
 ```bash
 codesign --verify --deep --strict --verbose=2 "/挂载点/Transfer.app"
 xcrun stapler validate "/挂载点/Transfer.app"
 ```
 
-第二条是**票据装订**的验收点：`spctl --assess` 联网时会通过在线查票而成功，`codesign` 只验签名，两者都分辨不出票据有没有装订到 App 上。装不上就意味着用户拖出 App 后首次启动必须联网、断网被拦（v1.0.0 实测踩过）。
+第二条是**票据装订**的验收点:`spctl --assess` 联网时会通过在线查票而成功,`codesign` 只验签名,两者都分辨不出票据有没有装订到 App 上。装不上就意味着用户拖出 App 后首次启动必须联网、断网被拦(v1.0.0 实测踩过)。
 
-脚本只接受 `notarytool` JSON 中的 `status: Accepted`，同时要求有效 submission ID。Accepted 后必须成功读取对应日志，确认 submission、状态和零 error，再将日志随 Actions artifact 留档。Apple 返回 `Invalid` 时会尽力读取日志，但诊断日志查询失败不会覆盖原始拒绝错误。
+脚本只接受 `notarytool` JSON 中的 `status: Accepted`,同时要求有效 submission ID。Accepted 后必须成功读取对应日志,确认 submission、状态和零 error,再将日志随 Actions artifact 留档。Apple 返回 `Invalid` 时会尽力读取日志,但诊断日志查询失败不会覆盖原始拒绝错误。
 
 ## 产物与发布
 
-三个文件名分别为：
+三个文件名分别为:
 
 ```text
 Transfer-<version>-mac-arm64.dmg
@@ -178,12 +180,12 @@ Transfer-<version>-mac-x64.dmg
 Transfer-<version>-mac-universal.dmg
 ```
 
-- arm64：Apple Silicon 原生版本。
-- x64：Intel 版本；Apple Silicon 可通过 Rosetta 运行。
-- universal：同时包含 arm64 和 x64，供无法确定架构的用户使用。
+- arm64:Apple Silicon 原生版本。
+- x64:Intel 版本;Apple Silicon 可通过 Rosetta 运行。
+- universal:同时包含 arm64 和 x64,供无法确定架构的用户使用。
 
-正式版同步顺序是安装包先上传到 `releases/v<version>/`，最后才覆盖 R2 根目录的 `latest.json`。预发布不会启动 `sync` job，因此不会污染 R2 的正式版下载指针。
+正式版同步顺序是安装包先上传到 `releases/v<version>/`,最后才覆盖 R2 根目录的 `latest.json`。预发布不会启动 `sync` job,因此不会污染 R2 的正式版下载指针。
 
 ## 验证边界
 
-单元测试通过 fake command runner 验证命令顺序、失败传播和卸载清理，不会假装访问过 Apple。真实端到端结果以正式版 tag，或手动 `verify_formal_macos=true` 的 macOS GitHub Actions 为准；CI 中三个 DMG 的签名身份/时间戳、Accepted 日志、stapled ticket 和 Gatekeeper 全部通过后，才算线上公证验证完成。
+单元测试通过 fake command runner 验证命令顺序、失败传播和卸载清理,不会假装访问过 Apple。真实端到端结果以正式版 tag,或手动 `verify_formal_macos=true` 的 macOS GitHub Actions 为准;CI 中三个 DMG 的签名身份/时间戳、Accepted 日志、stapled ticket 和 Gatekeeper 全部通过后,才算线上公证验证完成。
