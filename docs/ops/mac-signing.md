@@ -117,7 +117,9 @@ pnpm run dist:mac:package-signed
 pnpm run notarize:mac:dmgs
 ```
 
-`dist:mac:package-signed` 显式设置 `mac.notarize=false`，避免 electron-builder 在 DMG 创建前公证内部 App；`dmg.sign=true` 使用同一 Developer ID Application 身份签名最终 DMG；`notarize:mac:dmgs` 对这三个已签名 DMG 执行完整门禁。
+`dist:mac:package-signed` **不关闭**内置公证（`electron-builder.yml` 的 `mac.notarize: true`），因此它会在**打 DMG 之前**把票据 staple 到 `.app` 上——这是用户把 app 拖出 DMG 后仍能离线通过 Gatekeeper 的前提；`dmg.sign=true` 使用同一 Developer ID Application 身份签名最终 DMG；`notarize:mac:dmgs` 对这三个已签名 DMG 执行完整门禁，并断言 DMG 内的 App 自带票据。
+
+预发布档走 `pnpm dist:mac`，它才传 `-c.mac.notarize=false`（只签名不公证）。
 
 ## 每个 DMG 的验证门禁
 
@@ -159,7 +161,10 @@ spctl --assess \
 
 ```bash
 codesign --verify --deep --strict --verbose=2 "/挂载点/Transfer.app"
+xcrun stapler validate "/挂载点/Transfer.app"
 ```
+
+第二条是**票据装订**的验收点：`spctl --assess` 联网时会通过在线查票而成功，`codesign` 只验签名，两者都分辨不出票据有没有装订到 App 上。装不上就意味着用户拖出 App 后首次启动必须联网、断网被拦（v1.0.0 实测踩过）。
 
 脚本只接受 `notarytool` JSON 中的 `status: Accepted`，同时要求有效 submission ID。Accepted 后必须成功读取对应日志，确认 submission、状态和零 error，再将日志随 Actions artifact 留档。Apple 返回 `Invalid` 时会尽力读取日志，但诊断日志查询失败不会覆盖原始拒绝错误。
 
