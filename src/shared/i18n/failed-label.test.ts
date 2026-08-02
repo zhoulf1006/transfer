@@ -16,7 +16,13 @@ describe('failedLabelKey', () => {
     enospc: 'chat.failed.enospc',
     sha256: 'chat.failed.sha256',
     network: 'chat.failed.network',
-    directory: 'chat.failed.directory'
+    directory: 'chat.failed.directory',
+    protocol: 'chat.failed.protocol',
+    'pin-required': 'chat.failed.pinRequired',
+    'rate-limited': 'chat.failed.rateLimited',
+    'peer-error': 'chat.failed.peerError',
+    'file-missing': 'chat.failed.fileMissing',
+    'no-permission': 'chat.failed.noPermission'
   }
 
   for (const [reason, key] of Object.entries(EXPECTED)) {

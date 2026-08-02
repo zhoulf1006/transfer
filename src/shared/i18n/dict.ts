@@ -63,6 +63,12 @@ const zh = {
   'chat.failed.sha256': '文件校验失败',
   'chat.failed.network': '网络错误',
   'chat.failed.directory': '暂不支持发送文件夹',
+  'chat.failed.protocol': '对方无法识别本次请求(版本可能不兼容)',
+  'chat.failed.pinRequired': '对方开启了 PIN 校验,当前版本尚不支持',
+  'chat.failed.rateLimited': '请求过于频繁,请稍后再试',
+  'chat.failed.peerError': '对方处理时出错',
+  'chat.failed.fileMissing': '文件已不存在或被移动',
+  'chat.failed.noPermission': '没有读取该文件的权限',
   'chat.failed.default': '失败',
 
   // downloads:已接收文件页
@@ -219,6 +225,12 @@ const en: Record<TKey, string> = {
   'chat.failed.sha256': 'File verification failed',
   'chat.failed.network': 'Network error',
   'chat.failed.directory': 'Folders are not supported',
+  'chat.failed.protocol': "The other device couldn't understand the request (version mismatch)",
+  'chat.failed.pinRequired': 'The other device requires a PIN, which this version does not support',
+  'chat.failed.rateLimited': 'Too many requests — please try again shortly',
+  'chat.failed.peerError': 'The other device hit an error',
+  'chat.failed.fileMissing': 'The file no longer exists or was moved',
+  'chat.failed.noPermission': 'No permission to read this file',
   'chat.failed.default': 'Failed',
 
   'downloads.title': 'Received Files',

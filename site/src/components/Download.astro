@@ -37,8 +37,8 @@ const winItems = DOWNLOADS.filter((d) => d.os === 'win')
           <div class="dl-row">
             <div class="dl-label">{t(item.labelKey)}</div>
             <div class="dl-actions">
-              <a class="btn btn-primary btn-sm" href={item.sources.github} target="_blank" rel="noopener">{t('download.source.primary')}</a>
-              <a class="dl-alt" href={item.sources.r2}>{t('download.source.cloudflare')}</a>
+              <a class="btn btn-primary btn-sm" href={item.sources.r2}>{t('download.source.primary')}</a>
+              <a class="btn btn-ghost btn-sm" href={item.sources.github} target="_blank" rel="noopener">{t('download.source.github')}</a>
             </div>
           </div>
         ))}
@@ -53,8 +53,8 @@ const winItems = DOWNLOADS.filter((d) => d.os === 'win')
           <div class="dl-row">
             <div class="dl-label">{t(item.labelKey)}</div>
             <div class="dl-actions">
-              <a class="btn btn-primary btn-sm" href={item.sources.github} target="_blank" rel="noopener">{t('download.source.primary')}</a>
-              <a class="dl-alt" href={item.sources.r2}>{t('download.source.cloudflare')}</a>
+              <a class="btn btn-primary btn-sm" href={item.sources.r2}>{t('download.source.primary')}</a>
+              <a class="btn btn-ghost btn-sm" href={item.sources.github} target="_blank" rel="noopener">{t('download.source.github')}</a>
             </div>
           </div>
         ))}
@@ -114,13 +114,33 @@ const winItems = DOWNLOADS.filter((d) => d.os === 'win')
       align-items: center;
       gap: 14px;
     }
-    .dl-alt {
-      font-size: 0.85rem;
-      color: var(--fg-muted);
-    }
     @media (max-width: 860px) {
       .dl-grid {
         grid-template-columns: 1fr;
+      }
+    }
+    /* 手机:标签独占一行,两个下载按钮并排在下(方案 A)。
+       不挤在一行的原因:标签里带着关键提示(如"通用版 (不确定就选这个)"、
+       "Universal (pick this if unsure)"),挤一行时它会被截断——而那句提示
+       恰恰是拿不准的用户最需要看到的。两按钮各占一半,点击目标也更大。 */
+    @media (max-width: 560px) {
+      .dl-col {
+        padding: 4px 14px 12px;
+      }
+      .dl-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+      }
+      .dl-label {
+        font-size: 0.92rem;
+      }
+      .dl-actions {
+        gap: 10px;
+      }
+      .dl-actions .btn-sm {
+        flex: 1; /* 等宽两半,不随文字长短一大一小 */
+        justify-content: center;
       }
     }
   </style>

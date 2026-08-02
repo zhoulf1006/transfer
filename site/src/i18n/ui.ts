@@ -71,7 +71,7 @@ const zh = {
   'download.win.setup': '安装版 (Setup)',
   'download.win.portable': '免安装版 (Portable)',
   'download.source.primary': '下载',
-  'download.source.cloudflare': 'Cloudflare',
+  'download.source.github': 'GitHub',
   'download.stats.prefix': '当前已有',
   'download.stats.suffix': '次下载',
 
@@ -147,7 +147,7 @@ const en: Record<UIKey, string> = {
   'download.win.setup': 'Installer (Setup)',
   'download.win.portable': 'Portable',
   'download.source.primary': 'Download',
-  'download.source.cloudflare': 'Cloudflare',
+  'download.source.github': 'GitHub',
   'download.stats.prefix': 'Downloads so far:',
   'download.stats.suffix': '',
 

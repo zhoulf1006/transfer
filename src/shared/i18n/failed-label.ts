@@ -18,7 +18,13 @@ const FAILED_KEY: Record<ErrorReason, TKey> = {
   sha256: 'chat.failed.sha256',
   network: 'chat.failed.network',
   // 用户选了文件夹或 macOS 的包(.app/.pages 等,访达显示成单个文件但实际是目录)
-  directory: 'chat.failed.directory'
+  directory: 'chat.failed.directory',
+  protocol: 'chat.failed.protocol',
+  'pin-required': 'chat.failed.pinRequired',
+  'rate-limited': 'chat.failed.rateLimited',
+  'peer-error': 'chat.failed.peerError',
+  'file-missing': 'chat.failed.fileMissing',
+  'no-permission': 'chat.failed.noPermission'
 }
 
 /**
