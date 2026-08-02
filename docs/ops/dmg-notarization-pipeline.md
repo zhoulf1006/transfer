@@ -11,14 +11,15 @@
 
 - electron-builder 26.15.3 的 `mac.notarize=true` 对签名后的 `.app` 执行，发生在 DMG 创建之前。
 - 线上 0.9.0 arm64 DMG 镜像完整，但无 DMG ticket，`spctl --type open` 返回 `rejected / no usable signature`；内部 App 的 Developer ID 签名、stapled ticket 和 Gatekeeper 验证均通过。
-- Apple 对嵌套分发的建议是：内部代码从内向外签名，签名最外层 DMG，并且只公证和 staple 最外层容器。
+- Apple 对嵌套分发的建议是：内部代码从内向外签名，签名最外层 DMG，并公证和 staple 最外层容器。
+- **只 staple 最外层容器不够**：ticket 跟着被装订的文件走，用户把 App 拖出 DMG 后票据留在 DMG 里，App 首次启动只能联网查票，断网即被 Gatekeeper 拦下。0.9.0 的问题（App 有票据、DMG 没有）与 1.0.0 的问题（DMG 有票据、App 没有）是同一枚硬币的两面，正解是两处都钉。
 
 ## 流水线
 
 ### 正式版
 
 1. 在互斥打包分支之前校验签名证书和三项 Apple 公证凭据；`HAS_APPLE` 同时检查 Apple ID、App 专用密码和 Team ID，缺任一项则 macOS job 失败。
-2. electron-builder 使用 Developer ID 签名 App、生成 arm64/x64/universal 三个 DMG，再用同一 Developer ID Application 身份签名每个 DMG；同时显式关闭内置 App 公证。
+2. electron-builder 使用 Developer ID 签名 App，**开启内置公证**（`mac.notarize: true`）把票据 staple 到 `.app` 上，再生成 arm64/x64/universal 三个 DMG（内部 App 已带票据），并用同一 Developer ID Application 身份签名每个 DMG。内置公证跑在打包步骤内，因此三项 Apple 凭据必须注入该步骤；凭据缺失时 electron-builder 只 warn 后静默跳过、不报错，兜底断言见第 4 步的最后一条。预发布档走 `pnpm dist:mac`，以 `-c.mac.notarize=false` 显式关闭。
 3. 公证脚本严格识别同一产品版本的三个预期 DMG，缺失、重复或出现未知架构均失败。
 4. 每个 DMG 串行执行：
    - `hdiutil verify`
@@ -31,6 +32,7 @@
    - 再次 `hdiutil verify`，验证 staple 后的最终文件
    - `spctl --assess --type open --context context:primary-signature`
    - 只读挂载，检查 `Transfer.app` 并执行 `codesign --verify --deep --strict`
+   - 对挂载点内的 `Transfer.app` 执行 `xcrun stapler validate`，断言它**自带**公证票据。这是第 2 步内置公证的验收点：凭据漏配、内置公证被误关、`@electron/notarize` 静默失败，都只能在这里被发现——`spctl --assess` 联网时会在线查票成功，分辨不出票据有没有装订上
    - 验证失败时仍卸载本轮镜像；普通卸载失败则用 `-force` 兜底，清理错误不覆盖原始验证错误
 5. 三个 DMG 全部通过后，才上传 Actions artifact 和 GitHub Release。
 6. `sync` job 仅对正式版执行，下载 Windows/macOS artifact，生成 `latest.json` 并上传 R2。

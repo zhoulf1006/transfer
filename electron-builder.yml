@@ -61,14 +61,21 @@ mac:
   electronLanguages: [en, en_GB, zh_CN]
   icon: build/icon.icns       # 应用图标(紫底 + 白色纸飞机,主色 #8a67ab)
   # 加固运行时 + entitlements(签名时生效;Electron/V8 加固运行时必需)。
-  # 公证**不写在这里**:electron-builder 的内置流程发生在 DMG 创建前；正式版改由 build/notarize-dmgs.cjs 公证最终 DMG。
   # CI:mac job 用 CSC_IDENTITY_AUTO_DISCOVERY:false → 无签名身份 → electron-builder 跳过签名,
   # 这些字段对未签名构建无副作用。本地 pnpm dist:mac:钥匙串有 Developer ID → 自动签名。
   hardenedRuntime: true                       # 公证前提:启用加固运行时
   gatekeeperAssess: false                      # 打包时不本地跑 Gatekeeper 评估(交给公证)
   entitlements: build/entitlements.mac.plist   # Electron/V8 加固运行时必需
   entitlementsInherit: build/entitlements.mac.plist
-  # notarize:正式版打包显式关闭内置 App 公证，最终 DMG 由独立脚本提交 Apple。
+  # 内置公证:签完 .app、**打 DMG 之前**提交 Apple 并 `stapler staple` 到 .app 上
+  # (app-builder-lib 的 notarizeIfProvided → @electron/notarize)。
+  # 这一步不能省成"只公证最终 DMG":staple 到 DMG 的票据随 DMG 一起被丢掉,用户把 app 拖进
+  # 「应用程序」后它身上没有票据,首次启动 Gatekeeper 只能联网查,断网即判"无法验证"。
+  # 两处都要钉:app 的票据管"拖出来之后",DMG 的票据(build/notarize-dmgs.cjs)管"打开 DMG 时"。
+  # 凭据缺失时 electron-builder 只 warn 后静默跳过,不报错 —— 兜底断言在 notarize-dmgs.cjs
+  # 里(挂载 DMG 后对内部 .app 跑 stapler validate),漏配凭据会在那里失败。
+  # 预发布档走 `pnpm dist:mac`,用 -c.mac.notarize=false 显式关掉(只签名不公证)。
+  notarize: true
 
 # Mac App Store —— 与上面的 Developer ID/DMG 线并行,两套产物互不影响。
 # 继承 mac 的 category/icon/electronLanguages;下面只写必须覆盖的部分。

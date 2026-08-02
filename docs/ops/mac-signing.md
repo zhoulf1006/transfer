@@ -10,18 +10,22 @@
 ## 签名、公证与 staple
 
 - **签名**：用 `Developer ID Application` 标识开发者并保护 App 与最外层 DMG 的完整性；Electron App 同时启用 Hardened Runtime 和所需 entitlements。
-- **公证**：把最终交付物提交 Apple 扫描。本项目直接分发 DMG，因此只公证最外层 DMG，不再提前单独公证 `.app`。
-- **staple**：把 Apple ticket 装订到 DMG，使 Gatekeeper 无法访问 Apple 服务时仍能验证公证结果。
+- **公证**：把交付物提交 Apple 扫描。**`.app` 与最外层 DMG 都要公证**，两次提交缺一不可（原因见下）。
+- **staple**：把 Apple ticket 装订到交付物，使 Gatekeeper 在无法访问 Apple 服务时仍能验证公证结果。
+
+**为什么两处都要钉**：ticket 按被装订的那个文件走。只钉 DMG 的话，用户把 App 拖进「应用程序」之后 DMG 连同票据一起被丢掉，App 身上没有票据 → 首次启动 Gatekeeper 只能联网查，断网即判「无法验证是否包含恶意软件」。只钉 App 的话，DMG 自身没票据 → 双击打开 DMG 时 `spctl --type open` 判 rejected。**App 的票据管「拖出来之后」，DMG 的票据管「打开 DMG 时」。**
 
 顺序固定为：
 
 ```text
 签名 Transfer.app
-→ 生成 arm64 / x64 / universal DMG
+→ 提交 .app 给 notarytool 并等待 Accepted，staple 到 .app
+   （electron-builder 内置公证，mac.notarize: true，发生在 DMG 创建之前）
+→ 生成 arm64 / x64 / universal DMG（此时 DMG 内的 App 已自带票据）
 → 使用 Developer ID Application 签名每个 DMG
 → 提交每个 DMG 给 notarytool 并等待 Accepted
 → staple DMG
-→ 验证最终 DMG 和内部 App
+→ 验证最终 DMG，并断言 DMG 内 App 自带 stapled ticket
 → 上传 GitHub Release
 → 正式版同步 R2
 ```

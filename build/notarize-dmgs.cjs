@@ -188,7 +188,15 @@ function notarizeDmg(file, options) {
   try {
     run('hdiutil', ['attach', '-readonly', '-nobrowse', '-mountpoint', mountPoint, file])
     attached = true
-    run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', findApp(mountPoint)])
+    const appPath = findApp(mountPoint)
+    run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', appPath])
+    // DMG 内的 .app 必须**自带**公证票据。上面那次 stapler staple 钉的是 DMG 文件;用户把 app
+    // 拖进「应用程序」之后,DMG 连同它的票据就被丢掉了,app 身上什么都没有 → 首次启动
+    // Gatekeeper 只能联网向 Apple 查,断网直接判"无法验证是否包含恶意软件"。
+    // app 的票据由 electron-builder 的内置公证在打 DMG **之前**钉上(见 electron-builder.yml
+    // 的 mac.notarize);这里是它的验收断言 —— 只验 DMG 的话,这个缺陷验不出来
+    // (`spctl --assess` 联网时会在线查票成功,同样分辨不出)。
+    run('xcrun', ['stapler', 'validate', appPath])
   } catch (error) {
     operationError = error
   }

@@ -237,6 +237,38 @@ describe('单个 DMG 公证与验证', () => {
     expect(commands.some((command) => command === 'xcrun notarytool submit')).toBe(false)
   })
 
+  // 缺陷检测器:公证票据若只钉在 DMG 上,用户把 app 拖进「应用程序」后票据就留在 DMG 里了,
+  // app 身上没有票据 → 首次启动 Gatekeeper 必须联网向 Apple 查,断网直接判"无法验证"。
+  // 这条断言的对象必须是**挂载点里的 .app**,不是 DMG 本身。
+  test('校验 DMG 内部 App 自带公证票据(不是只验 DMG)', () => {
+    const stapleValidateTargets: string[] = []
+    const appPath = '/tmp/mount/Transfer.app'
+    notarizeDmg('/release/Transfer-0.9.1-mac-arm64.dmg', {
+      credentials: { appleId: 'developer@example.com', password: 'app-password', teamId: 'TEAM123456' },
+      findApp: () => appPath,
+      makeMountPoint: () => '/tmp/mount',
+      removeMountPoint: () => undefined,
+      run: (command, args) => {
+        if (command === 'xcrun' && args[0] === 'stapler' && args[1] === 'validate') {
+          stapleValidateTargets.push(args[2])
+        }
+        if (command === 'codesign' && args[0] === '--display') {
+          return { stdout: '', stderr: VALID_DMG_SIGNATURE }
+        }
+        if (command === 'xcrun' && args[0] === 'notarytool' && args[1] === 'submit') {
+          return { stdout: JSON.stringify({ id: 'accepted-id', status: 'Accepted' }), stderr: '' }
+        }
+        if (command === 'xcrun' && args[0] === 'notarytool' && args[1] === 'log') {
+          return { stdout: JSON.stringify({ jobId: 'accepted-id', status: 'Accepted', issues: [] }), stderr: '' }
+        }
+        return { stdout: '', stderr: '' }
+      },
+      writeNotaryLog: () => undefined
+    })
+
+    expect(stapleValidateTargets).toContain(appPath)
+  })
+
   test('按 verify → submit → staple → Gatekeeper → 内部 App 签名的顺序执行', () => {
     const commands: string[] = []
     const submitArgs: string[][] = []
@@ -276,6 +308,7 @@ describe('单个 DMG 公证与验证', () => {
       'spctl --assess --type',
       'hdiutil attach -readonly',
       'codesign --verify --deep',
+      'xcrun stapler validate',
       'hdiutil detach /tmp/mount path',
       'remove-mount-point'
     ])
@@ -396,12 +429,33 @@ describe('GitHub Actions 发布门禁', () => {
     expect(syncBlock).toContain("if: startsWith(github.ref, 'refs/tags/') && !(endsWith(github.ref, '-beta') || endsWith(github.ref, '-rc') || endsWith(github.ref, '-alpha') || endsWith(github.ref, '-dev'))")
   })
 
-  test('所有 DMG 打包入口都显式关闭 electron-builder 的内部 App 公证', () => {
+  // 两个入口的公证契约相反,别写成"统一关闭":
+  // 正式版必须开着内置公证 —— 它在签完 .app、打 DMG 之前把票据 staple 到 .app 上,
+  // 而 staple 到 DMG 的票据会随 DMG 一起被用户丢掉(拖进「应用程序」之后 app 身上没票据,
+  // 首次启动 Gatekeeper 只能联网查,断网即判"无法验证")。预发布档只签名不公证,必须显式关。
+  test('预发布入口关闭内置公证,正式版入口保持开启', () => {
     const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
       scripts: Record<string, string>
     }
 
     expect(pkg.scripts['dist:mac']).toContain('-c.mac.notarize=false')
-    expect(pkg.scripts['dist:mac:package-signed']).toContain('-c.mac.notarize=false')
+    expect(pkg.scripts['dist:mac:package-signed']).not.toContain('-c.mac.notarize=false')
+  })
+
+  // electron-builder 在凭据缺失时只 warn 后静默跳过公证,不报错。凭据必须注入到**打包那一步**
+  // (内置公证跑在它里面),只给后面的 notarize 步骤是不够的 —— 那样产出的 app 没有票据而 CI 全绿。
+  test('正式版打包步骤注入了公证凭据,且 electron-builder 配置开启内置公证', () => {
+    const workflow = readFileSync(new URL('../../.github/workflows/build.yml', import.meta.url), 'utf8')
+    const packageStep = workflow.slice(
+      workflow.indexOf('run: pnpm run dist:mac:package-signed'),
+      workflow.indexOf('# ② 预发布/手动运行:有证书则只签名。')
+    )
+
+    expect(packageStep).toContain('APPLE_ID:')
+    expect(packageStep).toContain('APPLE_APP_SPECIFIC_PASSWORD:')
+    expect(packageStep).toContain('APPLE_TEAM_ID:')
+
+    const builderConfig = readFileSync(new URL('../../electron-builder.yml', import.meta.url), 'utf8')
+    expect(builderConfig).toMatch(/^\s{2}notarize:\s*true\s*$/m)
   })
 })
