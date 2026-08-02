@@ -214,7 +214,7 @@ export const T_UPLOAD_MS = 5 * 60_000    // 单个 upload 超时(S4:防接收方
         │                   │           │
         │                   ▼           ▼
         │          丢弃旧 PENDING     返回 409 Blocked
-        │          关旧弹框，用新的
+        │          关旧弹框,用新的
         │                   │
         ▼                   ▼
      创建 PENDING 会话,弹框问用户
