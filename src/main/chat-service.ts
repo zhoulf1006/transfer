@@ -56,6 +56,57 @@ interface PendingResolver {
   fileIds: string[]
 }
 
+/** 发送失败的来源信息。结构在冒泡时保留,分类才不必靠猜关键词(#21)。 */
+export interface SendErrorInfo {
+  /** 原始错误文本;仅在无 status/code 时用于关键词兜底 */
+  message: string
+  /** 对端响应的 HTTP 状态码(失败来自响应时) */
+  status?: number
+  /** Node 错误码(失败来自本地或传输时,如 ENOENT / ECONNRESET) */
+  code?: string
+}
+
+/**
+ * 会处理的协议状态码。**加成员必须同时补下表**,否则编译报错——这正是本次要根治的
+ * "新增失败类型静默落兜底"。403/409 不在此列:http-client 已把它们译成
+ * rejected/busy,不会走到分类。
+ */
+type HandledStatus = 400 | 401 | 429 | 500
+const BY_STATUS: Record<HandledStatus, ErrorReason> = {
+  400: 'protocol',
+  401: 'pin-required',
+  429: 'rate-limited',
+  500: 'peer-error'
+}
+
+/** 会处理的 Node 错误码。同上,加成员必须补表。 */
+type HandledCode = 'ENOENT' | 'EACCES' | 'EPERM' | 'ETIMEDOUT' | 'ECONNREFUSED' | 'ECERT'
+const BY_CODE: Record<HandledCode, ErrorReason> = {
+  ENOENT: 'file-missing',
+  EACCES: 'no-permission',
+  EPERM: 'no-permission',
+  ETIMEDOUT: 'timeout',
+  ECONNREFUSED: 'refused',
+  ECERT: 'cert-mismatch'
+}
+
+/**
+ * 结构化分类(#21)。优先用 code / status 这类**确定信息**,只有两者都没有时
+ * 才退回关键词匹配。落到 'network' 的仅剩真正未知的情形——那时兜底是诚实的,
+ * 而不是像从前那样把协议错误、文件不存在、权限不足统统说成"网络错误"。
+ */
+export function classifySendError(e: SendErrorInfo): ErrorReason {
+  // 用 Object.hasOwn 而非 `in`:后者走原型链,code='toString' 会取出函数(类型断言拦不住)
+  if (e.code && Object.hasOwn(BY_CODE, e.code)) return BY_CODE[e.code as HandledCode]
+  if (e.status !== undefined && Object.hasOwn(BY_STATUS, e.status)) return BY_STATUS[e.status as HandledStatus]
+  if (e.code || e.status !== undefined) return 'network' // 有结构但不认识:不再猜关键词
+  return classifyError(e.message)
+}
+
+/**
+ * 关键词兜底(**仅在无 status/code 时使用**)。保留是因为部分错误冒泡后确实只剩文本。
+ * 新代码应走 classifySendError 并带上结构信息。
+ */
 /**
  * 把 http-client 发送失败的错误串映射成细分 errorReason,让 UI 能给出明确文案
  * (而非一律"失败")。error 冒泡到此处只剩 message 字符串,故按关键词匹配:
@@ -376,7 +427,7 @@ export class ChatService {
               ? 'failed'
               : 'failed'
       const reason: ErrorReason | undefined =
-        res.kind === 'busy' ? 'busy' : res.kind === 'error' ? classifyError(res.message) : undefined
+        res.kind === 'busy' ? 'busy' : res.kind === 'error' ? classifySendError(res) : undefined
       sendable.forEach(({ msg }) => {
         const updated = this.d.store.updateStatus(msg.id, status, reason ? { errorReason: reason } : undefined)!
         this.upsert(updated)
@@ -413,7 +464,7 @@ export class ChatService {
       result.kind === 'busy'
         ? 'busy'
         : result.kind === 'error'
-          ? classifyError(result.message)
+          ? classifySendError(result)
           : undefined
     const m = this.d.store.updateStatus(msgId, status, reason ? { errorReason: reason } : undefined)!
     this.upsert(m)

@@ -1,5 +1,5 @@
 import { test, expect, describe, beforeEach, afterEach } from 'vitest'
-import { ChatService, classifyError } from './chat-service'
+import { ChatService, classifyError, classifySendError } from './chat-service'
 import { MessageStore } from './db/messages'
 import type { Message } from '@shared/message'
 import { SettingsStore } from './settings'
@@ -355,6 +355,54 @@ describe('ChatService', () => {
     expect(classifyError('Error: ECERT xyz')).toBe('cert-mismatch')
     expect(classifyError('socket hang up')).toBe('network')
     expect(classifyError('')).toBe('network')
+  })
+
+  // 结构化分类(#21):失败来源的 HTTP 状态码 / Node 错误码在冒泡时被保留,
+  // 分类不再靠猜关键词。旧的 classifyError 只在无结构信息时兜底。
+  describe('classifySendError — 结构化分类', () => {
+    test('协议状态码各自可辨,不再一律"网络错误"', () => {
+      expect(classifySendError({ message: 'x', status: 400 })).toBe('protocol')
+      expect(classifySendError({ message: 'x', status: 401 })).toBe('pin-required')
+      expect(classifySendError({ message: 'x', status: 429 })).toBe('rate-limited')
+      expect(classifySendError({ message: 'x', status: 500 })).toBe('peer-error')
+    })
+
+    test('本地文件错误各自可辨:文件已不存在 / 无读取权限', () => {
+      expect(classifySendError({ message: 'x', code: 'ENOENT' })).toBe('file-missing')
+      expect(classifySendError({ message: 'x', code: 'EACCES' })).toBe('no-permission')
+      expect(classifySendError({ message: 'x', code: 'EPERM' })).toBe('no-permission')
+    })
+
+    test('传输层错误码优先于关键词猜测', () => {
+      expect(classifySendError({ message: 'x', code: 'ETIMEDOUT' })).toBe('timeout')
+      expect(classifySendError({ message: 'x', code: 'ECONNREFUSED' })).toBe('refused')
+      expect(classifySendError({ message: 'x', code: 'ECERT' })).toBe('cert-mismatch')
+    })
+
+    test('无结构信息时退回关键词匹配(旧行为不变)', () => {
+      expect(classifySendError({ message: 'connect ETIMEDOUT' })).toBe('timeout')
+      expect(classifySendError({ message: 'socket hang up' })).toBe('network')
+    })
+
+    test('未知状态码/错误码落 network,但那时兜底是诚实的', () => {
+      expect(classifySendError({ message: 'x', status: 418 })).toBe('network')
+      expect(classifySendError({ message: 'x', code: 'EWHATEVER' })).toBe('network')
+    })
+
+    // in 运算符会走原型链:'toString' in TABLE 为 true,取出来是函数而非 ErrorReason。
+    // 类型断言拦不住这个,界面会拿到函数渲染成乱码。必须用 Object.hasOwn。
+    test('原型链上的键不被误当作已处理(toString/constructor)', () => {
+      expect(classifySendError({ message: 'x', code: 'toString' })).toBe('network')
+      expect(classifySendError({ message: 'x', code: 'constructor' })).toBe('network')
+      expect(classifySendError({ message: 'x', code: 'hasOwnProperty' })).toBe('network')
+    })
+
+    // 403/409 在 http-client 就被译成 rejected/busy,不该走到分类函数;
+    // 万一走到,也不能被误判成别的原因。
+    test('403/409 不由本函数处理(上游已译成 rejected/busy)', () => {
+      expect(classifySendError({ message: 'x', status: 403 })).toBe('network')
+      expect(classifySendError({ message: 'x', status: 409 })).toBe('network')
+    })
   })
 
   // ── 发送串行化 ──

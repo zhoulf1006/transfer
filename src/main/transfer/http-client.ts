@@ -36,7 +36,7 @@ export type SendResult =
   | { kind: 'done'; sessionId: string; sent: string[] }
   | { kind: 'rejected' } // 对方 403
   | { kind: 'busy' } // 对方 409
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; message: string; status?: number; code?: string }
 
 // ── TLS agents ──────────────────────────────────────────────────────────
 
@@ -261,13 +261,13 @@ export async function sendFiles(
       T_SENDER_MS
     )
   } catch (err) {
-    return { kind: 'error', message: `prepare-upload failed: ${(err as Error).message}` }
+    return { kind: 'error', message: `prepare-upload failed: ${(err as Error).message}`, code: (err as NodeJS.ErrnoException).code }
   }
 
   if (prepareRes.status === 403) return { kind: 'rejected' }
   if (prepareRes.status === 409) return { kind: 'busy' }
   if (prepareRes.status !== 200) {
-    return { kind: 'error', message: `prepare-upload status ${prepareRes.status}` }
+    return { kind: 'error', message: `prepare-upload status ${prepareRes.status}`, status: prepareRes.status }
   }
 
   const { sessionId, files: tokens } = JSON.parse(prepareRes.body) as PrepareUploadResponse
@@ -294,7 +294,7 @@ export async function sendFiles(
   try {
     await Promise.all(uploads)
   } catch (err) {
-    return { kind: 'error', message: (err as Error).message }
+    return { kind: 'error', message: (err as Error).message, code: (err as NodeJS.ErrnoException).code }
   }
 
   return { kind: 'done', sessionId, sent: Object.keys(tokens) }
@@ -304,7 +304,7 @@ export type SendTextResult =
   | { kind: 'done' } // 对方 204(文本已入流)或 200
   | { kind: 'rejected' } // 403
   | { kind: 'busy' } // 409
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; message: string; status?: number; code?: string }
 
 /**
  * 发送文本消息(DESIGN §11.2):编码成 fileType=text + preview,走 prepare-upload。
@@ -327,13 +327,13 @@ export async function sendText(
       T_SENDER_MS
     )
   } catch (err) {
-    return { kind: 'error', message: `send text failed: ${(err as Error).message}` }
+    return { kind: 'error', message: `send text failed: ${(err as Error).message}`, code: (err as NodeJS.ErrnoException).code }
   }
   if (res.status === 403) return { kind: 'rejected' }
   if (res.status === 409) return { kind: 'busy' }
   // 204(文本已入流)或 200(对方当普通文件处理了)都算成功
   if (res.status === 204 || res.status === 200) return { kind: 'done' }
-  return { kind: 'error', message: `send text status ${res.status}` }
+  return { kind: 'error', message: `send text status ${res.status}`, status: res.status }
 }
 
 /** 通知对方取消会话(DESIGN §5)。fire-and-forget。 */
