@@ -36,6 +36,14 @@ export type ErrorReason =
   | 'cert-mismatch'
   | 'offline'
   | 'directory'
+  // 协议层:对端明确回了状态码(见 LocalSend 协议)
+  | 'protocol' // 400 对方无法解析请求(版本/实现不兼容)
+  | 'pin-required' // 401 对方需要 PIN(本项目尚未实现 PIN,仅识别并提示)
+  | 'rate-limited' // 429 请求过于频繁
+  | 'peer-error' // 500 对方内部错误
+  // 本地文件层
+  | 'file-missing' // ENOENT 选中后文件被删/移动
+  | 'no-permission'
 
 /**
  * 一条消息(文本或文件)的完整形状。
