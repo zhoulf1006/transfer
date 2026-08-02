@@ -1,0 +1,57 @@
+name: Checks
+
+# 质量门禁:每个 PR 与每次进 master 都跑。
+# 与 build.yml 分开:那个只在打 tag 时触发、只负责打包发版,不做任何检查。
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+# 同一分支上新的推送取消旧的运行,避免连续 push 时排队跑陈旧的提交。
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # pnpm 必须在 setup-node 之前:setup-node 的 cache: 'pnpm' 会调用 pnpm 探测 store 路径。
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        # 不填 version:自动读取 package.json 的 packageManager 字段
+
+      # 必须是 22,不能沿用 build.yml 的 20:测试经 src/main/db/messages.ts 加载
+      # node:sqlite,该模块 Node 22.5 才有。build.yml 用 20 没暴露,是因为它只打包不跑测试。
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # 根 vitest 的 include 覆盖 src/** 与 site/src/**,两侧测试一次跑完。
+      - name: Test
+        run: pnpm test
+
+      # 构建期错误(模块解析、插件配置)typecheck 看不见,单独跑一次。
+      - name: Build (electron-vite)
+        run: pnpm build
+
+      # site 有独立的 package.json / lockfile / node_modules,不在根 workspace 里。
+      - name: Install site dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: site
+
+      - name: Build site (Astro)
+        run: pnpm build
+        working-directory: site
