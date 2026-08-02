@@ -37,8 +37,8 @@ const winItems = DOWNLOADS.filter((d) => d.os === 'win')
           <div class="dl-row">
             <div class="dl-label">{t(item.labelKey)}</div>
             <div class="dl-actions">
-              <a class="btn btn-primary btn-sm" href={item.sources.github} target="_blank" rel="noopener">{t('download.source.primary')}</a>
-              <a class="btn btn-ghost btn-sm" href={item.sources.r2}>{t('download.source.cloudflare')}</a>
+              <a class="btn btn-primary btn-sm" href={item.sources.r2}>{t('download.source.primary')}</a>
+              <a class="btn btn-ghost btn-sm" href={item.sources.github} target="_blank" rel="noopener">{t('download.source.github')}</a>
             </div>
           </div>
         ))}
@@ -53,8 +53,8 @@ const winItems = DOWNLOADS.filter((d) => d.os === 'win')
           <div class="dl-row">
             <div class="dl-label">{t(item.labelKey)}</div>
             <div class="dl-actions">
-              <a class="btn btn-primary btn-sm" href={item.sources.github} target="_blank" rel="noopener">{t('download.source.primary')}</a>
-              <a class="btn btn-ghost btn-sm" href={item.sources.r2}>{t('download.source.cloudflare')}</a>
+              <a class="btn btn-primary btn-sm" href={item.sources.r2}>{t('download.source.primary')}</a>
+              <a class="btn btn-ghost btn-sm" href={item.sources.github} target="_blank" rel="noopener">{t('download.source.github')}</a>
             </div>
           </div>
         ))}
