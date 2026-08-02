@@ -95,7 +95,6 @@ const en: Record<UIKey, string> = {
   'site.name': 'Transfer',
   'nav.features': 'Features',
   'nav.how': 'How it works',
-  'nav.download': 'Download',
   'nav.github': 'GitHub',
 
   'hero.tagline': 'LAN transfer, as simple as chatting',
