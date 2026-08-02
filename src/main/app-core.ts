@@ -90,6 +90,16 @@ export class AppCore {
           return null
         }
       },
+      // 目录判定不能靠扩展名:macOS 的包(.app/.pages/.xcodeproj)在访达里显示成单个
+      // 文件,文件对话框也允许选中,但它们实际是目录。取不到 stat 时按非目录处理,
+      // 让后续真实的读取错误自行归类。
+      isDirectory: (path) => {
+        try {
+          return statSync(path).isDirectory()
+        } catch {
+          return false
+        }
+      },
       onMessageUpserted: (msg) => opts.events.onMessageUpserted(msg),
       onProgress: (p) => opts.events.onProgress?.(p)
     })

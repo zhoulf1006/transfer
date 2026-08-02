@@ -31,6 +31,11 @@ export interface ChatServiceDeps {
   isReceiveDirWritable: () => boolean
   /** 取本地文件字节数(发送消息入库时填 fileSize);不存在返回 null */
   fileSize?: (path: string) => number | null
+  /** 路径是否为目录(含 macOS 的包:.app/.pages 等,访达显示成单个文件但实际是目录)。
+   *  注入而非直接用 fs,保持 chat-service 可单测。
+   *  **必选**:可选会让"忘记接线"退化成静默不生效——目录重新混进批次、把同批正常
+   *  文件一起判失败,而没有任何报错。这个故障会向上层逃逸,不能靠调用方自觉。 */
+  isDirectory: (path: string) => boolean
   /** 单条消息新增/更新时通知 UI */
   onMessageUpserted: (msg: Message) => void
   /** 传输进度通知 UI(不落库,§12.3):messageId + 已传/总字节 + 方向 */
@@ -344,7 +349,20 @@ export class ChatService {
       if (!peer) {
         return msgs.map((m) => this.fail(m.id, 'offline'))
       }
-      const files = filePaths.map((path, i) => ({ id: msgs[i].id, path }))
+      // 目录(含 macOS 的包)不受支持,**必须在组批之前剔除**:整批共用一个 sender 调用、
+      // 且同一个 status 会套用到批内所有消息,目录若混进去会把同批的正常文件一起判失败。
+      // 目录各自标 'directory',不落到 classifyError 的兜底(那会说成"网络错误")。
+      const isDir = this.d.isDirectory
+      const done = new Map<string, Message>()
+      const sendable: { msg: Message; path: string }[] = []
+      msgs.forEach((m, i) => {
+        if (isDir(filePaths[i])) done.set(m.id, this.fail(m.id, 'directory'))
+        else sendable.push({ msg: m, path: filePaths[i] })
+      })
+      // 全是目录:无需联系对端
+      if (sendable.length === 0) return msgs.map((m) => done.get(m.id)!)
+
+      const files = sendable.map(({ msg, path }) => ({ id: msg.id, path }))
       // 发送进度:fileId === 发送方 msgId,直接推 UI(§12.3)
       const res = await this.d.sender.sendFiles(peer.target, files, (fileId, sent, total) =>
         this.emitProgress(fileId, sent, total, 'send')
@@ -359,11 +377,13 @@ export class ChatService {
               : 'failed'
       const reason: ErrorReason | undefined =
         res.kind === 'busy' ? 'busy' : res.kind === 'error' ? classifyError(res.message) : undefined
-      return msgs.map((m) => {
-        const updated = this.d.store.updateStatus(m.id, status, reason ? { errorReason: reason } : undefined)!
+      sendable.forEach(({ msg }) => {
+        const updated = this.d.store.updateStatus(msg.id, status, reason ? { errorReason: reason } : undefined)!
         this.upsert(updated)
-        return updated
+        done.set(msg.id, updated)
       })
+      // 按原始入参顺序返回,调用方不感知内部分流
+      return msgs.map((m) => done.get(m.id)!)
     })
   }
 

@@ -61,6 +61,7 @@ const zh = {
   'chat.failed.enospc': '磁盘空间不足',
   'chat.failed.sha256': '文件校验失败',
   'chat.failed.network': '网络错误',
+  'chat.failed.directory': '暂不支持发送文件夹',
   'chat.failed.default': '失败',
 
   // downloads:已接收文件页
@@ -215,6 +216,7 @@ const en: Record<TKey, string> = {
   'chat.failed.enospc': 'Not enough disk space',
   'chat.failed.sha256': 'File verification failed',
   'chat.failed.network': 'Network error',
+  'chat.failed.directory': 'Folders are not supported',
   'chat.failed.default': 'Failed',
 
   'downloads.title': 'Received Files',

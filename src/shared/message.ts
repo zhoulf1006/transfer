@@ -35,6 +35,7 @@ export type ErrorReason =
   | 'refused'
   | 'cert-mismatch'
   | 'offline'
+  | 'directory'
 
 /**
  * 一条消息(文本或文件)的完整形状。
