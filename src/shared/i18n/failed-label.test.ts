@@ -15,7 +15,8 @@ describe('failedLabelKey', () => {
     'cert-mismatch': 'chat.failed.certMismatch',
     enospc: 'chat.failed.enospc',
     sha256: 'chat.failed.sha256',
-    network: 'chat.failed.network'
+    network: 'chat.failed.network',
+    directory: 'chat.failed.directory'
   }
 
   for (const [reason, key] of Object.entries(EXPECTED)) {

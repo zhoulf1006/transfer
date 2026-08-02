@@ -52,6 +52,8 @@ describe('ChatService', () => {
   let onlinePeers: Set<string>
   let chat: ChatService
   let dirs: string[]
+  let sentPaths: string[]
+  let senderCalls: number
 
   beforeEach(() => {
     store = new MessageStore(':memory:')
@@ -64,12 +66,23 @@ describe('ChatService', () => {
     sendFilesResult = { kind: 'done', sessionId: 's', sent: [] }
     sendTextResult = { kind: 'done' }
     onlinePeers = new Set(['P'])
+    sentPaths = []
+    senderCalls = 0
 
     chat = new ChatService({
       store,
       settings,
       sender: {
-        sendFiles: async () => sendFilesResult,
+        sendFiles: async (_t, files) => {
+          senderCalls++
+          sentPaths = files.map((f) => f.path)
+          // 复刻真实行为(已实测):createReadStream 对目录**打开成功**,首次读取时才发
+          // stream error(EISDIR: illegal operation on a directory, read)。修复前目录会
+          // 走到这里,错误经 classifyError 兜底成 'network' —— 正是用户看到的"网络错误"。
+          const dir = sentPaths.find((p) => p.includes('folder'))
+          if (dir) return { kind: 'error', message: `EISDIR: illegal operation on a directory, read '${dir}'` }
+          return sendFilesResult
+        },
         sendText: async () => sendTextResult
       },
       resolvePeer: (fp) =>
@@ -77,6 +90,8 @@ describe('ChatService', () => {
           ? { target: { address: '1.1.1.1', port: 1, protocol: 'https', fingerprint: 'fp' } as SendTarget, alias: `Dev-${fp}` }
           : null,
       isReceiveDirWritable: () => dirWritable,
+      // 假 fs:路径含 folder 即视为目录(真实实现用 statSync().isDirectory())
+      isDirectory: (p) => p.includes('folder'),
       onMessageUpserted: (m) => upserted.push(m),
       setTimer: (fn) => timers.set(fn),
       acceptTimeoutMs: 1000
@@ -239,6 +254,51 @@ describe('ChatService', () => {
     expect(m.errorReason).toBe('offline')
   })
 
+  // 文件夹(含 macOS 的包,如 .app/.pages,访达里显示成单个文件但实际是目录)不受支持。
+  // 修复前:目录被当普通文件送进 sender,createReadStream 抛 EISDIR,classifyError 兜底
+  // 归成 'network' —— 用户看到"网络错误",与真实原因毫无关系。
+  test('sendFiles 文件夹 → failed(directory),不是泛化的 network', async () => {
+    const [m] = await chat.sendFiles('P', ['/tmp/some-folder'])
+    expect(m.status).toBe('failed')
+    expect(m.errorReason).toBe('directory')
+  })
+
+  // sendFiles 把整批交给 sender 并把同一个 status 套用到批内所有消息,所以修复前
+  // 一个文件夹会把同批的正常文件一起拖成失败。目录必须在组批之前就被剔除。
+  test('sendFiles 混选 → 文件夹单独失败,同批普通文件照常发送', async () => {
+    const msgs = await chat.sendFiles('P', ['/tmp/a.bin', '/tmp/some-folder', '/tmp/b.bin'])
+    const byName = Object.fromEntries(msgs.map((m) => [m.fileName, m]))
+    expect(byName['some-folder'].status).toBe('failed')
+    expect(byName['some-folder'].errorReason).toBe('directory')
+    expect(byName['a.bin'].status).toBe('done')
+    expect(byName['b.bin'].status).toBe('done')
+    // 关键:目录必须在组批之前被剔除,绝不能进入发往对端的批次。
+    // 断言注入的 sender 收到什么,是对**外部边界(发往对端的内容)**的行为契约,
+    // 不是内部调用计数——这条豁免"断言内部调用"红旗。批内顺序是偶然的、非需求,
+    // 故只断集合成员不断顺序。
+    expect(sentPaths).not.toContain('/tmp/some-folder')
+    expect(sentPaths).toEqual(expect.arrayContaining(['/tmp/a.bin', '/tmp/b.bin']))
+    expect(sentPaths).toHaveLength(2)
+  })
+
+  // 全是目录时无可发送内容:必须提前返回,不与对端建立任何会话
+  // (否则平白开一次 prepare-upload,还可能占住对方的单会话锁)。
+  test('sendFiles 全是文件夹 → 全部失败且完全不联系对端', async () => {
+    const msgs = await chat.sendFiles('P', ['/tmp/folder-a', '/tmp/folder-b'])
+    expect(msgs.every((m) => m.status === 'failed')).toBe(true)
+    expect(msgs.every((m) => m.errorReason === 'directory')).toBe(true)
+    // 断"一次都没调用",不是断"收到空数组"——后者区分不出"去掉早退、用空批次
+    // 联系了对端"这种退化。同上,这是外部边界的行为契约,豁免"断言内部调用"红旗。
+    expect(senderCalls).toBe(0)
+  })
+
+  // 返回顺序必须与入参一致:内部按"目录/可发送"分流后再合并,调用方不应感知这层重排。
+  test('sendFiles 返回顺序与入参一致(内部分流对调用方透明)', async () => {
+    const paths = ['/tmp/folder-1', '/tmp/a.bin', '/tmp/folder-2', '/tmp/b.bin']
+    const msgs = await chat.sendFiles('P', paths)
+    expect(msgs.map((m) => m.fileName)).toEqual(['folder-1', 'a.bin', 'folder-2', 'b.bin'])
+  })
+
   test('sendFiles 对方 busy → failed(busy)', async () => {
     sendFilesResult = { kind: 'busy' }
     const [m] = await chat.sendFiles('P', ['/tmp/x.bin'])
@@ -315,6 +375,7 @@ describe('ChatService', () => {
       },
       resolvePeer: () => ({ target: {} as SendTarget, alias: 'P' }),
       isReceiveDirWritable: () => true,
+      isDirectory: () => false,
       onMessageUpserted: () => {},
       setTimer: (fn) => timers.set(fn)
     })
@@ -371,6 +432,7 @@ describe('ChatService 进度', () => {
       },
       resolvePeer: () => ({ target: { address: '1.1.1.1', port: 1, protocol: 'https', fingerprint: 'fp' } as SendTarget, alias: 'P' }),
       isReceiveDirWritable: () => true,
+      isDirectory: () => false,
       fileSize: () => 1000,
       onMessageUpserted: () => {},
       onProgress: (p) => progress.push(p),

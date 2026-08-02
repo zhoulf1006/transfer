@@ -16,7 +16,9 @@ const FAILED_KEY: Record<ErrorReason, TKey> = {
   // 以下两条是接收方本机写盘/校验失败,文案不写"对方"
   enospc: 'chat.failed.enospc',
   sha256: 'chat.failed.sha256',
-  network: 'chat.failed.network'
+  network: 'chat.failed.network',
+  // 用户选了文件夹或 macOS 的包(.app/.pages 等,访达显示成单个文件但实际是目录)
+  directory: 'chat.failed.directory'
 }
 
 /**
