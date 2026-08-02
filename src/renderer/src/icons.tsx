@@ -138,12 +138,11 @@ export function InboxIcon(props: { size?: number }): JSX.Element {
   )
 }
 
-/** Lucide arrow-down(聊天流"跳到最新"按钮) */
-export function ArrowDownIcon(props: { size?: number }): JSX.Element {
+/** Lucide chevron-down(聊天流"跳到最新"按钮) */
+export function ChevronDownIcon(props: { size?: number }): JSX.Element {
   return (
     <Icon size={props.size}>
-      <path d="M12 5v14" />
-      <path d="m19 12-7 7-7-7" />
+      <path d="m6 9 6 6 6-6" />
     </Icon>
   )
 }

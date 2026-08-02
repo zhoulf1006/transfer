@@ -40,6 +40,12 @@
   /* 阴影 */
   --shadow-sm: 0 1px 2px rgba(20, 22, 26, 0.04);
   --shadow-md: 0 4px 16px -6px rgba(20, 22, 26, 0.12);
+
+  /* 染色玻璃浮控(消息流「跳到最新」按钮):无描边,靠半透明紫底 + 背景模糊 + 柔影浮起 */
+  --glass: rgba(138, 103, 171, 0.16);
+  --glass-hover: rgba(138, 103, 171, 0.3);
+  --glass-shadow: 0 4px 14px -5px rgba(138, 103, 171, 0.45);
+  --glass-shadow-hover: 0 6px 18px -5px rgba(138, 103, 171, 0.6);
 }
 
 /* ── 系统偏好深色 ── */
@@ -74,6 +80,11 @@
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-md: 0 6px 20px -8px rgba(0, 0, 0, 0.5);
+
+    --glass: rgba(160, 132, 199, 0.22);
+    --glass-hover: rgba(160, 132, 199, 0.36);
+    --glass-shadow: 0 4px 14px -5px rgba(0, 0, 0, 0.5);
+    --glass-shadow-hover: 0 6px 18px -5px rgba(0, 0, 0, 0.65);
   }
 }
 
@@ -103,6 +114,10 @@
   --track: rgba(20, 22, 26, 0.09);
   --shadow-sm: 0 1px 2px rgba(20, 22, 26, 0.04);
   --shadow-md: 0 4px 16px -6px rgba(20, 22, 26, 0.12);
+  --glass: rgba(138, 103, 171, 0.16);
+  --glass-hover: rgba(138, 103, 171, 0.3);
+  --glass-shadow: 0 4px 14px -5px rgba(138, 103, 171, 0.45);
+  --glass-shadow-hover: 0 6px 18px -5px rgba(138, 103, 171, 0.6);
 }
 
 :root[data-theme='dark'] {
@@ -130,6 +145,10 @@
   --track: rgba(255, 255, 255, 0.1);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 6px 20px -8px rgba(0, 0, 0, 0.5);
+  --glass: rgba(160, 132, 199, 0.22);
+  --glass-hover: rgba(160, 132, 199, 0.36);
+  --glass-shadow: 0 4px 14px -5px rgba(0, 0, 0, 0.5);
+  --glass-shadow-hover: 0 6px 18px -5px rgba(0, 0, 0, 0.65);
 }
 
 html,
@@ -187,6 +206,22 @@ body {
 }
 .tf-icon-btn:hover {
   background: var(--hover);
+}
+/* 「跳到最新」染色玻璃浮控:半透明紫底 + 背景模糊,无描边。
+ * 背景与阴影整组落在 class 里(不写内联):内联优先级高于 class,base 若写内联会把
+ * 下面的 :hover 规则压住,hover 直接不生效。几何/定位仍走内联(见 App.tsx 的 jumpBtn)。 */
+.tf-jump-btn {
+  background: var(--glass);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  transition:
+    background 0.16s ease,
+    box-shadow 0.16s ease;
+}
+.tf-jump-btn:hover {
+  background: var(--glass-hover);
+  box-shadow: var(--glass-shadow-hover);
 }
 
 @media (prefers-reduced-motion: reduce) {

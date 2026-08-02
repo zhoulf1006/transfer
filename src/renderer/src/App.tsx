@@ -29,7 +29,7 @@ import {
   CameraIcon,
   PaperclipIcon,
   InboxIcon,
-  SendIcon, ArrowDownIcon } from './icons'
+  SendIcon, ChevronDownIcon } from './icons'
 
 /** 传输进度快照:messageId → 已传/总字节(不落库,仅内存) */
 type ProgressMap = Record<string, { sent: number; total: number }>
@@ -679,12 +679,13 @@ function Chat(props: {
         {dragging && <div style={S.dropHint}>{t('chat.dropHint')}</div>}
         {!atBottom && (
           <button
+            className="tf-jump-btn"
             onClick={jumpToBottom}
             style={S.jumpBtn}
             title={t('chat.jumpToLatest')}
             aria-label={t('chat.jumpToLatest')}
           >
-            <ArrowDownIcon size={18} />
+            <ChevronDownIcon size={18} />
             {hasNewBelow && <span style={S.jumpDot} />}
           </button>
         )}
@@ -1265,8 +1266,14 @@ const S: Record<string, React.CSSProperties> = {
   offlineTag: { fontSize: 10.5, fontWeight: 450, color: 'var(--muted)', border: '1px solid var(--line)', borderRadius: 5, padding: '1px 7px' },
   stream: { flex: 1, overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 9, position: 'relative' },
   streamDragging: { outline: '2px dashed var(--accent)', outlineOffset: -8, background: 'var(--accent-soft)' },
-  jumpBtn: { position: 'absolute', right: 18, bottom: 14, width: 36, height: 36, borderRadius: '50%', display: 'grid', placeItems: 'center', background: 'var(--surface)', color: 'var(--fg)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-md)', cursor: 'pointer', padding: 0 },
-  jumpDot: { position: 'absolute', top: 1, right: 1, width: 9, height: 9, borderRadius: '50%', background: 'var(--accent)', border: '2px solid var(--surface)' },
+  // 此处只放几何与定位;染色玻璃的底色/模糊/阴影/hover 在 theme.css 的 .tf-jump-btn
+  // (内联样式优先级高于 class,底色若写这里会把 :hover 压住)。三处易踩的坑:
+  // ① sticky 而非 absolute——absolute 的子元素在**可滚动容器内**相对内容盒定位,会跟着内容
+  //    滚走(实测:往上翻后按钮消失在视口下方);sticky 才钉在视口。dropHint 同法。
+  // ② 负 marginBottom 抵消自身高度,使它不在流中占位、纯浮于内容之上。
+  // ③ flexShrink: 0 不能省——消息流是 flex column,内容溢出时会把按钮的高压扁成椭圆。
+  jumpBtn: { position: 'sticky', bottom: 14, alignSelf: 'flex-end', flexShrink: 0, marginBottom: -36, marginRight: 4, width: 36, height: 36, borderRadius: '50%', display: 'grid', placeItems: 'center', color: 'var(--accent)', border: 0, cursor: 'pointer', padding: 0 },
+  jumpDot: { position: 'absolute', top: 0, right: 0, width: 9, height: 9, borderRadius: '50%', background: 'var(--accent)', boxShadow: '0 0 0 2px var(--bg)' },
   dropHint: { position: 'sticky', bottom: 8, alignSelf: 'center', background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent)', padding: '6px 16px', borderRadius: 18, fontSize: 12.5, pointerEvents: 'none', boxShadow: 'var(--shadow-md)' },
   bubbleRow: { display: 'flex' },
   bubble: { maxWidth: '74%', padding: '8px 12px', borderRadius: 14 },
