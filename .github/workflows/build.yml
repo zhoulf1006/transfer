@@ -113,12 +113,18 @@ jobs:
             exit 1
           fi
 
-      - name: Package formal macOS dmgs (signed)
+      # 内置公证跑在**这一步**(签完 .app、打 DMG 之前),所以公证凭据必须在这里就位:
+      # 缺了 electron-builder 只 warn 后静默跳过,产出的 app 没有 stapled 票据而 CI 照样绿。
+      # 兜底断言在下面的 notarize 步骤(挂载 DMG 后验内部 .app 的票据)。
+      - name: Package formal macOS dmgs (signed + notarized app)
         if: env.IS_RELEASE == 'true'
         run: pnpm run dist:mac:package-signed
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       # ② 预发布/手动运行:有证书则只签名。
       - name: Package macOS dmg (signed only)
