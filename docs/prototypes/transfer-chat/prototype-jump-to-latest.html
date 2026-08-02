@@ -1,7 +1,10 @@
 <!doctype html>
 <!--
-  原型:消息流「跳到最新」浮动按钮 — 问题:去掉外描边后,这枚按钮该用哪种玻璃悬浮质感?
-  多变体并排对比(用户明确要求,UI.md §4 例外),4 案,全部无外描边。
+  原型:消息流「跳到最新」浮动按钮 — 无外描边的玻璃悬浮浮控。
+  质感方向已从「轻玻璃/厚玻璃/染色玻璃/深色玻璃」4 案中选定**染色玻璃**(2026-08-02)。
+  当前待决问题:染色玻璃的**深浅档** — 常态与悬浮态各该多深?
+  多变体并排对比(用户明确要求,UI.md §4 例外),3 档,全部无外描边。
+  深浅靠紫色底的不透明度调,不换色相——玻璃的通透感来自"能透出底下内容",压得太实就不是玻璃了。
 
   演示基建(非设计的一部分,勿实现):
   - 底部居中暗色 pill:变体切换(←/→)、未读圆点开关、内容底色切换。带 data-demo-harness。
@@ -12,7 +15,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>原型 — 跳到最新按钮(玻璃质感 4 案)</title>
+<title>原型 — 跳到最新按钮(染色玻璃深浅 3 档)</title>
 <style>
   :root{
     --bg:#f7f8f9; --card:#ffffff; --text:#1a1c1f; --text-2:#52565c; --muted:#868b93;
@@ -59,50 +62,32 @@
     box-shadow:0 0 0 2px var(--bg);display:none}
   body.has-unread .jump .badge{display:block}
 
-  /* 案 1 轻玻璃:高透明 + 中等模糊,几乎融进底色,只靠柔影浮起 */
-  .v1{background:rgba(255,255,255,.55);backdrop-filter:blur(12px) saturate(160%);
-    -webkit-backdrop-filter:blur(12px) saturate(160%);color:var(--text-2);
-    box-shadow:0 2px 10px -3px rgba(20,22,26,.18)}
-  .v1:hover{background:rgba(255,255,255,.78);color:var(--accent);box-shadow:0 4px 14px -3px rgba(20,22,26,.24)}
+  /* 三档共用:模糊强度、色相、箭头色都不变,只调紫底的不透明度与阴影浓度 */
+  .jump{backdrop-filter:blur(16px) saturate(180%);-webkit-backdrop-filter:blur(16px) saturate(180%);
+    color:var(--accent)}
+
+  /* 档 A 现状:常态 .16 / 悬浮 .30 —— 已实现的那版,留作参照 */
+  .vA{background:rgba(138,103,171,.16);box-shadow:0 4px 14px -5px rgba(138,103,171,.45)}
+  .vA:hover{background:rgba(138,103,171,.30);box-shadow:0 6px 18px -5px rgba(138,103,171,.6)}
   @media (prefers-color-scheme: dark){
-    .v1{background:rgba(58,62,70,.55);color:var(--text-2);box-shadow:0 2px 10px -3px rgba(0,0,0,.55)}
-    .v1:hover{background:rgba(72,77,88,.75);color:var(--accent)}
+    .vA{background:rgba(160,132,199,.22);box-shadow:0 4px 14px -5px rgba(0,0,0,.5)}
+    .vA:hover{background:rgba(160,132,199,.36)}
   }
 
-  /* 案 2 厚玻璃:低透明 + 强模糊 + 内高光边(无外描边,靠内侧高光做玻璃片厚度) */
-  .v2{background:rgba(255,255,255,.66);backdrop-filter:blur(20px) saturate(190%);
-    -webkit-backdrop-filter:blur(20px) saturate(190%);color:var(--text-2);
-    box-shadow:inset 0 0 0 1px rgba(255,255,255,.75),inset 0 1px 1px rgba(255,255,255,.9),
-      0 6px 18px -6px rgba(20,22,26,.28)}
-  .v2:hover{background:rgba(255,255,255,.84);color:var(--accent);transform:translateY(-1px);
-    box-shadow:inset 0 0 0 1px rgba(255,255,255,.85),inset 0 1px 1px rgba(255,255,255,.95),
-      0 9px 22px -6px rgba(20,22,26,.34)}
+  /* 档 B 稍深:常态 .24 / 悬浮 .40 —— 存在感明确,仍能透出底下内容 */
+  .vB{background:rgba(138,103,171,.24);box-shadow:0 4px 14px -5px rgba(138,103,171,.5)}
+  .vB:hover{background:rgba(138,103,171,.4);box-shadow:0 6px 18px -5px rgba(138,103,171,.65)}
   @media (prefers-color-scheme: dark){
-    .v2{background:rgba(62,66,76,.62);color:var(--text-2);
-      box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),inset 0 1px 1px rgba(255,255,255,.2),
-        0 6px 18px -6px rgba(0,0,0,.6)}
-    .v2:hover{background:rgba(78,83,95,.78);color:var(--accent)}
+    .vB{background:rgba(160,132,199,.3);box-shadow:0 4px 14px -5px rgba(0,0,0,.55)}
+    .vB:hover{background:rgba(160,132,199,.46)}
   }
 
-  /* 案 3 染色玻璃:玻璃底带主题紫,常态就点题;hover 加深 */
-  .v3{background:rgba(138,103,171,.16);backdrop-filter:blur(16px) saturate(180%);
-    -webkit-backdrop-filter:blur(16px) saturate(180%);color:var(--accent);
-    box-shadow:0 4px 14px -5px rgba(138,103,171,.45)}
-  .v3:hover{background:rgba(138,103,171,.30);box-shadow:0 6px 18px -5px rgba(138,103,171,.6)}
+  /* 档 C 更深:常态 .32 / 悬浮 .50 —— 最醒目,深色内容垫底时接近实心 */
+  .vC{background:rgba(138,103,171,.32);box-shadow:0 4px 14px -5px rgba(138,103,171,.55)}
+  .vC:hover{background:rgba(138,103,171,.5);box-shadow:0 6px 18px -5px rgba(138,103,171,.7)}
   @media (prefers-color-scheme: dark){
-    .v3{background:rgba(160,132,199,.22);color:var(--accent);box-shadow:0 4px 14px -5px rgba(0,0,0,.5)}
-    .v3:hover{background:rgba(160,132,199,.36)}
-  }
-
-  /* 案 4 深色玻璃:半透明深底 + 白箭头,像播放器浮控;浅色内容上对比最强 */
-  .v4{background:rgba(28,30,35,.52);backdrop-filter:blur(14px) saturate(150%);
-    -webkit-backdrop-filter:blur(14px) saturate(150%);color:#fff;
-    box-shadow:0 4px 14px -4px rgba(20,22,26,.35)}
-  .v4:hover{background:rgba(28,30,35,.72);box-shadow:0 7px 20px -4px rgba(20,22,26,.45)}
-  .v4 .badge{box-shadow:0 0 0 2px rgba(28,30,35,.7)}
-  @media (prefers-color-scheme: dark){
-    .v4{background:rgba(236,238,242,.72);color:#1a1c1f;box-shadow:0 4px 14px -4px rgba(0,0,0,.55)}
-    .v4:hover{background:rgba(246,248,252,.88)}
+    .vC{background:rgba(160,132,199,.38);box-shadow:0 4px 14px -5px rgba(0,0,0,.6)}
+    .vC:hover{background:rgba(160,132,199,.54)}
   }
 
   /* 演示:内容底色切换(把按钮放到深色图片上验玻璃) */
@@ -141,7 +126,7 @@
       <!-- 演示:深色图片垫底 -->
       <div class="bed bub me" style="max-width:56%"><div class="shot" style="height:230px">截图 · 深色内容垫底</div></div>
 
-      <button class="jump v1" id="jump" aria-label="跳到最新">
+      <button class="jump vA" id="jump" aria-label="跳到最新">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
         <span class="badge"></span>
       </button>
@@ -167,10 +152,9 @@
 
 <script>
   const VARIANTS = [
-    { cls: 'v1', name: '1 · 轻玻璃' },
-    { cls: 'v2', name: '2 · 厚玻璃' },
-    { cls: 'v3', name: '3 · 染色玻璃' },
-    { cls: 'v4', name: '4 · 深色玻璃' }
+    { cls: 'vA', name: 'A · 现状 .16/.30' },
+    { cls: 'vB', name: 'B · 稍深 .24/.40' },
+    { cls: 'vC', name: 'C · 更深 .32/.50' }
   ]
   const jump = document.getElementById('jump')
   const vname = document.getElementById('vname')

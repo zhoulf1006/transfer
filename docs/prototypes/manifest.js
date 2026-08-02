@@ -8,7 +8,7 @@ window.PROTOTYPES = [
   },
   {
     module: 'transfer-chat', type: 'ui', id: 'jump-to-latest',
-    name: '跳到最新按钮(玻璃质感)',
+    name: '跳到最新按钮(染色玻璃深浅)',
     path: 'transfer-chat/prototype-jump-to-latest.html'
   },
   {
