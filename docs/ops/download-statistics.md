@@ -66,21 +66,29 @@
 
 ## R2 CORS
 
-Pages 与 R2 自定义域是不同 origin。进入 R2 → `transfer-releases` → **Settings → CORS Policy → Add CORS policy**,粘贴 `build/r2-download-stats-cors.json` 的内容并保存。规则只允许 `https://transfer.aloongplanet.com` 发起 `GET`。
+落地页与 R2 自定义域是不同 origin。进入 R2 → `transfer-releases` → **Settings → CORS Policy → Add CORS policy**,粘贴 `build/r2-download-stats-cors.json` 的内容并保存。规则允许两处落地页部署发起 `GET`:`https://transfer.aloongplanet.com`(Cloudflare Pages)与 `https://transfer.aloongplanet.com.cn`(国内镜像,见 [cn-mirror-deploy.md](cn-mirror-deploy.md))。**两个域名都要在白名单里**,漏掉哪个哪边的统计行就静默消失。
 
-首次工作流成功后验证:
+首次工作流成功后验证。**两个 origin 都要验,而且必须带阴性对照**——只验白名单内的 origin 分不清「白名单生效」与「桶对所有人开放」,后者同样会返回该响应头:
 
 ```bash
-curl -sS -D - -o /dev/null \
-  -H 'Origin: https://transfer.aloongplanet.com' \
-  https://dl.aloongplanet.com/stats/downloads.json
+for o in https://transfer.aloongplanet.com https://transfer.aloongplanet.com.cn https://example.com; do
+  printf '%-42s ' "$o"
+  # 必须用 GET(-D - -o /dev/null),不能用 -I —— 那发的是 HEAD,
+  # 而策略只允许 GET,HEAD 请求拿不到该响应头,三个 origin 会齐刷刷"失败",看起来像 CORS 坏了。
+  curl -sS -D - -o /dev/null -H "Origin: $o" https://dl.aloongplanet.com/stats/downloads.json \
+    | grep -i access-control-allow-origin || echo '(无该响应头)'
+done
 ```
 
-响应应包含:
+期望输出:
 
 ```text
-access-control-allow-origin: https://transfer.aloongplanet.com
+https://transfer.aloongplanet.com          access-control-allow-origin: https://transfer.aloongplanet.com
+https://transfer.aloongplanet.com.cn       access-control-allow-origin: https://transfer.aloongplanet.com.cn
+https://example.com                        (无该响应头)
 ```
+
+前两行各自回显对应的 origin;**第三行必须是「无该响应头」**,否则白名单没有起到限制作用。
 
 ## 官网行为与失败模式
 

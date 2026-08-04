@@ -20,7 +20,8 @@
     "dist:win": "electron-vite build && electron-builder --win --publish never",
     "dist:mas:dev": "electron-vite build && electron-builder --mac mas-dev --publish never",
     "dist:mas": "electron-vite build && electron-builder --mac mas --universal --publish never",
-    "pkg:mas": "node build/make-mas-pkg.cjs"
+    "pkg:mas": "node build/make-mas-pkg.cjs",
+    "deploy:site:cn": "bash build/deploy-site-cn.sh"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

@@ -1,6 +1,9 @@
 [
   {
-    "AllowedOrigins": ["https://transfer.aloongplanet.com"],
+    "AllowedOrigins": [
+      "https://transfer.aloongplanet.com",
+      "https://transfer.aloongplanet.com.cn"
+    ],
     "AllowedMethods": ["GET"],
     "MaxAgeSeconds": 3600
   }
