@@ -1,0 +1,225 @@
+<!doctype html>
+<!--
+  原型:落地页页脚 —— 国内镜像的备案号该怎么放
+  问题:同一份代码部署到两个域名,国内那份要多一条 ICP 备案号。它放在页脚哪里,
+        才既不挤压现有的产品链接行、又不把法规信息和产品链接混为一谈?
+        中英双语、深浅色、窄屏四种组合下都成立吗?
+
+  结论(已选):不另起一行,作为页脚那一行的第三项落在品牌与链接之间。
+  字号小于产品链接、用弱化前景色,层级低于它们。
+  .com 构建下整项不存在,页脚退回「品牌 | 链接」两端对齐,与现状一模一样。
+
+  演示基建(data-demo-harness,非设计的一部分,勿实现):
+    · 「构建目标」开关 —— 真站由构建期环境变量决定,页面上没有这个控件。
+      .com(Cloudflare Pages)不设该变量 → 整行不渲染;.com.cn(阿里云 ECS)设了 → 渲染。
+    · 「语言」「主题」开关 —— 真站的语言切换在导航栏(不在页脚),主题跟随系统。
+      这里做成开关只是为了在一个页面里看全四种组合。
+
+  防真空:页脚上方留了一段简化的页面尾部内容,页脚不能孤立评判。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>原型 · 落地页页脚(备案号)</title>
+<style>
+  /* 色板抄自 site/src/styles/global.css,与真站一致 */
+  :root {
+    --brand: #8a67ab;
+    --fg: #1a1626;
+    --fg-muted: #5c5470;
+    --bg: #ffffff;
+    --bg-soft: #faf8fc;
+    --border: #e7e1ef;
+    --maxw: 1080px;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+      'Hiragino Sans GB', 'Microsoft YaHei', Roboto, Helvetica, Arial, sans-serif;
+  }
+  :root[data-theme='dark'] {
+    --fg: #ece8f4;
+    --fg-muted: #a49cbb;
+    --bg: #14111c;
+    --bg-soft: #1b1726;
+    --border: #2c2640;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: var(--font); color: var(--fg); background: var(--bg);
+    line-height: 1.6; -webkit-font-smoothing: antialiased; padding-bottom: 84px;
+  }
+  a { color: var(--brand); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .container { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+  .text-muted { color: var(--fg-muted); }
+
+  /* 防真空:页脚上方的简化页面内容,给页脚一个真实的评判语境 */
+  .tail-section { padding: 56px 0 48px; text-align: center; }
+  .tail-section h2 { font-size: 1.6rem; letter-spacing: -0.02em; margin: 0 0 10px; }
+  .tail-section p { color: var(--fg-muted); margin: 0 0 22px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px;
+    border-radius: 10px; font-weight: 600; font-size: 0.98rem;
+    background: var(--brand); color: #fff; box-shadow: 0 6px 16px rgba(138,103,171,.35);
+  }
+  .btn:hover { text-decoration: none; }
+
+  /* ---------- 页脚(真站现有结构) ---------- */
+  .footer { border-top: 1px solid var(--border); background: var(--bg-soft); padding: 32px 0; }
+  .footer-inner {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 16px;
+  }
+  .footer-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+  .footer-mark {
+    width: 22px; height: 22px; border-radius: 6px; flex: none;
+    background: linear-gradient(140deg, #a985c9, #6f5090);
+  }
+  .footer-links {
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap; font-size: 0.9rem;
+  }
+
+  /* ---------- 本轮新增:备案号 ----------
+     不另起一行,而是作为 .footer-inner 的第三个 flex 项落在品牌与链接之间。
+     space-between 会自动把它推到中间;.com 构建下它整个不存在,
+     footer-inner 退回两项、两端对齐,与现在一模一样。 */
+  .footer-beian {
+    font-size: 0.82rem;
+  }
+  .footer-beian a { color: var(--fg-muted); }
+  .footer-beian a:hover { color: var(--fg); }
+  .footer-beian[hidden] { display: none; }
+
+  /* ---------- 演示基建(非设计) ---------- */
+  .demo-bar {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 90;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
+    background: #171522; color: #cfc9dd; border: 1px solid #322c45;
+    border-radius: 999px; padding: 7px 10px 7px 14px;
+    box-shadow: 0 10px 34px rgba(0,0,0,.42);
+    font-size: 0.78rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    max-width: calc(100vw - 24px);
+  }
+  .demo-label { color: #6f6885; letter-spacing: .04em; white-space: nowrap; }
+  .demo-sep { width: 1px; height: 17px; background: #322c45; }
+  .demo-bar button {
+    background: #241f33; color: #cfc9dd; border: 1px solid #3a3350;
+    border-radius: 999px; padding: 4px 11px; cursor: pointer; font: inherit;
+  }
+  .demo-bar button:hover { background: #2f2942; }
+  .demo-bar button[aria-pressed='true'] { background: #cfc9dd; color: #171522; border-color: #cfc9dd; }
+</style>
+</head>
+<body>
+
+<section class="tail-section container">
+  <h2 data-i18n="tail.title">现在就试试</h2>
+  <p data-i18n="tail.sub">免费、开源,装上就能用。</p>
+  <a class="btn" href="#" data-i18n="tail.cta">免费下载</a>
+</section>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <span class="footer-mark"></span>
+        <span>Transfer</span>
+      </div>
+      <!-- 只有国内构建渲染这一项;.com 那份整项不存在,不是隐藏 -->
+      <div class="footer-beian" id="beianRow" hidden>
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">苏ICP备2025154241号-2</a>
+      </div>
+
+      <div class="footer-links">
+        <span class="text-muted"><span data-i18n="footer.opensource">开源项目</span> · <span data-i18n="footer.license">MIT 协议</span></span>
+        <a href="#">GitHub</a>
+        <a href="#" data-i18n="footer.privacy">隐私政策</a>
+        <span class="text-muted" data-i18n="footer.madeby">由 loong_zhou 开发</span>
+      </div>
+    </div>
+
+  </div>
+</footer>
+
+<!-- ========== 演示基建:非设计的一部分,勿实现 ========== -->
+<div class="demo-bar" data-demo-harness>
+  <span class="demo-label">演示 · 构建目标</span>
+  <button data-target-btn="com" aria-pressed="true">.com（Pages）</button>
+  <button data-target-btn="cn" aria-pressed="false">.com.cn（ECS）</button>
+  <span class="demo-sep"></span>
+  <span class="demo-label">语言</span>
+  <button data-lang-btn="zh" aria-pressed="true">中文</button>
+  <button data-lang-btn="en" aria-pressed="false">EN</button>
+  <span class="demo-sep"></span>
+  <span class="demo-label">主题</span>
+  <button data-theme-btn="light" aria-pressed="true">浅色</button>
+  <button data-theme-btn="dark" aria-pressed="false">深色</button>
+</div>
+
+<script>
+  /* 以下全是演示基建的接线,真站没有这些控件 */
+  const I18N = {
+    zh: {
+      'tail.title': '现在就试试', 'tail.sub': '免费、开源,装上就能用。', 'tail.cta': '免费下载',
+      'footer.opensource': '开源项目', 'footer.license': 'MIT 协议',
+      'footer.privacy': '隐私政策', 'footer.madeby': '由 loong_zhou 开发',
+    },
+    en: {
+      'tail.title': 'Try it now', 'tail.sub': 'Free, open source, works out of the box.', 'tail.cta': 'Download free',
+      'footer.opensource': 'Open source', 'footer.license': 'MIT License',
+      'footer.privacy': 'Privacy Policy', 'footer.madeby': 'Made by loong_zhou',
+    },
+  }
+
+  function setPressed(selector, active) {
+    for (const b of document.querySelectorAll(selector)) {
+      b.setAttribute('aria-pressed', String(b === active))
+    }
+  }
+
+  for (const btn of document.querySelectorAll('[data-target-btn]')) {
+    btn.addEventListener('click', () => {
+      // 备案行在真站是「构建期决定渲不渲染」,这里用 hidden 模拟“整行不存在”
+      document.getElementById('beianRow').hidden = btn.dataset.targetBtn !== 'cn'
+      setPressed('[data-target-btn]', btn)
+    })
+  }
+
+  for (const btn of document.querySelectorAll('[data-lang-btn]')) {
+    btn.addEventListener('click', () => {
+      const dict = I18N[btn.dataset.langBtn]
+      for (const el of document.querySelectorAll('[data-i18n]')) {
+        const v = dict[el.dataset.i18n]
+        if (v !== undefined) el.textContent = v
+      }
+      document.documentElement.lang = btn.dataset.langBtn === 'zh' ? 'zh-CN' : 'en'
+      setPressed('[data-lang-btn]', btn)
+    })
+  }
+
+  for (const btn of document.querySelectorAll('[data-theme-btn]')) {
+    btn.addEventListener('click', () => {
+      document.documentElement.dataset.theme = btn.dataset.themeBtn
+      setPressed('[data-theme-btn]', btn)
+    })
+  }
+
+  document.documentElement.dataset.theme =
+    window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  for (const b of document.querySelectorAll('[data-theme-btn]')) {
+    b.setAttribute('aria-pressed', String(b.dataset.themeBtn === document.documentElement.dataset.theme))
+  }
+</script>
+
+<script>
+  // 跨原型跳转:画廊内请求父页切换;独立打开时直接跳文件
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-goto]');
+    if (!el) return;
+    if (window.parent !== window) parent.postMessage({ type: 'proto-nav', target: el.dataset.goto }, '*');
+    else if (el.dataset.gotoHref) location.href = el.dataset.gotoHref;
+  });
+</script>
+
+</body>
+</html>

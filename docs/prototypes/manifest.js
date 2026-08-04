@@ -20,5 +20,10 @@ window.PROTOTYPES = [
     module: 'general', type: 'ui', id: 'settings',
     name: '设置弹层(单列分区)',
     path: 'general/prototype-settings.html'
+  },
+  {
+    module: 'landing-page', type: 'ui', id: 'footer-beian',
+    name: '页脚备案号(国内镜像)',
+    path: 'landing-page/prototype-footer-beian.html'
   }
 ]

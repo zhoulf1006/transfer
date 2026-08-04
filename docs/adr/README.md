@@ -27,3 +27,4 @@
 | [0015](0015-ops-runbooks-as-fifth-doc-class.md) | 运维手册作为第五类文档,就地更新 | 已接受 |
 | [0016](0016-mas-separate-bundle-id.md) | App Store 版用独立 bundle id com.aloongplanet.transfer,DMG 线不动 | 已接受 |
 | [0017](0017-spec-is-persistent-not-scratch.md) | spec 从"用完即丢"改为持久产物,归 docs/specs/,与 tickets 分家 | 已接受 |
+| [0018](0018-cn-mirror-landing-page-only.md) | 落地页进大陆节点,下载源留在 R2 不动(下载速度不因此改变) | 已接受 |

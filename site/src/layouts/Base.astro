@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css'
+import { resolveIcpBeian } from '../beian'
 import { useTranslations, localizedPath, type Locale } from '../i18n/ui'
 
 interface Props {
@@ -19,6 +20,10 @@ const otherHref = localizedPath(otherLocale, '/')
 const otherLabel = otherLocale === 'zh' ? '中文' : 'EN'
 
 const GITHUB = 'https://github.com/zhoulf1006/transfer'
+
+// 备案号只有国内那份构建会注入;未设置时为 null,页脚整项不渲染。
+// 设置了但格式非法会在这里抛错,让构建失败 —— 见 src/beian.ts 的说明。
+const icpBeian = resolveIcpBeian(import.meta.env.PUBLIC_ICP_BEIAN)
 const home = localizedPath(locale, '/')
 ---
 
@@ -61,6 +66,16 @@ const home = localizedPath(locale, '/')
           <img src="/favicon.svg" alt="" width="22" height="22" />
           <strong>{t('site.name')}</strong>
         </div>
+        {
+          /* 只有国内构建注入了备案号才渲染;.com 那份整项不存在,页脚退回两端对齐 */
+          icpBeian && (
+            <div class="footer-beian">
+              <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">
+                {icpBeian}
+              </a>
+            </div>
+          )
+        }
         <div class="footer-links">
           <span class="text-muted">{t('footer.opensource')} · {t('footer.license')}</span>
           <a href={GITHUB} target="_blank" rel="noopener">GitHub</a>
@@ -138,6 +153,18 @@ const home = localizedPath(locale, '/')
         gap: 18px;
         flex-wrap: wrap;
         font-size: 0.9rem;
+      }
+      /* 备案号是 footer-inner 的第三项,由既有的两端对齐推到品牌与链接之间。
+         不另起一行——加上它后页脚高度不变。字号与颜色都弱于产品链接:
+         它是页面的法律附注,层级低于它们。 */
+      .footer-beian {
+        font-size: 0.82rem;
+      }
+      .footer-beian a {
+        color: var(--fg-muted);
+      }
+      .footer-beian a:hover {
+        color: var(--fg);
       }
       @media (max-width: 720px) {
         .nav-links {
