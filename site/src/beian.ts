@@ -22,7 +22,9 @@ export function resolveIcpBeian(raw: string | undefined): string | null {
   if (!ICP_PATTERN.test(value)) {
     throw new Error(
       `ICP 备案号格式不合法:${value}。`
-        + '期望形如「苏ICP备2025154241号-2」。'
+        // 这里用明显是占位的示例,不用本站的真实备案号 ——
+        // 拿真值当格式示范,读错误信息的人会以为那就是该填进去的值。
+        + '期望形如「省份简称 + ICP备 + 数字 + 号」,同主体多站点时带 -序号,例:苏ICP备12345678号-1。'
         + '若本次构建不该带备案号(如境外部署),请不要设置该环境变量,而不是留空或写占位值。',
     )
   }

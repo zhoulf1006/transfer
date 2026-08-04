@@ -43,12 +43,34 @@ rsync -az --delete -e "ssh -i $KEY -o BatchMode=yes" "$DIST/" "$HOST:$DEST/"
 # 权限必须在服务器侧修,不能用 rsync --chmod:macOS 自带的是 openrsync,不认那个参数。
 # 而 ECS 默认 umask 027 会让新文件落成 640,反代容器里的 nginx(uid 101) 读不到,页面变 403。
 echo "==> 修正权限并自检"
-ssh -i "$KEY" -o BatchMode=yes "$HOST" "
-  chmod -R a+rX $DEST
-  docker exec nginx-app curl -s -o /dev/null -m 10 -w '    后端 HTTP %{http_code}\n' http://aloongplanet-static:$BACKEND_PORT/
-  docker exec nginx-app curl -s -m 10 http://aloongplanet-static:$BACKEND_PORT/ | grep -q 'ICP备' \
-    && echo '    线上页面已含备案号' \
-    || { echo '    线上页面没有备案号' >&2; exit 1; }
-"
+# 用 bash -s 传参而不是把变量拼进命令串,省掉一层引号转义。
+# 两道检查分开断言:先确认后端真的响应,再确认页面内容对 —— 合在一起的话,
+# 后端挂了会被报成「没有备案号」,照着那条信息去查环境变量是白费功夫。
+ssh -i "$KEY" -o BatchMode=yes "$HOST" bash -s -- "$DEST" "$BACKEND_PORT" "$ICP_BEIAN" <<'REMOTE'
+set -uo pipefail
+DEST="$1"; PORT="$2"; EXPECTED_BEIAN="$3"
+BACKEND="http://aloongplanet-static:$PORT/"
+
+chmod -R a+rX "$DEST"
+
+# curl 连不上时自己就输出 000,不要再叠一个 || echo 000 —— 两个会拼成 000000
+code=$(docker exec nginx-app curl -s -o /dev/null -m 10 -w '%{http_code}' "$BACKEND")
+echo "    后端 HTTP $code"
+if [ "$code" != 200 ]; then
+  echo "    后端没有正常响应。先查静态站容器与反代,这跟备案号无关。" >&2
+  exit 1
+fi
+
+# 断言精确的备案号而非泛化的「ICP备」,是为了挡住"值被改坏"这一类。
+# 这道检查**不能**判断服务的是哪个站:同机的个人主页与本站同属一个备案主体,
+# 备案号字面相同 —— 实测确认过,别指望它能发现反代指错。它只回答一个问题:
+# 这次部署的产物里,备案号注进去了没有。
+if docker exec nginx-app curl -s -m 10 "$BACKEND" | grep -qF "$EXPECTED_BEIAN"; then
+  echo "    线上页面已含备案号"
+else
+  echo "    后端响应正常,但页面里没有备案号($EXPECTED_BEIAN) —— 构建时没拿到 PUBLIC_ICP_BEIAN。" >&2
+  exit 1
+fi
+REMOTE
 
 echo "==> 完成:https://transfer.aloongplanet.com.cn"
