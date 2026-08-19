@@ -45,6 +45,46 @@ async function close(l: Launched): Promise<void> {
   rmSync(l.userData, { recursive: true, force: true })
 }
 
+/**
+ * 守的是"跑测试不打扰正在用本机的人"这条保证本身,不是被测功能。
+ * 没有它,哪天 QUIET 的快捷键分支被误改成无条件注册,测试仍会全绿,
+ * 而用户只会发现自己的 F1 突然不好使了——静默失败,没有任何东西会红。
+ *
+ * 三条保证里只有这条有可观测 seam:
+ * - 窗口不显示:间接可观测(下面用 isVisible 断)
+ * - 不注册全局快捷键:globalShortcut.isRegistered 直接可读
+ * - 不起网络服务:**无法从测试进程可靠断言**——查端口占用会被用户自己那个实例的
+ *   监听误判成红(假红),而主进程没有暴露 core 状态的 seam。缺口见 review-tests.md。
+ */
+test('测试实例不打扰用户:窗口不显示、不占用全局快捷键', async () => {
+  const l = await launch()
+  try {
+    // 必须先等窗口就绪:launch 返回时 createWindow 可能还没跑,
+    // 此时 getAllWindows() 为空,下面的 not.toContain(true) 会对空数组恒真。
+    await l.app.firstWindow()
+
+    const visible = await l.app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows().map((w) => w.isVisible())
+    )
+    expect(visible.length, '应有主窗(否则下面的断言是空对空)').toBeGreaterThan(0)
+    expect(visible, 'QUIET 下窗口不得显示').not.toContain(true)
+
+    const grabbed = await l.app.evaluate(({ globalShortcut }) => ({
+      f1: globalShortcut.isRegistered('F1'),
+      // 默认快捷键之外也全查一遍:设置里可改成别的组合,只查 F1 会漏
+      any: ['F1', 'F2', 'CommandOrControl+Shift+A', 'Alt+Shift+S'].filter((a) =>
+        globalShortcut.isRegistered(a)
+      )
+    }))
+    expect(grabbed.f1, 'QUIET 下不得注册 F1').toBe(false)
+    expect(grabbed.any, 'QUIET 下不得注册任何全局快捷键').toEqual([])
+
+    expect(l.errors).toEqual([])
+  } finally {
+    await close(l)
+  }
+})
+
 test('设置页的目录按钮是内联 SVG,不是字符图标', async () => {
   const l = await launch()
   try {
