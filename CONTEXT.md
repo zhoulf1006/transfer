@@ -68,6 +68,10 @@ _Avoid_: "每次打开重新加载"——错误假设,曾因此出 bug。
 - **安装包只能放 R2,不能进 Pages**:Cloudflare Pages 单文件上限 25 MiB,安装包 81–177 MiB;落地页在 Pages、安装包在 R2,二者不可合并。
 - **两个下载源永远都显示**,只调默认高亮,**不做地区强制重定向**(`navigator.language`/时区判地区不可靠,VPN 会干扰)。
 
+**仓库边界**
+
+- **仓库不携带 agent 配置**:`CLAUDE.md`、`.claude/`、`docs/.workings/` 均在 gitignore 内(前两者由全局 gitignore 排除),**新 clone 拿不到它们**。仓库携带的是项目**知识**(ADR / CONTEXT.md / features / specs / ops / prototypes),不是操作者的**作业指令**(八步流程、skills、界面规范)——后者是操作者的本机资产,跨项目复用,随人不随仓库(ADR-0013 工具链条目的外延)。推论:凡"换台机器也必须知道"的结论,写进上述知识类文档才算落地;停在 `CLAUDE.md` 或 `docs/.workings/` 里等于只存在于这台机器。
+
 ## Relationships(关系)
 
 - **发现** = announce(UDP 多播+广播双发) + register(HTTP 定向回应),组成双向发现;发现结果进 `DeviceRegistry`(`Map<fingerprint, RemoteDevice>`)。
