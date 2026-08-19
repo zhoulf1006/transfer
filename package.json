@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "NODE_OPTIONS=\"--experimental-sqlite --no-warnings\" vitest run",
     "test:watch": "NODE_OPTIONS=\"--experimental-sqlite --no-warnings\" vitest",
+    "e2e": "electron-vite build && playwright test",
     "dist:mac": "electron-vite build && electron-builder --mac --publish never -c.mac.notarize=false",
     "dist:mac:package-signed": "electron-vite build && electron-builder --mac --publish never",
     "notarize:mac:dmgs": "node build/notarize-dmgs.cjs release/*/*.dmg",
@@ -24,6 +25,7 @@
     "deploy:site:cn": "bash build/deploy-site-cn.sh"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

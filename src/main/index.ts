@@ -34,6 +34,16 @@ import { t, setMainLang, resolveSystemEffective } from './i18n'
 // (mac 大小写不敏感,dev 原 'transfer' 数据即同目录,无缝复用,无需迁移。)
 app.setName('Transfer')
 
+/**
+ * 测试静音(只由 e2e/smoke 注入,产品路径永不设置)。开启后三件事都不做,缺一都会打扰
+ * 正在使用本机的用户 —— 测试实例与用户实例是两个进程,抢的是同一份系统资源:
+ *   ① 不显示窗口:实测 `dock.hide()` 与 accessory 活动策略都挡不住抢前台,只有不显示才不打扰;
+ *      窗口不显示不影响断言 —— 布局、计算样式、CDP 输入都照常工作(焦点语义除外)。
+ *   ② 不注册全局快捷键:F1 同一时刻只有一个进程占得住,注册了就把用户实例的截图快捷键抢走。
+ *   ③ 不起网络服务:否则测试实例会占端口、并以同名设备出现在局域网里被别人看见。
+ */
+const QUIET = Boolean(process.env['TRANSFER_E2E_QUIET'])
+
 // env 覆盖(多实例测试,DESIGN §6/M4)
 const userDataOverride = process.env['TRANSFER_USERDATA']
 if (userDataOverride) app.setPath('userData', userDataOverride)
@@ -127,7 +137,11 @@ function createWindow(): void {
       sandbox: false
     }
   })
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  // QUIET 下不显示:测试实例一显示就抢前台(见 QUIET 定义处①)。渲染与布局照常进行。
+  mainWindow.on('ready-to-show', () => {
+    if (!QUIET) mainWindow?.show()
+  })
+
   mainWindow.on('closed', () => (mainWindow = null))
   // 聚焦/失焦:聚焦时停止任务栏闪烁(仅 Windows,mac 未 flash)并告知 renderer(用于"正在看→不计未读")。
   mainWindow.on('focus', () => {
@@ -370,7 +384,7 @@ app.whenReady().then(async () => {
       await core!.chat.sendFiles(peerFp, filePaths)
     }
   })
-  screenshot.start()
+  screenshot.start({ shortcut: !QUIET })
 
   // 网络服务(HTTP server + UDP 发现)延迟到窗口显示之后再起:让首帧更早、不被网络初始化阻塞。
   // 代价:启动后极短时间内(窗口已显示到服务就绪之间)可能收不到连接,可接受。
@@ -379,7 +393,11 @@ app.whenReady().then(async () => {
     // 屏幕录制授权询问同样要等主窗显示:app 未成为前台应用时,系统不会弹出授权框。
     screenshot?.primeScreenPermission()
   }
-  if (mainWindow && !mainWindow.isVisible()) {
+  // QUIET 下显式不起:窗口永不显示,若只靠 once('show') 不触发是**偶然**不起——
+  // 将来谁在测试里手动 show 一下,网络服务就会连带起来去抢端口、上局域网。写成显式判断。
+  if (QUIET) {
+    // 测试实例不起 HTTP server 与 UDP 发现(见 QUIET 定义处③)
+  } else if (mainWindow && !mainWindow.isVisible()) {
     mainWindow.once('show', startCore)
   } else {
     startCore()

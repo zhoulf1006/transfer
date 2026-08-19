@@ -104,10 +104,16 @@ export class ScreenshotService {
 
   constructor(private readonly deps: ScreenshotDeps) {}
 
-  /** app ready 后调用一次:注册 F1(幂等)+ 挂 IPC。
-   *  屏幕录制授权询问**不在这里**——见 primeScreenPermission 的时机要求。 */
-  start(): void {
-    this.registerShortcut()
+  /**
+   * app ready 后调用一次:注册 F1(幂等)+ 挂 IPC。
+   * 屏幕录制授权询问**不在这里**——见 primeScreenPermission 的时机要求。
+   *
+   * @param opts.shortcut 是否注册全局快捷键。测试实例必须传 false —— 全局快捷键同一时刻
+   *   只有一个进程占得住,测试一注册就把用户正在跑的那个实例的截图快捷键抢走(且静默失败,
+   *   用户只会发现 F1 不好使了)。IPC 照常注册:渲染层的 shot:* 调用不依赖快捷键。
+   */
+  start(opts: { shortcut: boolean } = { shortcut: true }): void {
+    if (opts.shortcut) this.registerShortcut()
     this.registerIpc()
   }
 

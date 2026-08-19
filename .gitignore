@@ -11,6 +11,9 @@ release/
 # provisioning profile:含团队标识与设备清单,按开发者/机器各不相同,绝不提交。
 # 获取方式见 electron-builder.yml 的 mas/masDev 段。
 build/*.provisionprofile
+# Playwright 失败产物(截图/trace/error-context),每次跑覆盖,不入库
+test-results/
+playwright-report/
 # 施工文档(tickets、施工过程记录):本机保留跨轮复用,但不入库(ADR-0019)。
 # 它腐烂最快且不得作为现状依据;要跨机器留存的内容须升级到 specs/features/adr/CONTEXT。
 docs/.workings/

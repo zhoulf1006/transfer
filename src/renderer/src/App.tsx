@@ -397,8 +397,11 @@ function Sidebar(props: {
       <div style={S.brand}>
         <strong style={S.brandName}>Transfer</strong>
         <div style={{ display: 'flex', gap: 2 }}>
+          {/* data-testid:给 e2e 用的语言无关定位锚。界面语言跟随系统,按 title 文案定位会随
+              运行机器的语言变红,不是被测行为的问题。不可见,不影响用户。 */}
           <button
             className="tf-icon-btn"
+            data-testid="btn-theme"
             onClick={onCycleTheme}
             title={t('theme.tooltip', { label: themeLabel })}
             style={S.iconBtn}
@@ -407,6 +410,7 @@ function Sidebar(props: {
           </button>
           <button
             className="tf-icon-btn"
+            data-testid="btn-settings"
             onClick={onOpenSettings}
             title={t('common.settings')}
             style={S.iconBtn}
@@ -1129,6 +1133,7 @@ function SettingsModal(props: {
           </span>
           <button
             className="tf-icon-btn"
+            data-testid="btn-open-downloads"
             style={S.storageIconBtn}
             title={t('settings.openFolderTitle')}
             onClick={() => window.transfer.openDownloadsDir()}
