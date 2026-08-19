@@ -142,6 +142,18 @@ function createWindow(): void {
     if (!QUIET) mainWindow?.show()
   })
 
+  // dev 实例的标题加 (dev) 后缀:它与已安装版长得一模一样,同时开着极易对着错的那个操作
+  // (改配置、看日志、验行为)。**标题是唯一可辨的地方** —— 进程名做不到:dev 跑的是
+  // node_modules 里 Electron.app 的 bundle,进程名由其 CFBundleName 决定,app.setName() 改不动。
+  // 必须拦 page-title-updated:窗口标题默认由页面的 <title> 接管,只调 setTitle 会在页面
+  // 加载完成时被 index.html 的 "Transfer" 覆盖回去。打包版无此分支,标题不变。
+  if (process.env['ELECTRON_RENDERER_URL']) {
+    mainWindow.on('page-title-updated', (e) => {
+      e.preventDefault()
+      mainWindow?.setTitle('Transfer (dev)')
+    })
+    mainWindow.setTitle('Transfer (dev)')
+  }
   mainWindow.on('closed', () => (mainWindow = null))
   // 聚焦/失焦:聚焦时停止任务栏闪烁(仅 Windows,mac 未 flash)并告知 renderer(用于"正在看→不计未读")。
   mainWindow.on('focus', () => {
