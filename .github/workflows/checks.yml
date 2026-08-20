@@ -55,3 +55,53 @@ jobs:
       - name: Build site (Astro)
         run: pnpm build
         working-directory: site
+
+  # e2e 驱动真实 Electron。与 checks 并行(不设 needs):两者互不依赖,并行的墙钟时间
+  # 短于串行,而 checks 秒级反馈的价值不受影响。
+  #
+  # 跑 ubuntu 而非 macos:私有仓库 macOS runner 按 10 倍计费,而这些用例断言的是
+  # DOM 几何与计算样式,与平台无关。macOS 专属面(签名、公证、TCC)本来就不在 e2e
+  # 覆盖内,由本地验证与发版流程守。
+  #
+  # globalSetup 里的 quiet-electron.sh 有 darwin 守卫,Linux 上天然空操作——
+  # CI 无 Dock,不需要 LSUIElement 副本。
+  e2e:
+    name: e2e (Electron)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      # 同 checks:必须 22,e2e 会加载主进程,而它经 messages.ts 用 node:sqlite
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Electron 与 Chromium 共用同一批系统库;交给 playwright 装,别手写 apt 包名——
+      # 包名随 Ubuntu 版本漂移(libasound2 → libasound2t64),runner 升级日会全红。
+      - name: Install system libs for Electron
+        run: pnpm exec playwright install-deps chromium
+
+      # Electron 需要显示服务;-a 自动挑空闲 display 号。
+      # pnpm e2e 自带 electron-vite build——读构建产物的取证,产物必须是当次的。
+      - name: Run e2e
+        run: xvfb-run -a pnpm e2e
+
+      # 不传的话 CI 红了只剩退出码,无从查起
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
