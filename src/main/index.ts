@@ -405,7 +405,7 @@ app.whenReady().then(async () => {
       await core!.chat.sendFiles(peerFp, filePaths)
     }
   })
-  screenshot.start({ shortcut: !QUIET })
+  screenshot.start({ shortcut: true })
 
   // 网络服务(HTTP server + UDP 发现)延迟到窗口显示之后再起:让首帧更早、不被网络初始化阻塞。
   // 代价:启动后极短时间内(窗口已显示到服务就绪之间)可能收不到连接,可接受。

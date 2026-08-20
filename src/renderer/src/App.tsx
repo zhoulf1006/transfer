@@ -1138,7 +1138,7 @@ function SettingsModal(props: {
             title={t('settings.openFolderTitle')}
             onClick={() => window.transfer.openDownloadsDir()}
           >
-            <FolderOpenIcon size={15} />
+            📂
           </button>
         </div>
 
@@ -1374,7 +1374,7 @@ const S: Record<string, React.CSSProperties> = {
   storageLabel: { flexShrink: 0, color: 'var(--ink)' },
   storagePath: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--muted)', direction: 'rtl', textAlign: 'left' },
   // 同 iconBtn:background 归 .tf-icon-btn 管
-  storageIconBtn: { flexShrink: 0, border: 'none', cursor: 'pointer', color: 'var(--muted)', width: 22, height: 22, borderRadius: 6, padding: 0, display: 'grid', placeItems: 'center' },
+  storageIconBtn: { flexShrink: 0, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--muted)', width: 22, height: 22, borderRadius: 6, padding: 0, display: 'grid', placeItems: 'center' },
   shortcutBox: { minWidth: 120, padding: '4px 12px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--bg)', color: 'var(--ink)', cursor: 'pointer', fontSize: 12, fontFamily: 'ui-monospace, monospace', textAlign: 'center' },
   shortcutBoxRec: { borderColor: 'var(--accent)', color: 'var(--accent)' },
   shortcutHint: { fontSize: 11, flex: 1, minWidth: 0 },
