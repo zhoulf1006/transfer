@@ -53,7 +53,7 @@
 </head>
 <body>
   <div class="side">
-    <h1>Transfer<span class="gear" title="设置">⚙</span></h1>
+    <h1>Transfer<span class="gear" title="设置"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span></h1>
     <div class="dev on" onclick="pick(this,'客厅 Mac')"><span class="dot"></span><span>客厅 Mac<div class="sub">MacBook Pro · 192.168.3.24</div></span><span class="badge">2</span></div>
     <div class="dev" onclick="pick(this,'Work-PC')"><span class="dot"></span><span>Work-PC<div class="sub">Windows · 192.168.3.31</div></span></div>
     <div class="dev" onclick="pick(this,'旧笔记本')"><span class="dot off"></span><span>旧笔记本<div class="sub">离线 · 保留中</div></span></div>
@@ -63,14 +63,14 @@
     <div class="flow">
       <div class="time">14:02</div>
       <div class="bub">给你发了刚才那份合同</div>
-      <div class="bub file"><span class="fic">📄</span><span>合同-final.pdf<div class="sub" id="fsub">2.1 MB · 等待确认</div><span class="fbtns" id="fb"><button class="sm p" onclick="acc()">接收</button><button class="sm" onclick="rej()">拒绝</button></span></span></div>
+      <div class="bub file"><span class="fic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/></svg></span><span>合同-final.pdf<div class="sub" id="fsub">2.1 MB · 等待确认</div><span class="fbtns" id="fb"><button class="sm p" onclick="acc()">接收</button><button class="sm" onclick="rej()">拒绝</button></span></span></div>
       <div class="bub me">收到,我看下</div>
-      <div class="bub me img">📷 截图预览</div>
+      <div class="bub me img"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg> 截图预览</div>
       <div class="time">14:05</div>
       <div class="bub">图里第二段要改一下</div>
     </div>
     <div class="inp">
-      <span class="ico" title="截图">✂</span><span class="ico" title="发送文件">📎</span>
+      <span class="ico" title="截图"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span><span class="ico" title="发送文件"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.234 20.252 21 12.3"/><path d="m16 6-8.414 8.586a2 2 0 0 0 0 2.828 2 2 0 0 0 2.828 0l8.414-8.586a4 4 0 0 0 0-5.656 4 4 0 0 0-5.656 0l-8.415 8.585a6 6 0 1 0 8.486 8.486l7.766-7.952"/></svg></span>
       <input placeholder="输入消息,Enter 发送;可直接粘贴图片">
       <button class="send">发送</button>
     </div>

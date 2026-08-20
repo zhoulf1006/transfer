@@ -22,6 +22,11 @@ window.PROTOTYPES = [
     path: 'general/prototype-settings.html'
   },
   {
+    module: 'screenshot', type: 'ui', id: 'annotation-toolbar',
+    name: '标注工具条(图标选型)',
+    path: 'screenshot/prototype-annotation-toolbar.html'
+  },
+  {
     module: 'landing-page', type: 'ui', id: 'footer-beian',
     name: '页脚备案号(国内镜像)',
     path: 'landing-page/prototype-footer-beian.html'

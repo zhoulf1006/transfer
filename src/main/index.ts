@@ -34,6 +34,25 @@ import { t, setMainLang, resolveSystemEffective } from './i18n'
 // (mac 大小写不敏感,dev 原 'transfer' 数据即同目录,无缝复用,无需迁移。)
 app.setName('Transfer')
 
+/**
+ * 测试静音(只由 e2e/smoke 注入,产品路径永不设置)。判据不是"测试能不能跑",而是
+ * **用户实例正在运行时跑一轮测试,用户或同网的他人能否察觉**——察觉得到的一律关断:
+ *   ① 不显示窗口:实测 `dock.hide()` 与 accessory 活动策略都挡不住抢前台,只有不显示才不打扰;
+ *      窗口不显示不影响断言 —— 布局、计算样式、CDP 输入都照常工作(焦点语义除外)。
+ *   ② 不注册全局快捷键:F1 同一时刻只有一个进程占得住,注册了就把用户实例的截图快捷键抢走,
+ *      且 `globalShortcut.register` 静默返回 false —— 用户只发现 F1 突然不好使。
+ *   ③ 不起 core(HTTP server + 多播发现)。**真正的危害是多播 announce,不是端口**:
+ *      端口有回退(53317→53318→…,见 app-core.ts),两实例本就能并存,不构成干扰;
+ *      而测试实例用临时 userData → 每跑一轮就是一个**全新指纹**,在用户的设备列表里
+ *      变成一台陌生新设备,退出后按 offlineKeep 默认**滞留一小时**且互不覆盖,
+ *      同网的他人也看得见。
+ *      HTTP server 本身无害,这里连它一起关只是因为**当前没有需要它的测试**:
+ *      收发链路已由 transfer.integration.test.ts 在集成层覆盖(不依赖发现);
+ *      将来若要跨进程 e2e 测传输,协议有定向 `POST /register`(ADR-0005)可用,
+ *      不必开多播——届时再单独放开 HTTP 即可。
+ */
+const QUIET = Boolean(process.env['TRANSFER_E2E_QUIET'])
+
 // env 覆盖(多实例测试,DESIGN §6/M4)
 const userDataOverride = process.env['TRANSFER_USERDATA']
 if (userDataOverride) app.setPath('userData', userDataOverride)
@@ -127,7 +146,23 @@ function createWindow(): void {
       sandbox: false
     }
   })
-  mainWindow.on('ready-to-show', () => mainWindow?.show())
+  // QUIET 下不显示:测试实例一显示就抢前台(见 QUIET 定义处①)。渲染与布局照常进行。
+  mainWindow.on('ready-to-show', () => {
+    if (!QUIET) mainWindow?.show()
+  })
+
+  // dev 实例的标题加 (dev) 后缀:它与已安装版长得一模一样,同时开着极易对着错的那个操作
+  // (改配置、看日志、验行为)。**标题是唯一可辨的地方** —— 进程名做不到:dev 跑的是
+  // node_modules 里 Electron.app 的 bundle,进程名由其 CFBundleName 决定,app.setName() 改不动。
+  // 必须拦 page-title-updated:窗口标题默认由页面的 <title> 接管,只调 setTitle 会在页面
+  // 加载完成时被 index.html 的 "Transfer" 覆盖回去。打包版无此分支,标题不变。
+  if (process.env['ELECTRON_RENDERER_URL']) {
+    mainWindow.on('page-title-updated', (e) => {
+      e.preventDefault()
+      mainWindow?.setTitle('Transfer (dev)')
+    })
+    mainWindow.setTitle('Transfer (dev)')
+  }
   mainWindow.on('closed', () => (mainWindow = null))
   // 聚焦/失焦:聚焦时停止任务栏闪烁(仅 Windows,mac 未 flash)并告知 renderer(用于"正在看→不计未读")。
   mainWindow.on('focus', () => {
@@ -370,7 +405,7 @@ app.whenReady().then(async () => {
       await core!.chat.sendFiles(peerFp, filePaths)
     }
   })
-  screenshot.start()
+  screenshot.start({ shortcut: !QUIET })
 
   // 网络服务(HTTP server + UDP 发现)延迟到窗口显示之后再起:让首帧更早、不被网络初始化阻塞。
   // 代价:启动后极短时间内(窗口已显示到服务就绪之间)可能收不到连接,可接受。
@@ -379,7 +414,11 @@ app.whenReady().then(async () => {
     // 屏幕录制授权询问同样要等主窗显示:app 未成为前台应用时,系统不会弹出授权框。
     screenshot?.primeScreenPermission()
   }
-  if (mainWindow && !mainWindow.isVisible()) {
+  // QUIET 下显式不起:窗口永不显示,若只靠 once('show') 不触发是**偶然**不起——
+  // 将来谁在测试里手动 show 一下,网络服务就会连带起来去抢端口、上局域网。写成显式判断。
+  if (QUIET) {
+    // 测试实例不起 HTTP server 与 UDP 发现(见 QUIET 定义处③)
+  } else if (mainWindow && !mainWindow.isVisible()) {
     mainWindow.once('show', startCore)
   } else {
     startCore()

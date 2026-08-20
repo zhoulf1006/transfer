@@ -185,6 +185,12 @@ body {
 
 /* ── 交互反馈:可点的东西看起来可点 ──
  * 组件走内联样式,这里只补 :hover(内联无法表达),用 class 钩子挂上。
+ *
+ * ⚠️ 硬规则:**凡是 :hover 要改的属性,它的 base 值必须也写在这里,不能留在组件内联样式里**
+ * —— 内联优先级高于 class 选择器(:hover 也不例外),base 写内联会把 :hover 整条压死,
+ * 表现是"hover 毫无反应"且无任何报错。故 .tf-icon-btn / .tf-jump-btn 的 background 都在
+ * 本文件给,组件只管几何(尺寸/圆角/居中)与颜色。
+ * 例外:选中态**故意**要盖过 hover 的(如 App.tsx 的 devItemActive),就该写内联。
  */
 .tf-row {
   transition: background 0.12s ease;
@@ -202,6 +208,7 @@ body {
   filter: brightness(0.96);
 }
 .tf-icon-btn {
+  background: none;
   transition: background 0.12s ease;
 }
 .tf-icon-btn:hover {

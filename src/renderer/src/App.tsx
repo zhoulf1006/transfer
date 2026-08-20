@@ -29,6 +29,7 @@ import {
   CameraIcon,
   PaperclipIcon,
   InboxIcon,
+  FolderOpenIcon,
   SendIcon, ChevronDownIcon } from './icons'
 
 /** 传输进度快照:messageId → 已传/总字节(不落库,仅内存) */
@@ -396,8 +397,11 @@ function Sidebar(props: {
       <div style={S.brand}>
         <strong style={S.brandName}>Transfer</strong>
         <div style={{ display: 'flex', gap: 2 }}>
+          {/* data-testid:给 e2e 用的语言无关定位锚。界面语言跟随系统,按 title 文案定位会随
+              运行机器的语言变红,不是被测行为的问题。不可见,不影响用户。 */}
           <button
             className="tf-icon-btn"
+            data-testid="btn-theme"
             onClick={onCycleTheme}
             title={t('theme.tooltip', { label: themeLabel })}
             style={S.iconBtn}
@@ -406,6 +410,7 @@ function Sidebar(props: {
           </button>
           <button
             className="tf-icon-btn"
+            data-testid="btn-settings"
             onClick={onOpenSettings}
             title={t('common.settings')}
             style={S.iconBtn}
@@ -1128,11 +1133,12 @@ function SettingsModal(props: {
           </span>
           <button
             className="tf-icon-btn"
+            data-testid="btn-open-downloads"
             style={S.storageIconBtn}
             title={t('settings.openFolderTitle')}
             onClick={() => window.transfer.openDownloadsDir()}
           >
-            📂
+            <FolderOpenIcon size={15} />
           </button>
         </div>
 
@@ -1240,7 +1246,8 @@ const S: Record<string, React.CSSProperties> = {
   sidebar: { width: 220, flexShrink: 0, borderRight: '1px solid var(--line)', background: 'var(--side)', display: 'flex', flexDirection: 'column', padding: '14px 12px', boxSizing: 'border-box', overflowY: 'auto' },
   brand: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
   brandName: { fontSize: 15, fontWeight: 640, letterSpacing: '-0.01em' },
-  iconBtn: { border: 'none', background: 'none', fontSize: 14, cursor: 'pointer', color: 'var(--muted)', width: 26, height: 26, borderRadius: 7, display: 'grid', placeItems: 'center' },
+  // background 不写在这里:它由 .tf-icon-btn 给(内联会压死该 class 的 :hover,见 theme.css)
+  iconBtn: { border: 'none', fontSize: 14, cursor: 'pointer', color: 'var(--muted)', width: 26, height: 26, borderRadius: 7, display: 'grid', placeItems: 'center' },
   self: { fontSize: 11, color: 'var(--muted)', margin: '3px 0 14px' },
   devHeader: { fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--muted)', margin: '12px 4px 5px' },
   hint: { color: 'var(--muted)', fontSize: 12.5, padding: 8, lineHeight: 1.5 },
@@ -1366,7 +1373,8 @@ const S: Record<string, React.CSSProperties> = {
   storageRow: { display: 'flex', alignItems: 'center', gap: 6, margin: '8px 0', fontSize: 12 },
   storageLabel: { flexShrink: 0, color: 'var(--ink)' },
   storagePath: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--muted)', direction: 'rtl', textAlign: 'left' },
-  storageIconBtn: { flexShrink: 0, border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 15, padding: '2px 4px', lineHeight: 1 },
+  // 同 iconBtn:background 归 .tf-icon-btn 管
+  storageIconBtn: { flexShrink: 0, border: 'none', cursor: 'pointer', color: 'var(--muted)', width: 22, height: 22, borderRadius: 6, padding: 0, display: 'grid', placeItems: 'center' },
   shortcutBox: { minWidth: 120, padding: '4px 12px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--bg)', color: 'var(--ink)', cursor: 'pointer', fontSize: 12, fontFamily: 'ui-monospace, monospace', textAlign: 'center' },
   shortcutBoxRec: { borderColor: 'var(--accent)', color: 'var(--accent)' },
   shortcutHint: { fontSize: 11, flex: 1, minWidth: 0 },

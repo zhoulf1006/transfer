@@ -75,6 +75,7 @@ pnpm install
 pnpm dev          # 开发模式(HMR)
 pnpm typecheck    # 类型检查
 pnpm test         # 运行测试(vitest)
+pnpm e2e          # 端到端测试(Playwright 驱动真实 Electron;跑测试不打扰正在使用的实例)
 pnpm build        # 构建
 ```
 
