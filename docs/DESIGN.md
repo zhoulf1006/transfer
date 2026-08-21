@@ -3,6 +3,14 @@
 > 跨平台(macOS / Windows)的局域网工具:文件传送 + 截屏标注 + 笔记,三者打通。
 > 技术栈:Electron + TypeScript。局域网直连,无服务器、无账号。
 
+> ⚠️ **这份文档是分层的设计史,不是现状描述。** 早期章节记的是 MVP 当时的设计(例如接收确认
+> 用系统弹框),后续章节记录它被什么取代(§9 记了改用原生 dialog、§11 记了最终改为聊天流内
+> 异步确认)。读到与产品行为不符处,**以代码、[ADR](./adr/) 与 [features](./features/) 为准**;
+> 需求全景与边界穷举见 [specs](./specs/)。
+>
+> 唯一按现状维护的是 **§4 的协议与超时常量**——它与 `src/shared/protocol.ts` 保持一致,
+> 因为那些取值会被人直接抄去用,过期的数字比过期的叙事危险得多。
+
 ---
 
 ## 0. 决策速览(已与用户确认)
@@ -104,7 +112,7 @@
 | 多播 loopback | `IP_MULTICAST_LOOP` **默认开启**,本机(含同机另一实例)会收到自己的广告 | 防自发现**必须做**,用**应用层 fingerprint 过滤**(`setMulticastLoopback(false)` 只管本 socket,防不住同机另一进程) |
 | 双实例监听 53317 | 必须 `dgram.createSocket({type:'udp4', reuseAddr:true})`,否则第二实例 `EADDRINUSE`;加了之后**两实例都能收到多播** | §9 双实例验收依赖此项;接收 socket 固定开 `reuseAddr` |
 | `fs.rename` 跨盘 | 跨挂载点/盘符 rename 抛 **`EXDEV`** | `.part` **必须与最终文件同目录**(同盘),写完同目录内 rename(原子);**不可**放系统 temp 再 rename 到用户目录 |
-| Fastify `bodyLimit` | 默认 **1 MiB**,超限 `FST_ERR_CTP_BODY_TOO_LARGE` | 走 `request.raw` pipe 天然绕过;仍在该路由显式设大 `bodyLimit` 兜底 |
+| Fastify `bodyLimit` | 默认 **1 MiB**,超限 `FST_ERR_CTP_BODY_TOO_LARGE` | 走 `request.raw` pipe 天然绕过 —— **它对 upload 根本不生效**(读 fastify 源码坐实:限额只在 `parseAs` 为 string/buffer 的解析器里生效,而 upload 用的是把裸流交出去的那种)。全局设的大 `bodyLimit` 是 **JSON 路由**的兜底,不是文件上限 |
 | 多播接收 | 必须 `bind(53317)` + `addMembership('224.0.0.167'[, iface])` 才收得到 | 缺一收不到发现包 |
 
 ---
@@ -190,13 +198,14 @@ export const EP = {
   cancel:         `${API_PREFIX}/cancel`,
 }
 
-// 超时常量(见 §5.1 契约:T_SENDER ≥ T_DIALOG + 余量)
-// ⚠️ 这是 MVP 时期的快照,取值与语义**都已演进**;现行版本以 src/shared/protocol.ts 为准,
-//    超时语义的决策见 ADR-0020(总时长 → 空闲)。
-export const T_DIALOG_MS = 30_000        // 接收方弹框超时
-export const T_SENDER_MS = 45_000        // 发送方 prepare-upload 超时
-export const T_IDLE_MS   = 30_000        // 传输空闲超时(任一 upload 有字节即 reset)
-export const T_UPLOAD_IDLE_MS = 45_000    // 单个 upload 的**空闲**超时(S4;不限总时长,ADR-0020)
+// 超时常量(契约见 §5.1;**下列取值与 src/shared/protocol.ts 一致**,改动请两处同步)
+// 语义统一是「空闲」而非「总时长」—— 判据是"还有没有字节在动",不是"传了多久"(ADR-0020)。
+export const T_SENDER_MS      = 6 * 60_000  // 发送方 prepare-upload 超时(≥ T_ACCEPT_MS + 余量)
+export const T_ACCEPT_MS      = 5 * 60_000  // 接收方确认窗口:用户在聊天流里点接收/拒绝的等待时间
+export const T_IDLE_MS        = 30_000      // 接收方会话空闲超时(收到字节即 reset)
+export const T_SWEEP_MS       = 5_000       // 推进会话超时的扫描间隔(判空闲的上界 = T_IDLE + T_SWEEP)
+export const T_UPLOAD_IDLE_MS = 45_000      // 发送方单个 upload 的空闲超时(> 上界 + 余量)
+export const T_CONNECT_MS     = 10_000      // 建连级短超时,握手成功后必须清除
 ```
 
 ---
@@ -222,7 +231,7 @@ export const T_UPLOAD_IDLE_MS = 45_000    // 单个 upload 的**空闲**超时(S
      创建 PENDING 会话,弹框问用户
                         │
         ┌───────────────┼───────────────┐
-   用户拒绝           用户接受          超时(弹框超时 T_dialog)
+   用户拒绝           用户接受        超时(确认窗口 T_ACCEPT_MS)
         │           (可部分接受)         │
         ▼               ▼               ▼
    返回 403      为**接受的文件**生成    返回 403 + 清理
@@ -249,8 +258,9 @@ export const T_UPLOAD_IDLE_MS = 45_000    // 单个 upload 的**空闲**超时(S
 
 协议**未规定** prepare-upload 的超时/连接生命周期。本设计用「挂起 HTTP 响应等弹框」模型,其正确性**依赖**:
 
-> **发送方 HTTP client 对 prepare-upload 的超时 `T_sender` ≥ 接收方弹框超时 `T_dialog` + 余量。**
-> MVP 取 `T_dialog = 30s`,`T_sender = 45s`(常量 `T_DIALOG_MS` / `T_SENDER_MS`,`protocol.ts`)。
+> **发送方 HTTP client 对 prepare-upload 的超时 `T_sender` ≥ 接收方确认窗口 + 余量。**
+> MVP 写这条时确认窗口是弹框(30s);**现行是聊天流内异步确认**,窗口放宽到 `T_ACCEPT_MS = 5min`,
+> 发送方随之放宽到 `T_SENDER_MS = 6min`(见 §11)。契约本身不变,只是两个数都变大了。
 > upload 阶段另有独立超时 `T_UPLOAD_IDLE_MS`(45s **空闲**,S4:防接收方异常挂起时发送方 `Promise.all` 永挂)。
 > 它是"多久没有字节在动",不是总时长 —— 大文件传多久都行(ADR-0020)。
 
@@ -267,7 +277,8 @@ export const T_UPLOAD_IDLE_MS = 45_000    // 单个 upload 的**空闲**超时(S
 - **IP 绑定**(B3,协议 403 明确含 IP):upload 的 `remoteAddress` 必须等于创建会话时 prepare-upload 的来源 IP,否则 403。
 - **状态门控**(H1):合法 upload 只在 **ACTIVE** 状态被接受;PENDING(尚未生成 token)期间到达的任何 upload → 403。
 - upload 必须校验 `sessionId + fileId + token + 来源IP` 全部匹配,且 fileId ∈ 本会话**接受集合**,否则 403;重复 upload 同一已收 fileId → 幂等忽略或 409(MVP:忽略,不重复落盘)。
-- 所有会话均有超时(弹框 `T_dialog`、传输空闲 `T_idle`),到期清理并删除 `.part`,防泄漏。
+- 所有会话均有超时(确认窗口 `T_ACCEPT_MS`、传输空闲 `T_IDLE_MS`),到期清理并删除 `.part`,防泄漏。
+  **空闲的判据是"有没有字节在动"**——凡消费请求体的路径都要刷新计时器,漏一条,该路径上的长传输会被静默清掉(ADR-0020)。
 
 ---
 
@@ -297,8 +308,8 @@ export const T_UPLOAD_IDLE_MS = 45_000    // 单个 upload 的**空闲**超时(S
 | 多网卡 / 代理隧道(已修复) | **真实 bug**:有代理软件(Clash/Surge)时机器有隧道接口(utun 上 198.18.x / CGNAT 100.64.x),dgram `addMembership` 不指定接口时 OS 可能把多播加到隧道接口,导致局域网互相发现不了(用户实测:mac 有 utun4 198.18.0.1 抢走了多播)。**修复**:`pickAllLanInterfaces` 挑出所有真实局域网接口(排除隧道段),在**每个**接口上 `addMembership`,`announce` 也遍历每个接口发送(不赌单一接口,兼容 VM/WSL 网卡与真实 WiFi 撞私有网段)。任一接口失败退回 OS 默认。`pick-interface.ts` + 10 个单元测覆盖 |
 | 同机双实例收多播(②-b) | 接收 socket 必须 `reuseAddr:true` 否则第二实例 EADDRINUSE;开了之后两实例都收到,再靠 fingerprint 各自过滤自己 |
 | `.part` rename 跨盘(②-c) | `.part` **必须与最终文件同目录**(同盘),同目录内 rename(原子);不可放系统 temp 再跨盘 rename(EXDEV) |
-| 大文件超 Fastify bodyLimit(②-d) | upload 路由用 `addContentTypeParser(done())` + pipe `request.raw` 天然绕过 1MiB 默认;并显式设大 bodyLimit 兜底 |
-| prepare-upload 弹框未响应 | 弹框超时 `T_dialog=30s` 自动返回 403,清理 pending 会话(见 §5.1 超时契约) |
+| 大文件超 Fastify bodyLimit(②-d) | 不存在这个上限:upload 用 `addContentTypeParser(done())` 交出裸流,**bodyLimit 对这条路由不生效**(限额只在 string/buffer 解析器里生效)。全局那个大 bodyLimit 兜的是 JSON 路由 |
+| prepare-upload 确认未响应 | 确认窗口 `T_ACCEPT_MS`(现行 5min)到期自动返回 403,清理 pending 会话(见 §5.1 超时契约) |
 | 用户接受但发送方已超时断开(B1/P1) | respond 后 send 前**预检 `req.raw.socket.destroyed`**,已断则 `onCancel` 回滚会话不 send。**注意:send 到已断 socket 是 no-op 不抛错,不能靠捕获失败**(见 §5.1) |
 | 弹框期间又来一个 prepare-upload | 别的设备→409;**同 IP+fingerprint 的重试→覆盖旧 PENDING**(H3) |
 | PENDING 期间收到 upload(H1) | 尚无有效 token → 403 |
