@@ -37,6 +37,8 @@ import {
   FileArchiveIcon,
   FileSheetIcon,
   FileIcon,
+  RadarIcon,
+  MessageCircleIcon,
   SendIcon, ChevronDownIcon } from './icons'
 
 /** 传输进度快照:messageId → 已传/总字节(不落库,仅内存) */
@@ -528,12 +530,17 @@ function DeviceContextMenu(props: {
   )
 }
 
+/** 空状态插画的尺寸。显式给,不靠 font-size —— 见 icons.tsx 顶部注释 */
+const EMPTY_ICON = 40
+
 function Empty({ devices }: { devices: RemoteDevice[] }): JSX.Element {
   const { t } = useI18n()
+  const found = devices.length > 0
+  // 图标与文案走同一个条件:没发现设备时是"还在找"(雷达),发现了才是"挑一个聊"(气泡)
   return (
-    <div style={S.empty}>
-      <div style={{ fontSize: 40 }}>💬</div>
-      <p>{devices.length ? t('chat.emptyPickDevice') : t('chat.emptySearching')}</p>
+    <div style={S.empty} data-testid="chat-empty">
+      {found ? <MessageCircleIcon size={EMPTY_ICON} /> : <RadarIcon size={EMPTY_ICON} />}
+      <p>{found ? t('chat.emptyPickDevice') : t('chat.emptySearching')}</p>
     </div>
   )
 }
