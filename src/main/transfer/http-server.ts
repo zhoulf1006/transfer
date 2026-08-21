@@ -156,6 +156,11 @@ export function createHttpServer(deps: HttpServerDeps): FastifyInstance {
 
     // 已收过(幂等):丢弃流,直接 200
     if (decision.alreadyReceived) {
+      // 丢弃期间同样在收字节,照样要刷新空闲计时器。这里回 200 是**立即**的,body 在后台继续丢,
+      // 少了这一行,丢一个大文件的耗时会把会话拖到空闲超时 —— 而遭殃的是同会话里**其他**
+      // 还没收的文件(token 随会话一起没了 → 403)。我们自己的发送端不重传,但协议兼容
+      // LocalSend,第三方客户端会。
+      req.raw.on('data', () => deps.sessions.touch(sessionId))
       req.raw.resume()
       return reply.code(200).send()
     }
@@ -167,7 +172,12 @@ export function createHttpServer(deps: HttpServerDeps): FastifyInstance {
         decision.fileMeta.fileName,
         deps.receiveDir(),
         decision.fileMeta.sha256,
-        (received, tot) => deps.onFileProgress?.(fileId, received, tot),
+        (received, tot) => {
+          // 字节在流动 = 会话不空闲。放在这里而不是 app-core 的进度处理里:
+          // 空闲判定属传输层,且这里是唯一能拿到"确实收到了字节"的位置(见 SessionManager.touch)
+          deps.sessions.touch(sessionId)
+          deps.onFileProgress?.(fileId, received, tot)
+        },
         total
       )
       // S3:落盘期间会话可能已被 cancel。markReceived 校验 sessionId,

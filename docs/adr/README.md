@@ -29,3 +29,4 @@
 | [0017](0017-spec-is-persistent-not-scratch.md) | spec 从"用完即丢"改为持久产物,归 docs/specs/,与 tickets 分家 | 已接受 |
 | [0018](0018-cn-mirror-landing-page-only.md) | 落地页进大陆节点,下载源留在 R2 不动(下载速度不因此改变) | 已接受 |
 | [0019](0019-workings-replace-scratch.md) | 施工文档迁到 docs/.workings/,仍不入库但改为本机保留、不随合并删除 | 已接受 |
+| [0020](0020-upload-idle-timeout-not-total.md) | 传输超时改空闲语义(不限总时长)+ 流式 sha256,解掉能传多大受内存与带宽限制的问题 | 已接受 |

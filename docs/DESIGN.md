@@ -191,10 +191,12 @@ export const EP = {
 }
 
 // 超时常量(见 §5.1 契约:T_SENDER ≥ T_DIALOG + 余量)
+// ⚠️ 这是 MVP 时期的快照,取值与语义**都已演进**;现行版本以 src/shared/protocol.ts 为准,
+//    超时语义的决策见 ADR-0020(总时长 → 空闲)。
 export const T_DIALOG_MS = 30_000        // 接收方弹框超时
 export const T_SENDER_MS = 45_000        // 发送方 prepare-upload 超时
 export const T_IDLE_MS   = 30_000        // 传输空闲超时(任一 upload 有字节即 reset)
-export const T_UPLOAD_MS = 5 * 60_000    // 单个 upload 超时(S4:防接收方挂起)
+export const T_UPLOAD_IDLE_MS = 45_000    // 单个 upload 的**空闲**超时(S4;不限总时长,ADR-0020)
 ```
 
 ---
@@ -249,7 +251,8 @@ export const T_UPLOAD_MS = 5 * 60_000    // 单个 upload 超时(S4:防接收方
 
 > **发送方 HTTP client 对 prepare-upload 的超时 `T_sender` ≥ 接收方弹框超时 `T_dialog` + 余量。**
 > MVP 取 `T_dialog = 30s`,`T_sender = 45s`(常量 `T_DIALOG_MS` / `T_SENDER_MS`,`protocol.ts`)。
-> upload 阶段另有独立超时 `T_UPLOAD_MS`(5min,S4:防接收方异常挂起时发送方 `Promise.all` 永挂)。
+> upload 阶段另有独立超时 `T_UPLOAD_IDLE_MS`(45s **空闲**,S4:防接收方异常挂起时发送方 `Promise.all` 永挂)。
+> 它是"多久没有字节在动",不是总时长 —— 大文件传多久都行(ADR-0020)。
 
 - 因为 MVP 是**自己发自己收**,两端超时都由我们控制,契约可满足。
 - **与第三方真实 LocalSend App 互通时此模型不成立**:真实 App(Flutter/dio)默认秒级超时,会在用户点弹框前就断开,表现为"发不过去"。故 §0 "未来可与 LocalSend App 互通"的承诺,**在挂起模型下不成立**,需在 §10 用「先返回占位 + 异步确认」方案替代。已移入 §10。
