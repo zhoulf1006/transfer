@@ -116,6 +116,47 @@ test('设置页的目录按钮是内联 SVG,不是字符图标', async () => {
   }
 })
 
+/**
+ * 空状态的插画是本 app 里唯一的大号图标,它曾经是 emoji —— 这类失效两条现有门禁都拦不住:
+ * typecheck 眼里 `<div>💬</div>` 与 `<Icon size={40}/>` 一样合法,单测不渲染。
+ *
+ * QUIET 下不起发现服务(见 src/main/index.ts 的 QUIET ③),所以永远发现不到设备,
+ * 空状态**恒定**停在"搜索中"那一支 —— 断言不依赖时序。
+ * 缺口:"已发现设备"那一支需要真实对端才能进,e2e 驱动不到,只在原型与人工核对过。
+ */
+test('聊天空状态的插画是内联 SVG,尺寸由 size 决定(不是 emoji、不靠 font-size)', async () => {
+  const l = await launch()
+  try {
+    const page = await l.app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+
+    const empty = page.getByTestId('chat-empty')
+    await expect(empty).toBeVisible()
+
+    const icon = empty.locator('svg')
+    await expect(icon).toHaveCount(1)
+
+    // 显式 size:盒子由 width/height 属性决定,不受字体度量影响
+    const box = await icon.evaluate((el) => {
+      const r = el.getBoundingClientRect()
+      return { w: Math.round(r.width), h: Math.round(r.height) }
+    })
+    expect(box).toEqual({ w: 40, h: 40 })
+
+    /**
+     * 按 Unicode 属性扫,不按手挑的 emoji 清单扫 —— 清单式检查只能证明"我列的那几个不在",
+     * 证不了"没有字符图标",而漏掉的那个不会自己现身。
+     */
+    const text = await empty.innerText()
+    expect(text.trim().length, '文案本身应还在(否则下面那条对空串恒真)').toBeGreaterThan(0)
+    expect(text, '空状态内不得有 emoji 当图标').not.toMatch(/\p{Extended_Pictographic}/u)
+
+    expect(l.errors).toEqual([])
+  } finally {
+    await close(l)
+  }
+})
+
 test('每个 .tf-icon-btn 的 hover 底色都真的生效(内联未压死 :hover)', async () => {
   const l = await launch()
   try {
