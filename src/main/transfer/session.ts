@@ -179,6 +179,23 @@ export class SessionManager {
   }
 
   /**
+   * 传输体有字节流入 → 刷新空闲计时器。
+   *
+   * **必须按字节刷新,不能只在 upload 请求到达时刷一次**:一个文件的传输体可以持续几分钟,
+   * 而 `onUpload` 只在请求**开始**时打一次时间戳、`markReceived` 只在**落盘后**打一次。
+   * 少了这一条,任何耗时超过 idleTimeoutMs 的单文件传输都会在传输途中被 `sweep` 判为空闲清掉,
+   * 后果还特别隐蔽:文件照常落盘、upload 照常回 200,只是 `markReceived` 发现会话没了
+   * 而不触发 onFileDone —— 发送方显示成功,接收方那条消息永远停在传输中。
+   *
+   * 只认当前 active 会话:非本会话或已被 cancel 的,不得因迟到的字节而复活。
+   */
+  touch(sessionId: string): void {
+    const s = this.session
+    if (!s || s.sessionId !== sessionId || s.phase !== 'active') return
+    s.lastActivity = this.now()
+  }
+
+  /**
    * 标记某文件已成功落盘。
    * - stillActive:该 sessionId 是否仍是当前会话(S3:落盘期间被 cancel 则 false)
    * - done:该会话是否已全部收完(收完即清理)

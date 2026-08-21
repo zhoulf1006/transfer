@@ -25,6 +25,7 @@
 |---|---|
 | [electron-graceful-quit.md](electron-graceful-quit.md) | 退出卡死 → 僵尸进程 → 端口乱跳 → 表现为"丢消息";含判断僵尸的判据与 dev 孤儿进程的两条死路 |
 | [send-connect-timeout.md](send-connect-timeout.md) | VPN 全隧道吞 SYN → 用户静默等 6 分钟;含"握手后必须清 connect timeout"的回归红线 |
+| [idle-timeout-kills-long-transfer.md](idle-timeout-kills-long-transfer.md) | 传输超 30 秒即被判空闲清掉:文件收到了但接收方永远显示"传输中",发送方显示成功;含"测试永远跑不到阈值"与"只断结果不断状态机"两类盲区 |
 | [lan-discovery-limits.md](lan-discovery-limits.md) | 发现的实测手法(tcpdump / C 探针秒级复现)、EHOSTUNREACH 的两种成因,以及广播兜底治不了的三种网络(AP 隔离/企业抑制/跨 VLAN) |
 | [screenshot-hidpi-canvas.md](screenshot-hidpi-canvas.md) | 底图层套了 dpr scale → Retina 只显示左上 1/4;长度量也要 × ratio |
 | [screenshot-sent-images-lifetime.md](screenshot-sent-images-lifetime.md) | 截图发完即删 → 删掉了自己消息的数据源 → 发送端缩略图消失 |

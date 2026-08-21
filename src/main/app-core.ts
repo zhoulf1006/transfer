@@ -6,7 +6,7 @@
 import { accessSync, constants, statSync } from 'node:fs'
 import type { FastifyInstance } from 'fastify'
 import type { DeviceInfo, RemoteDevice } from '@shared/types'
-import { DEFAULT_PORT } from '@shared/protocol'
+import { DEFAULT_PORT, T_SWEEP_MS } from '@shared/protocol'
 import { minutesToKeepMs } from '@shared/offline-keep'
 import { buildDeviceInfo, type Identity } from '@shared/identity'
 import { MulticastDiscovery } from './discovery/multicast'
@@ -216,7 +216,7 @@ export class AppCore {
         const { changed } = this.registry.prune()
         if (changed) this.emitDevices()
       }, 5_000)
-      this.sweepTimer = setInterval(() => this.sessions.sweep(), 5_000)
+      this.sweepTimer = setInterval(() => this.sessions.sweep(), T_SWEEP_MS)
     } catch (err) {
       await this.stop()
       throw err

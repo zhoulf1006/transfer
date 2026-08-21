@@ -9,12 +9,12 @@
 
 import { basename } from 'node:path'
 import { statSync, createReadStream } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import https from 'node:https'
 import tls from 'node:tls'
 import { Transform } from 'node:stream'
-import { EP, T_SENDER_MS, T_UPLOAD_MS, T_CONNECT_MS } from '@shared/protocol'
+import { EP, T_SENDER_MS, T_UPLOAD_IDLE_MS, T_CONNECT_MS } from '@shared/protocol'
+import { createIdleTimer } from './idle-timer'
 import type { DeviceInfo, FileMeta, PrepareUploadResponse } from '@shared/types'
 import { encodeTextMessage } from './text-message'
 
@@ -70,7 +70,7 @@ function pinnedAgent(target: SendTarget): https.Agent {
   ;(agent as unknown as { createConnection: CreateConn }).createConnection = (opts, cb) => {
     const socket = tls.connect({ ...opts, rejectUnauthorized: false }, () => {
       // 握手完成 → 清掉建连超时。⚠️ 回归红线:不清则大文件上传空闲期会被 T_CONNECT_MS 误杀
-      //(connect timeout 只管"建连到握手完成",握手后交还请求级 T_UPLOAD_MS/T_SENDER_MS)。
+      //(connect timeout 只管"建连到握手完成",握手后交还请求级 T_UPLOAD_IDLE_MS/T_SENDER_MS)。
       socket.setTimeout(0)
       // fail-closed(B3):期望指纹缺失也要响亮失败,不静默放行
       if (!target.fingerprint) {
@@ -162,13 +162,13 @@ function httpsJson(
  * 流式上传文件(裸二进制 body)。进度计数发生在传输层**拉取** chunk 时(背压驱动),
  * = 真实已发送字节(DESIGN §12.1)。用 pipe(counter).pipe(req),不用 readStream.on('data')(M3)。
  */
-function httpsUpload(
+export function httpsUpload(
   agent: https.Agent,
   target: SendTarget,
   path: string,
   filePath: string,
   total: number,
-  timeoutMs: number,
+  idleMs: number,
   onProgress?: (sent: number, total: number) => void
 ): Promise<HttpsResponse> {
   return new Promise((resolve, reject) => {
@@ -183,18 +183,30 @@ function httpsUpload(
         'content-length': String(total) // 必设:否则退化 chunked → 接收方 total=0 进度失真(M3)
       }
     })
-    const timer = setTimeout(() => req.destroy(new Error('upload timeout')), timeoutMs)
+    /**
+     * 空闲超时而非总时长超时:大文件传多久都行,真断线才失败(ADR-0020)。
+     *
+     * 一个计时器管两个阶段,共用同一份预算:
+     *  ① 传输体阶段 —— 下面 counter 的 transform 每被拉一次就 touch。
+     *  ② body 交完后等响应 —— 不再有 touch,于是对端最多可以拖 idleMs 才回包(S4 保护)。
+     *
+     * ⚠️ **touch 的间隔比"每 chunk 一次"粗得多**:pipe 在 `req.write()` 返回 false 后暂停,
+     * 而 `drain` 要等用户态缓冲**整个清空**才触发。实测本地环回一次能吞下约 1.4MB 才暂停,
+     * 于是两次 touch 的间隔 ≈ 已缓冲字节 / 对端消费速率。idleMs 必须比这个间隔留足余量
+     * (1.4MB ÷ 1MB/s 的弱链路 ≈ 1.4s,离 45s 很远),不能按"每 chunk 都会 touch"来估。
+     */
+    const idle = createIdleTimer(idleMs, () => req.destroy(new Error('upload timeout')))
 
     req.on('response', (res) => {
       const chunks: Buffer[] = []
       res.on('data', (c) => chunks.push(c as Buffer))
       res.on('end', () => {
-        clearTimeout(timer)
+        idle.clear()
         resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') })
       })
     })
     req.on('error', (err) => {
-      clearTimeout(timer)
+      idle.clear()
       reject(err)
     })
 
@@ -203,13 +215,16 @@ function httpsUpload(
     const counter = new Transform({
       transform(chunk, _enc, cb) {
         sent += chunk.length
+        // 字节真的被传输层接受了 → 不空闲。背压驱动是这里的关键:对端停止读取时
+        // _transform 随之停下,计时器才会到点,正是要捕捉的"卡住了"
+        idle.touch()
         onProgress?.(sent, total)
         cb(null, chunk)
       }
     })
     const rs = createReadStream(filePath)
     rs.on('error', (err) => {
-      clearTimeout(timer)
+      idle.clear()
       req.destroy()
       reject(err)
     })
@@ -219,10 +234,17 @@ function httpsUpload(
 
 // ── 业务:计算文件 map / 发送 ──────────────────────────────────────────
 
-/** 计算文件 sha256(DESIGN §9:发送方主动带 sha256,接收方校验) */
-async function fileSha256(path: string): Promise<string> {
-  const buf = await readFile(path)
-  return createHash('sha256').update(buf).digest('hex')
+/**
+ * 计算文件 sha256(DESIGN §9:发送方主动带 sha256,接收方校验)。
+ *
+ * **必须逐 chunk 喂,不得 readFile 整份读入**:整份读的峰值内存 = 文件大小(实测 1GB 文件
+ * 让主进程 RSS 从 62MB 涨到 1085MB),于是"能发多大文件"被内存而不是磁盘限住。
+ * 流式版峰值与文件大小无关。守这条的是 file-hash.test.ts 的峰值 RSS 断言。
+ */
+export async function fileSha256(path: string): Promise<string> {
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer)
+  return hash.digest('hex')
 }
 
 async function buildFileMap(files: SendFile[]): Promise<Record<string, FileMeta>> {
@@ -284,7 +306,7 @@ export async function sendFiles(
       `&fileId=${encodeURIComponent(fileId)}` +
       `&token=${encodeURIComponent(token)}`
 
-    const res = await httpsUpload(agent, target, path, file.path, total, T_UPLOAD_MS, (sent, t) =>
+    const res = await httpsUpload(agent, target, path, file.path, total, T_UPLOAD_IDLE_MS, (sent, t) =>
       onProgress?.(fileId, sent, t)
     )
     if (res.status < 200 || res.status >= 300) throw new Error(`upload ${fileId} status ${res.status}`)
