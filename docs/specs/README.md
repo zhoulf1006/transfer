@@ -8,6 +8,7 @@
 
 | spec | 讲什么 |
 |---|---|
+| [transfer-chat.md](transfer-chat.md) | 传输与聊天的需求全景:协商/传输/落盘/失败分类/文本/持久化六组边界穷举、测试决策、明确不做的与已知缺口 |
 | [landing-page-deploy.md](landing-page-deploy.md) | 落地页一份代码两处部署:备案号的注入与渲染边界、与下载/统计的回归点、部署约束 |
 
 ## 不变量

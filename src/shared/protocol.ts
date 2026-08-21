@@ -16,7 +16,6 @@ export const EP = {
 
 /** 超时契约(DESIGN §5.1/§11.2.3):T_sender ≥ 接收方确认窗口 + 余量。
  *  异步确认下用户可能几分钟才点,故发送方 prepare-upload 超时放宽到 6min(> T_ACCEPT_MS 5min)。 */
-export const T_DIALOG_MS = 30_000 // 保留常量(旧弹框语义,现已被 T_ACCEPT_MS 取代)
 export const T_SENDER_MS = 6 * 60_000
 /** 传输空闲超时:任一 upload 有字节即 reset(接收方,由 SessionManager.touch 刷新) */
 export const T_IDLE_MS = 30_000
