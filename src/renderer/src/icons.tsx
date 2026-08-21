@@ -1,11 +1,19 @@
 import React from 'react'
 
 /**
- * 内联 Lucide 图标(https://lucide.dev,ISC 许可)。
+ * 内联 SVG 图标。**一律内联,不引运行时图标库**——overlay 有严格 CSP
+ * (default-src 'self'),CDN 图标字体加载不进来;内联同时让 size 由 width/height
+ * 显式控制,不受字体度量影响(字符当图标会"同一 font-size 下实际字面大小不一")。
  *
- * overlay 有严格 CSP(default-src 'self'),不能走 CDN 图标字体,故内联 SVG。
- * 统一 Lucide 规范:24 viewBox、stroke=currentColor、stroke-width 2、圆角线帽。
- * color 跟随按钮 currentColor,size 默认 16。
+ * **三个来源,按此优先级取,每个图标注明出处**:
+ *   1. Lucide(https://lucide.dev,ISC)—— 主库,绝大多数图标在此。
+ *   2. Tabler(https://tabler.io/icons,MIT)—— **仅当 Lucide 无对应语义时**。
+ *      它与 Lucide 规格逐字相同(24 viewBox / fill none / stroke currentColor /
+ *      stroke-width 2 / 圆角线帽),故可共用下面的 Icon 包装,混排无视觉差异。
+ *   3. Material Symbols(Apache-2.0)—— 最后手段,**规格不同**:填充式、
+ *      viewBox `0 -960 960 960`,套 Icon 会渲染成空白,必须用 FilledIcon。
+ *
+ * 加图标时照抄官方文件的**内部元素**,不贴完整 <svg> 标签、不在路径上写死颜色。
  */
 function Icon({ size = 16, children }: { size?: number; children: React.ReactNode }): JSX.Element {
   return (
@@ -19,6 +27,20 @@ function Icon({ size = 16, children }: { size?: number; children: React.ReactNod
       strokeLinecap="round"
       strokeLinejoin="round"
     >
+      {children}
+    </svg>
+  )
+}
+
+/**
+ * Material Symbols 专用包装:**填充式**(fill=currentColor、无 stroke),且 viewBox 是
+ * `0 -960 960 960` 而非 24。两处都与上面的 Icon 不同,混用会静默出错——把 Material 的
+ * 路径塞进 Icon 会因 `fill="none"` 且路径本身无描边而**渲染成空白**(不报错)。
+ * 只在 Lucide 与 Tabler 都没有对应语义时使用(当前仅 blur_on 一例)。
+ */
+function FilledIcon({ size = 16, children }: { size?: number; children: React.ReactNode }): JSX.Element {
+  return (
+    <svg width={size} height={size} viewBox="0 -960 960 960" fill="currentColor">
       {children}
     </svg>
   )
@@ -152,6 +174,96 @@ export function ChevronDownIcon(props: { size?: number }): JSX.Element {
   return (
     <Icon size={props.size}>
       <path d="m6 9 6 6 6-6" />
+    </Icon>
+  )
+}
+
+/** Lucide rectangle-horizontal —— 标注:矩形 */
+export function RectIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <rect width="20" height="12" x="2" y="6" rx="2" />
+    </Icon>
+  )
+}
+
+/** Lucide circle —— 标注:椭圆 */
+export function EllipseIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <circle cx="12" cy="12" r="10" />
+    </Icon>
+  )
+}
+
+/** Lucide arrow-up-right —— 标注:箭头 */
+export function ArrowIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M7 7h10v10" /> <path d="M7 17 17 7" />
+    </Icon>
+  )
+}
+
+/** Lucide slash —— 标注:直线 */
+export function LineIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M22 2 2 22" />
+    </Icon>
+  )
+}
+
+/** Lucide pencil —— 标注:画笔 */
+export function PenIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /> <path d="m15 5 4 4" />
+    </Icon>
+  )
+}
+
+/** Tabler texture —— 标注:马赛克 —— Lucide 无马赛克语义(mosaic/pixelate 标签全空),取 Tabler 斜纹 */
+export function MosaicIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M6 3l-3 3" /> <path d="M21 18l-3 3" /> <path d="M11 3l-8 8" /> <path d="M16 3l-13 13" /> <path d="M21 3l-18 18" /> <path d="M21 8l-13 13" /> <path d="M21 13l-8 8" />
+    </Icon>
+  )
+}
+
+/** Material Symbols blur_on —— 标注:模糊 —— 填充式,必须走 FilledIcon;Lucide 连 blur 标签都没有 */
+export function BlurIcon(props: { size?: number }): JSX.Element {
+  return (
+    <FilledIcon size={props.size}>
+      <path d="M120-380q-8 0-14-6t-6-14q0-8 6-14t14-6q8 0 14 6t6 14q0 8-6 14t-14 6Zm0-160q-8 0-14-6t-6-14q0-8 6-14t14-6q8 0 14 6t6 14q0 8-6 14t-14 6Zm120 340q-17 0-28.5-11.5T200-240q0-17 11.5-28.5T240-280q17 0 28.5 11.5T280-240q0 17-11.5 28.5T240-200Zm0-160q-17 0-28.5-11.5T200-400q0-17 11.5-28.5T240-440q17 0 28.5 11.5T280-400q0 17-11.5 28.5T240-360Zm0-160q-17 0-28.5-11.5T200-560q0-17 11.5-28.5T240-600q17 0 28.5 11.5T280-560q0 17-11.5 28.5T240-520Zm0-160q-17 0-28.5-11.5T200-720q0-17 11.5-28.5T240-760q17 0 28.5 11.5T280-720q0 17-11.5 28.5T240-680Zm160 340q-25 0-42.5-17.5T340-400q0-25 17.5-42.5T400-460q25 0 42.5 17.5T460-400q0 25-17.5 42.5T400-340Zm0-160q-25 0-42.5-17.5T340-560q0-25 17.5-42.5T400-620q25 0 42.5 17.5T460-560q0 25-17.5 42.5T400-500Zm0 300q-17 0-28.5-11.5T360-240q0-17 11.5-28.5T400-280q17 0 28.5 11.5T440-240q0 17-11.5 28.5T400-200Zm0-480q-17 0-28.5-11.5T360-720q0-17 11.5-28.5T400-760q17 0 28.5 11.5T440-720q0 17-11.5 28.5T400-680Zm0 580q-8 0-14-6t-6-14q0-8 6-14t14-6q8 0 14 6t6 14q0 8-6 14t-14 6Zm0-720q-8 0-14-6t-6-14q0-8 6-14t14-6q8 0 14 6t6 14q0 8-6 14t-14 6Zm160 480q-25 0-42.5-17.5T500-400q0-25 17.5-42.5T560-460q25 0 42.5 17.5T620-400q0 25-17.5 42.5T560-340Zm0-160q-25 0-42.5-17.5T500-560q0-25 17.5-42.5T560-620q25 0 42.5 17.5T620-560q0 25-17.5 42.5T560-500Zm0 300q-17 0-28.5-11.5T520-240q0-17 11.5-28.5T560-280q17 0 28.5 11.5T600-240q0 17-11.5 28.5T560-200Zm0-480q-17 0-28.5-11.5T520-720q0-17 11.5-28.5T560-760q17 0 28.5 11.5T600-720q0 17-11.5 28.5T560-680Zm0 580q-8 0-14-6t-6-14q0-8 6-14t14-6q8 0 14 6t6 14q0 8-6 14t-14 6Zm0-720q-8 0-14-6t-6-14q0-8 6-14t14-6q8 0 14 6t6 14q0 8-6 14t-14 6Zm160 620q-17 0-28.5-11.5T680-240q0-17 11.5-28.5T720-280q17 0 28.5 11.5T760-240q0 17-11.5 28.5T720-200Zm0-160q-17 0-28.5-11.5T680-400q0-17 11.5-28.5T720-440q17 0 28.5 11.5T760-400q0 17-11.5 28.5T720-360Zm0-160q-17 0-28.5-11.5T680-560q0-17 11.5-28.5T720-600q17 0 28.5 11.5T760-560q0 17-11.5 28.5T720-520Zm0-160q-17 0-28.5-11.5T680-720q0-17 11.5-28.5T720-760q17 0 28.5 11.5T760-720q0 17-11.5 28.5T720-680Zm120 300q-8 0-14-6t-6-14q0-8 6-14t14-6q8 0 14 6t6 14q0 8-6 14t-14 6Zm0-160q-8 0-14-6t-6-14q0-8 6-14t14-6q8 0 14 6t6 14q0 8-6 14t-14 6Z" />
+    </FilledIcon>
+  )
+}
+
+/** Tabler circle-number-1 —— 标注:序号 —— Lucide 全库无带圈数字(1768 个已穷举) */
+export function BadgeNumberIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /> <path d="M10 10l2 -2v8" />
+    </Icon>
+  )
+}
+
+/** Lucide undo-2 —— 标注工具条:撤销 */
+export function UndoIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="M9 14 4 9l5-5" /> <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" />
+    </Icon>
+  )
+}
+
+/** Lucide redo-2 —— 标注工具条:重做 */
+export function RedoIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="m15 14 5-5-5-5" /> <path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13" />
     </Icon>
   )
 }

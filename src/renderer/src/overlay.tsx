@@ -33,7 +33,21 @@ import {
   type SceneState
 } from '@shared/screenshot-annotation'
 import { drawElement } from './annotation-draw'
-import { CopyIcon, SaveIcon, SendIcon } from './icons'
+import {
+  CopyIcon,
+  SaveIcon,
+  SendIcon,
+  RectIcon,
+  EllipseIcon,
+  ArrowIcon,
+  LineIcon,
+  PenIcon,
+  MosaicIcon,
+  BlurIcon,
+  BadgeNumberIcon,
+  UndoIcon,
+  RedoIcon
+} from './icons'
 import { I18nProvider, useI18n } from './i18n'
 import type { TKey } from '@shared/i18n/dict'
 
@@ -674,16 +688,27 @@ function SizeLabel({ sel }: { sel: Rect }): JSX.Element {
 }
 
 const TOOLBAR_H = 32
-const TOOLS: Array<{ tool: ShotTool; icon: string; labelKey: TKey }> = [
-  { tool: 'rect', icon: '▭', labelKey: 'overlay.tool.rect' },
-  { tool: 'ellipse', icon: '◯', labelKey: 'overlay.tool.ellipse' },
-  { tool: 'arrow', icon: '↗', labelKey: 'overlay.tool.arrow' },
-  { tool: 'line', icon: '／', labelKey: 'overlay.tool.line' },
-  { tool: 'pen', icon: '✎', labelKey: 'overlay.tool.pen' },
-  { tool: 'mosaic', icon: '▚', labelKey: 'overlay.tool.mosaic' },
-  { tool: 'blur', icon: '◍', labelKey: 'overlay.tool.blur' },
+/** 工具图标尺寸:略小于 24 的按钮盒,与同条上的复制/保存/发送一致 */
+const TOOL_ICON = 15
+
+/**
+ * icon 用 ReactNode 而非字符串:图标一律内联 SVG(见 icons.tsx 文件头)。
+ *
+ * **唯一的例外是「文字」工具的字面 `A`**(2026-08-21 用户裁定):它是纯 ASCII,
+ * 没有 `▚ ◍ ①` 那种字体缺字风险,而字母 A 本身就是该工具最直白的记号。
+ * 代价明知:它由系统字体渲染,笔画与光学尺寸与相邻 SVG 不是一套,且不随 TOOL_ICON 缩放。
+ * 这条例外记在 CONTEXT.md,不是遗漏——**别再"顺手"把它换成图标**。
+ */
+const TOOLS: Array<{ tool: ShotTool; icon: React.ReactNode; labelKey: TKey }> = [
+  { tool: 'rect', icon: <RectIcon size={TOOL_ICON} />, labelKey: 'overlay.tool.rect' },
+  { tool: 'ellipse', icon: <EllipseIcon size={TOOL_ICON} />, labelKey: 'overlay.tool.ellipse' },
+  { tool: 'arrow', icon: <ArrowIcon size={TOOL_ICON} />, labelKey: 'overlay.tool.arrow' },
+  { tool: 'line', icon: <LineIcon size={TOOL_ICON} />, labelKey: 'overlay.tool.line' },
+  { tool: 'pen', icon: <PenIcon size={TOOL_ICON} />, labelKey: 'overlay.tool.pen' },
+  { tool: 'mosaic', icon: <MosaicIcon size={TOOL_ICON} />, labelKey: 'overlay.tool.mosaic' },
+  { tool: 'blur', icon: <BlurIcon size={TOOL_ICON} />, labelKey: 'overlay.tool.blur' },
   { tool: 'text', icon: 'A', labelKey: 'overlay.tool.text' },
-  { tool: 'badge', icon: '①', labelKey: 'overlay.tool.badge' }
+  { tool: 'badge', icon: <BadgeNumberIcon size={TOOL_ICON} />, labelKey: 'overlay.tool.badge' }
 ]
 const COLORS = ['#e23b3b', '#f59e0b', '#22c55e', '#2d84c4', '#7c3aed', '#111111', '#ffffff']
 
@@ -757,10 +782,10 @@ function Toolbar(props: {
       />
       <div style={S.tbSep} />
       <button style={S.tbTool} disabled={!props.canUndo} onClick={props.onUndo} title={t('overlay.undo')}>
-        ↶
+        <UndoIcon size={TOOL_ICON} />
       </button>
       <button style={S.tbTool} disabled={!props.canRedo} onClick={props.onRedo} title={t('overlay.redo')}>
-        ↷
+        <RedoIcon size={TOOL_ICON} />
       </button>
       <div style={S.tbSep} />
       <button style={S.tbTool} onClick={props.onCopy} title={t('overlay.copyClipboard')}>
