@@ -30,6 +30,13 @@ import {
   PaperclipIcon,
   InboxIcon,
   FolderOpenIcon,
+  FileImageIcon,
+  FileVideoIcon,
+  FileAudioIcon,
+  FileTextIcon,
+  FileArchiveIcon,
+  FileSheetIcon,
+  FileIcon,
   SendIcon, ChevronDownIcon } from './icons'
 
 /** 传输进度快照:messageId → 已传/总字节(不落库,仅内存) */
@@ -754,7 +761,7 @@ function Downloads(): JSX.Element {
         {files.length === 0 && <div style={S.hint}>{t('downloads.empty')}</div>}
         {files.map((f) => (
           <div key={f.id} className="tf-row" style={S.dlRow}>
-            <div style={S.fileIcon}>{fileEmoji(f.fileName)}</div>
+            <div style={S.fileIcon}>{fileTypeIcon(f.fileName)}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={S.dlName} title={f.fileName ?? ''}>
                 {f.fileName}
@@ -797,17 +804,29 @@ function Bubble({ msg, prog }: { msg: UiMessage; prog?: { sent: number; total: n
   )
 }
 
-/** 按文件扩展名给个贴切的图标(纯装饰,识别不了就用通用文件图标) */
-function fileEmoji(name: string | null): string {
+/** 文件类型图标尺寸(px):承载它的 30×30 圆角块见 S.fileIcon / S.fileIconOwn */
+const FILE_ICON = 17
+
+/**
+ * 按文件扩展名给个贴切的图标(纯装饰,识别不了就用通用文件图标)。
+ *
+ * 全部取 Lucide 的 `file-*` 家族(A 案,2026-08-21 用户选定):同一个"纸张+折角"轮廓,
+ * 一列文件读下来整齐。**扩展名分类规则一字未动**,本次只换表现层。
+ *
+ * PDF 与文档共用 `file-text`:Lucide 无 PDF 专用字形(1776 个图标全名单已穷举,`pdf` 零命中),
+ * 而统一家族里没有第二个合适的替代。代价是丢掉了 emoji 时代 📕 与 📝 的区分——
+ * 这是 A 案的已知取舍,不是漏改;要找回区分需跨家族借 `book`,那会破坏家族统一。
+ */
+function fileTypeIcon(name: string | null): JSX.Element {
   const ext = (name ?? '').split('.').pop()?.toLowerCase() ?? ''
-  if (/^(png|jpg|jpeg|gif|webp|heic|bmp|svg)$/.test(ext)) return '🖼️'
-  if (/^(mp4|mov|avi|mkv|webm)$/.test(ext)) return '🎬'
-  if (/^(mp3|wav|flac|aac|m4a)$/.test(ext)) return '🎵'
-  if (/^(pdf)$/.test(ext)) return '📕'
-  if (/^(zip|rar|7z|tar|gz|dmg|pkg|exe|msi)$/.test(ext)) return '📦'
-  if (/^(doc|docx|txt|md|rtf)$/.test(ext)) return '📝'
-  if (/^(xls|xlsx|csv)$/.test(ext)) return '📊'
-  return '📄'
+  if (/^(png|jpg|jpeg|gif|webp|heic|bmp|svg)$/.test(ext)) return <FileImageIcon size={FILE_ICON} />
+  if (/^(mp4|mov|avi|mkv|webm)$/.test(ext)) return <FileVideoIcon size={FILE_ICON} />
+  if (/^(mp3|wav|flac|aac|m4a)$/.test(ext)) return <FileAudioIcon size={FILE_ICON} />
+  if (/^(pdf)$/.test(ext)) return <FileTextIcon size={FILE_ICON} />
+  if (/^(zip|rar|7z|tar|gz|dmg|pkg|exe|msi)$/.test(ext)) return <FileArchiveIcon size={FILE_ICON} />
+  if (/^(doc|docx|txt|md|rtf)$/.test(ext)) return <FileTextIcon size={FILE_ICON} />
+  if (/^(xls|xlsx|csv)$/.test(ext)) return <FileSheetIcon size={FILE_ICON} />
+  return <FileIcon size={FILE_ICON} />
 }
 
 function FileBubble({
@@ -833,7 +852,7 @@ function FileBubble({
         <ImageThumb msg={msg} />
       ) : (
         <div style={S.fileLine}>
-          <div style={own ? S.fileIconOwn : S.fileIcon}>{fileEmoji(msg.fileName)}</div>
+          <div style={own ? S.fileIconOwn : S.fileIcon}>{fileTypeIcon(msg.fileName)}</div>
           <div style={{ minWidth: 0 }}>
             <div style={S.fileName}>{msg.fileName}</div>
             {msg.fileSize != null && <div style={S.fileSize}>{fmtSize(msg.fileSize)}</div>}
@@ -938,7 +957,7 @@ function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
   if (thumb === null) {
     return (
       <div style={S.fileLine}>
-        <div style={S.fileIcon}>{fileEmoji(msg.fileName)}</div>
+        <div style={S.fileIcon}>{fileTypeIcon(msg.fileName)}</div>
         <div style={{ minWidth: 0 }}>
           <div style={S.fileName}>{msg.fileName}</div>
           {msg.fileSize != null && <div style={S.fileSize}>{fmtSize(msg.fileSize)}</div>}
@@ -1289,9 +1308,11 @@ const S: Record<string, React.CSSProperties> = {
   text: { fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
   meta: { fontSize: 9.5, opacity: 0.7, marginTop: 4 },
   fileLine: { display: 'flex', alignItems: 'center', gap: 9 },
-  fileIcon: { width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', fontSize: 15, flexShrink: 0, background: 'var(--accent-soft)' },
+  // color 必须显式给:emoji 自带颜色,换成 SVG 后走 currentColor,不给会继承 --ink 变墨色
+  // (theme.css 的既有配对:accent-soft 柔底 + accent 紫图标)。fontSize 是撑 emoji 用的,已失效。
+  fileIcon: { width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', flexShrink: 0, background: 'var(--accent-soft)', color: 'var(--accent)' },
   // me 气泡是柔紫底,图标底不能再用同支柔紫(会糊),改用紫墨半透明:比气泡深一档、浅深底都可见
-  fileIconOwn: { width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', fontSize: 15, flexShrink: 0, background: 'var(--own-wash)' },
+  fileIconOwn: { width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', flexShrink: 0, background: 'var(--own-wash)', color: 'var(--accent)' },
   fileName: { fontWeight: 560, fontSize: 12.5 },
   fileSize: { fontSize: 10.5, opacity: 0.65, marginTop: 1 },
   thumb: {

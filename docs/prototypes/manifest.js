@@ -7,6 +7,11 @@ window.PROTOTYPES = [
     path: 'transfer-chat/prototype-main-window.html'
   },
   {
+    module: 'transfer-chat', type: 'ui', id: 'file-type-icons',
+    name: '文件类型图标(选型)',
+    path: 'transfer-chat/prototype-file-type-icons.html'
+  },
+  {
     module: 'transfer-chat', type: 'ui', id: 'jump-to-latest',
     name: '跳到最新按钮(染色玻璃深浅)',
     path: 'transfer-chat/prototype-jump-to-latest.html'
