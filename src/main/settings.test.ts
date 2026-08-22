@@ -322,3 +322,140 @@ describe('SettingsStore', () => {
     })
   })
 })
+
+// ── 接收文件夹(spec receive-dir 的 G 组) ──
+// 两个字段总是一起变(选定/退回/清告知都同时动它们),故作为一个整体存取。
+describe('接收文件夹设置', () => {
+  const dirs: string[] = []
+  function mkdir(): string {
+    const d = mkdtempSync(join(tmpdir(), 'transfer-recvdir-'))
+    dirs.push(d)
+    return d
+  }
+  afterEach(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true })
+    dirs.length = 0
+  })
+
+  test('G1 旧版本升级(配置里没有这两个字段) → 补成"用默认目录、无告知"', () => {
+    const d = mkdir()
+    // 造一份**真实形态**的旧配置:v1.2.1 的 settings.json 就长这样,没有接收目录字段
+    writeFileSync(
+      join(d, 'settings.json'),
+      JSON.stringify({
+        autoAccept: { enabled: true, maxBytes: 104857600 },
+        theme: 'system',
+        language: 'system',
+        shortcutCapture: 'F1',
+        deviceAliases: {},
+        offlineKeepMinutes: 60
+      })
+    )
+    const s = new SettingsStore(d)
+    expect(s.getReceiveDir()).toEqual({ chosen: null, notice: false })
+    // 同时确认没把别的字段冲掉 —— 升级路径最容易在这里出事
+    expect(s.getAutoAccept().enabled).toBe(true)
+  })
+
+  test('选定的目录能持久化,重新加载后还在', () => {
+    const d = mkdir()
+    new SettingsStore(d).setReceiveDir({ chosen: '/Volumes/SSD/收件', notice: false })
+    expect(new SettingsStore(d).getReceiveDir()).toEqual({ chosen: '/Volumes/SSD/收件', notice: false })
+  })
+
+  test('D3 告知标记必须活过重启', () => {
+    const d = mkdir()
+    new SettingsStore(d).setReceiveDir({ chosen: null, notice: true })
+    expect(new SettingsStore(d).getReceiveDir().notice).toBe(true)
+  })
+
+  test.each([
+    ['非字符串', 42],
+    ['空串', ''],
+    ['只有空白', '   '],
+    ['相对路径', 'Downloads/收件'],
+    ['数组', ['/tmp']],
+    ['对象', { path: '/tmp' }]
+  ])('G2 目录是垃圾值(%s) → 兜底为"用默认目录"', (_label, bad) => {
+    const d = mkdir()
+    writeFileSync(join(d, 'settings.json'), JSON.stringify({ receiveDir: bad }))
+    expect(new SettingsStore(d).getReceiveDir().chosen).toBeNull()
+  })
+
+  test.each([
+    ['字符串', 'true'],
+    ['数字', 1],
+    ['对象', {}]
+  ])('G3 告知标记是垃圾值(%s) → 兜底为无告知', (_label, bad) => {
+    const d = mkdir()
+    writeFileSync(join(d, 'settings.json'), JSON.stringify({ receiveDirNotice: bad }))
+    expect(new SettingsStore(d).getReceiveDir().notice).toBe(false)
+  })
+
+  test('绝对路径原样保留,不做规范化', () => {
+    // 不 trim、不去尾斜杠:这是用户从系统选择器拿到的路径,擅自改写会让它对不上真实目录
+    const d = mkdir()
+    writeFileSync(join(d, 'settings.json'), JSON.stringify({ receiveDir: '/Volumes/A B/收 件' }))
+    expect(new SettingsStore(d).getReceiveDir().chosen).toBe('/Volumes/A B/收 件')
+  })
+})
+
+// ── security-scoped bookmark(spec receive-dir A8;仅 MAS 沙盒需要) ──
+describe('接收文件夹的沙盒授权书签', () => {
+  const dirs: string[] = []
+  function mkdir(): string {
+    const d = mkdtempSync(join(tmpdir(), 'transfer-bm-'))
+    dirs.push(d)
+    return d
+  }
+  afterEach(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true })
+    dirs.length = 0
+  })
+
+  test('选定目录时存下书签,重启后读得回来(没有它,沙盒版每次重启都会被判失效)', () => {
+    const d = mkdir()
+    new SettingsStore(d).setReceiveDir({ chosen: '/Volumes/SSD/收件', notice: false }, 'Ym9va21hcms=')
+    expect(new SettingsStore(d).getReceiveDirBookmark()).toBe('Ym9va21hcms=')
+  })
+
+  test('回到默认目录时书签一并清掉,不留悬空授权', () => {
+    const d = mkdir()
+    const s = new SettingsStore(d)
+    s.setReceiveDir({ chosen: '/Volumes/SSD/收件', notice: false }, 'Ym9va21hcms=')
+    s.setReceiveDir({ chosen: null, notice: false })
+    expect(s.getReceiveDirBookmark()).toBeNull()
+  })
+
+  test('即使调用方在回默认时误传了书签,也不予保存', () => {
+    // 书签与它授权的那个目录绑定;chosen 为 null 时留着它没有任何意义,
+    // 只会让"当前用的是默认目录"与"却持有某个别处的授权"同时为真。
+    const d = mkdir()
+    const s = new SettingsStore(d)
+    s.setReceiveDir({ chosen: null, notice: false }, 'Ym9va21hcms=')
+    expect(s.getReceiveDirBookmark()).toBeNull()
+  })
+
+  test.each([
+    ['非字符串', 42],
+    ['空串', ''],
+    ['null', null]
+  ])('书签是垃圾值(%s) → 读回 null', (_label, bad) => {
+    const d = mkdir()
+    writeFileSync(
+      join(d, 'settings.json'),
+      JSON.stringify({ receiveDir: '/Volumes/SSD/收件', receiveDirBookmark: bad })
+    )
+    expect(new SettingsStore(d).getReceiveDirBookmark()).toBeNull()
+  })
+})
+
+// F7:路径含换行/控制字符。macOS 的目录名允许这些字符,所以它是**合法路径**而非垃圾值——
+// 归一化不该把它挡掉。单行显示由渲染端的 white-space:nowrap 保证,不在这一层。
+test('接收文件夹路径含换行等控制字符时照常接受(它们在 macOS 上是合法文件名)', () => {
+  const d = mkdtempSync(join(tmpdir(), 'transfer-ctrl-'))
+  const weird = '/tmp/a\nb\tc'
+  writeFileSync(join(d, 'settings.json'), JSON.stringify({ receiveDir: weird }))
+  expect(new SettingsStore(d).getReceiveDir().chosen).toBe(weird)
+  rmSync(d, { recursive: true, force: true })
+})

@@ -1,63 +1,135 @@
 <!doctype html>
-<!-- 原型:设置弹层 — 用户选定方向:单列分区(现状风)。单变体,零后端,交互仅视觉反馈。
-     防真空:弹层压在仿主窗外壳上评判。 -->
+<!-- 原型:设置弹层。
+     2026-08-22 重做:上一版是早期方向探索(分区卡、开关、分段控件、120px 标签列),
+     与最终实现完全不是一套。本版**照实现现状复刻**——极简行式布局、标签带冒号且为内容宽度、
+     下拉框而非分段控件、图标按钮贴最右——然后在「存储」区上加「接收文件夹」的新元素。
+     颜色变量名与取值同 theme.css,实现时可直接对应。
+     防真空:弹层压在仿主窗外壳上评判(外壳只是语境占位,不复刻主窗细节;弹层有遮罩+模糊,细节看不见)。 -->
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>原型 — 设置弹层(单列分区)</title>
+<title>原型 — 设置弹层(接收文件夹)</title>
 <style>
+  /* ── 变量:名称与取值同 src/renderer/src/theme.css ── */
   :root{
-    --bg:#f7f8f9; --card:#ffffff; --text:#37352f; --text-2:#787774;
+    --bg:#f7f8f9; --card:#ffffff; --ink:#1a1c1f; --ink-2:#52565c; --muted:#868b93;
     --line:#e8eaed; --line-strong:#d9dce0;
-    --accent:#8a67ab; --accent-hover:#7c5a9c; --accent-soft:#f0ebf6; --danger:#dc2626; --ok:#3fb950;
+    --accent:#8a67ab; --accent-hover:#7c5a9c; --accent-soft:#f0ebf6;
+    --shadow-md:0 4px 16px -6px rgba(20,22,26,.12);
+    /* 新增(theme.css 目前没有暖色警告语义,只有 --danger 红):目录失效是**需要注意**而非出错,
+       用警告琥珀色而不是危险红。取的是 amber-600/400 一档(色相 32°)——
+       orange-600(色相 25°)红味仍重,并排看更像报错(2026-08-23 三档并排选定)。
+       --warn 构成文字与边框 → 随全部主题维度变;--warn-soft 是坐在卡片上的底色 → 只随明暗变。
+       本项目当前只有明暗一个维度,故两者都是明暗各写一处。
+       实现时 theme.css 有**四处**变量块(:root、@media dark、[data-theme=light]、[data-theme=dark]),
+       四处都要写——原型只有 @media 一套。 */
+    --warn:#d97706; --warn-soft:#fdf6ea;
   }
   @media (prefers-color-scheme: dark){
-    :root{ --bg:#18191b; --card:#1f2124; --text:#e6e6e5; --text-2:#9b9a97;
-      --line:#2a2c30; --line-strong:#34373c; --accent:#a084c7; --accent-soft:#2c2733; }
+    :root{
+      --bg:#18191b; --card:#1f2124; --ink:#e9eaed; --ink-2:#b4b8bd; --muted:#7f858c;
+      --line:#2a2c30; --line-strong:#34373c;
+      --accent:#a084c7; --accent-hover:#b199d3; --accent-soft:#2a2430;
+      --shadow-md:0 6px 20px -8px rgba(0,0,0,.5);
+      /* 深色下提亮一档(amber-600→amber-400),与 --danger 在深色里 #dc2626→#f87171 的处理同源 */
+      --warn:#fbbf24; --warn-soft:#2c2615;
+    }
   }
   *{box-sizing:border-box;margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
-  body{background:var(--bg);color:var(--text);height:100vh;overflow:hidden;font-size:13px}
+  body{background:var(--bg);color:var(--ink);height:100vh;overflow:hidden;font-size:13px}
 
-  /* 仿主窗外壳(评判语境) */
+  /* 仿主窗外壳:只提供语境,不复刻细节(遮罩+模糊后本就看不清) */
   .shell{display:flex;height:100vh}
   .side{width:230px;border-right:1px solid var(--line);padding:12px;background:var(--card)}
   .side h1{font-size:14px;margin:6px 4px 14px}
   .dev{display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px}
   .dev.on{background:var(--accent-soft)}
-  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}.dot.off{background:var(--line-strong)}
+  .dot{width:8px;height:8px;border-radius:50%;background:#3fb950}.dot.off{background:var(--line-strong)}
   .main{flex:1;display:flex;flex-direction:column;padding:14px 18px;gap:10px}
   .bub{max-width:46%;padding:8px 12px;border-radius:10px;background:var(--card);border:1px solid var(--line)}
   .bub.me{align-self:flex-end;background:var(--accent-soft)}
-  .mask{position:fixed;inset:0;background:rgba(0,0,0,.35)}
 
-  .modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--card);
-    border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 48px rgba(0,0,0,.22);width:520px;max-height:80vh;overflow:auto}
-  .m-h{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}
-  .m-h b{font-size:15px}.x{cursor:pointer;color:var(--text-2)}
-  .m-f{display:flex;justify-content:flex-end;gap:10px;padding:12px 18px;border-top:1px solid var(--line)}
-  .btn{border:1px solid var(--line-strong);background:var(--card);color:var(--text);padding:6px 16px;border-radius:6px;cursor:pointer}
-  .btn.p{background:var(--accent);border-color:var(--accent);color:#fff}.btn.p:hover{background:var(--accent-hover)}
-  .sec{padding:14px 18px}.sec h3{font-size:12px;color:var(--text-2);margin-bottom:10px;font-weight:600}
-  .sec + .sec{border-top:1px solid var(--line)}
-  .row{display:flex;align-items:center;gap:10px;padding:7px 0}
-  .row .lab{width:120px}
-  .hint{font-size:12px;color:var(--text-2)}
-  .sw{width:34px;height:20px;border-radius:10px;background:var(--line-strong);position:relative;cursor:pointer;transition:.15s}
-  .sw::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s}
-  .sw.on{background:var(--accent)}.sw.on::after{left:16px}
-  .num{width:80px;padding:5px 8px;border:1px solid var(--line-strong);border-radius:6px;background:var(--card);color:var(--text)}
-  .num:focus{outline:none;border-color:var(--accent)}
-  .seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:6px;overflow:hidden}
-  .seg span{padding:5px 12px;font-size:12px;cursor:pointer;border-right:1px solid var(--line-strong)}
-  .seg span:last-child{border-right:0}.seg span.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
-  .rec{min-width:130px;padding:5px 10px;border:1px dashed var(--line-strong);border-radius:6px;font-size:12px;
-    color:var(--text-2);cursor:pointer;text-align:center}
-  .rec.armed{border-color:var(--accent);color:var(--accent)}
-  .path{direction:rtl;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;max-width:200px;color:var(--text-2);font-size:12px}
-  .open{cursor:pointer;color:var(--accent);font-size:12px}
+  /* ── 弹层:照 App.tsx 的 S.modalMask / S.modal ── */
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;
+    justify-content:center;backdrop-filter:blur(2px)}
+  .modal{background:var(--card);color:var(--ink);border-radius:14px;padding:24px;width:380px;
+    border:1px solid var(--line);box-shadow:var(--shadow-md)}
+  .modal h3{margin:0 0 0;font-size:16px}
+
+  .sec-t{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.03em;margin:16px 0 4px}
+  .row{display:flex;align-items:center;gap:8px;margin:10px 0;font-size:13}
+  .row.off{opacity:.5}
+  .hint{font-size:11px;color:var(--muted);margin:-2px 0 4px}
+  .num{width:80px;padding:4px 8px;border:1px solid var(--line-strong);border-radius:6px;
+    background:var(--bg);color:var(--ink)}
+  .sel{padding:4px 10px;border:1px solid var(--line-strong);border-radius:6px;background:var(--bg);
+    color:var(--ink);cursor:pointer;font-size:12.5px}
+  .rec{flex:1;padding:5px 10px;border:1px solid var(--line-strong);border-radius:6px;background:var(--bg);
+    color:var(--ink);font-size:12.5px;text-align:center;cursor:pointer}
+  .foot{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+  .btn{padding:6px 16px;border:1px solid var(--line-strong);border-radius:8px;background:var(--card);
+    color:var(--ink);cursor:pointer;font-size:13px;font-family:inherit}
+  .btn.p{border-color:var(--accent-soft);background:var(--accent-soft);color:var(--accent)}
+
+  /* ── 存储行:照 S.storageRow / storageLabel / storagePath / storageIconBtn ── */
+  .st-row{display:flex;align-items:center;gap:6px;margin:8px 0;font-size:12px}
+  .st-lab{flex-shrink:0;color:var(--ink)}
+  /* direction:rtl 让省略号落在**左边**——路径太长时省掉前缀、保留末尾目录名(信息量在末尾)。
+     代价:开头的 "/" 属中性字符,会被双向算法重排到末尾,显示成 "Users/me/Downloads/"
+     (实现里现在就是这个样子)。修法是方向隔离:容器保持 rtl 管截断,路径文本包一层 <bdi>
+     自成 LTR 段落。用 unicode-bidi:plaintext 不行——它让整个元素按 LTR 处理,
+     省略号会跟着跑到右边,把末尾目录名截掉(实测过)。 */
+  .st-path{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    color:var(--muted);direction:rtl;text-align:left}
+  .st-btn{flex-shrink:0;border:none;background:none;cursor:pointer;color:var(--muted);
+    width:22px;height:22px;border-radius:6px;padding:0;display:grid;place-items:center}
+  .st-btn:hover{background:var(--line)}
+
+  /* ── 本次新增:操作行 + 两种提示块 ──
+     操作行与提示块都**不缩进**,左对齐到弹层内边距——与既有的 .hint 行一致
+     (标签宽度随语言变,固定 px 缩进在英文下就会错位)。 */
+  .acts{display:flex;gap:14px;margin:-2px 0 4px}
+  .lnk{border:0;background:none;padding:0;font-size:12px;font-family:inherit;
+    color:var(--accent);cursor:pointer}
+  .lnk:hover{color:var(--accent-hover);text-decoration:underline}
+  .lnk[hidden]{display:none}
+
+  /* 失效告知:持久显示,直到用户点「知道了」或重新选择 */
+  .warn{display:flex;gap:7px;margin:6px 0 4px;padding:8px 10px;border-radius:7px;
+    background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn)}
+  /* 必须显式写:UA 的 [hidden]{display:none} 与本规则同特异性,而作者样式表优先,
+     不写这条则 hidden 属性对它完全失效(且不报错)。.note 未设 display,不受此影响。 */
+  .warn[hidden]{display:none}
+  .warn svg{flex:none;margin-top:1px}
+  .warn-t{font-size:12px;font-weight:600}
+  .warn-d{font-size:11.5px;margin-top:2px;opacity:.92;line-height:1.45}
+  /* 「知道了」在告知块内,颜色跟告知走而不是 accent —— 它是这个块的出口,不是页面的操作 */
+  .warn-ok{color:var(--warn);margin-top:5px;font-weight:600}
+  .warn-ok:hover{color:var(--warn)}
+
+  /* 改完文件夹后的一次性说明:中性语气,不是错误 */
+  .note{margin:6px 0 4px;padding:8px 10px;border-radius:7px;font-size:11.5px;line-height:1.45;
+    background:var(--accent-soft);color:var(--ink-2)}
+
+  /* 原型工装(非产品 UI):切换「接收文件夹」的四种状态 */
+  .rig{position:fixed;top:10px;left:10px;z-index:9;display:flex;gap:6px;align-items:center;
+    background:var(--card);border:1px solid var(--line-strong);border-radius:8px;padding:7px 10px}
+  .rig b{font-size:11px;color:var(--muted);font-weight:600;margin-right:2px}
+  .rig button{font-size:11px;padding:4px 9px;border-radius:5px;cursor:pointer;font-family:inherit;
+    border:1px solid var(--line-strong);background:var(--card);color:var(--ink)}
+  .rig button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 </style>
 </head>
 <body>
+
+<!-- 原型工装:切换「接收文件夹」的四种状态。非产品 UI。 -->
+<div class="rig">
+  <b>接收文件夹状态</b>
+  <button onclick="setState('default',this)" class="on">默认</button>
+  <button onclick="setState('custom',this)">已自选</button>
+  <button onclick="setState('changed',this)">刚改完</button>
+  <button onclick="setState('broken',this)">失效待处理</button>
+</div>
 
 <div class="shell">
   <div class="side">
@@ -71,42 +143,78 @@
     <div class="bub me">收到,我看下</div>
   </div>
 </div>
-<div class="mask"></div>
 
+<div class="mask">
 <div class="modal">
-  <div class="m-h"><b>设置</b><span class="x"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></div>
-  <div class="sec"><h3>接收</h3>
-    <div class="row"><span class="lab">自动接收</span><span class="sw on" onclick="this.classList.toggle('on')"></span><span class="hint">文本始终自动接收</span></div>
-    <div class="row"><span class="lab">文件大小上限</span><input class="num" type="number" value="100"><span class="hint">MB,超过则需确认</span></div>
+  <h3>设置</h3>
+
+  <div class="sec-t">接收</div>
+  <label class="row"><input type="checkbox"> 启用自动接收(文本消息始终自动接收)</label>
+  <label class="row off">自动接收文件大小上限: <input class="num" type="number" value="100" disabled> MB</label>
+
+  <div class="sec-t">存储</div>
+  <div class="st-row">
+    <span class="st-lab">接收文件夹:</span>
+    <span class="st-path"><bdi id="pathText">/Users/loong_zhou/Downloads</bdi></span>
+    <button class="st-btn" title="在文件管理器中打开"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></button>
   </div>
-  <div class="sec"><h3>截图</h3>
-    <div class="row"><span class="lab">截图快捷键</span><span class="rec" onclick="arm(this)">F1</span><span class="hint">点击后按下新组合键,Esc 取消</span></div>
+  <div class="acts"><button class="lnk" onclick="pick()">更改…</button><button class="lnk" id="btnReset" onclick="reset()">恢复默认</button></div>
+  <!-- 失效告知:目录已自动退回默认(路径不再记得),告知持久到用户点「知道了」或重新选择 -->
+  <div class="warn" id="warnBox" hidden>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+    <div>
+      <div class="warn-t">接收文件夹已改回默认</div>
+      <div class="warn-d">之前选择的文件夹不可用(可能已被删除、改名,或所在磁盘已移除)。新收到的文件存到上面这个文件夹。</div>
+      <button class="lnk warn-ok" onclick="dismiss()">知道了</button>
+    </div>
   </div>
-  <div class="sec"><h3>外观与语言</h3>
-    <div class="row"><span class="lab">主题</span><span class="seg" onclick="seg(event)"><span class="on">跟随系统</span><span>浅色</span><span>深色</span></span></div>
-    <div class="row"><span class="lab">语言</span><span class="seg" onclick="seg(event)"><span class="on">跟随系统</span><span>中文</span><span>English</span></span></div>
-  </div>
-  <div class="sec"><h3>存储与设备</h3>
-    <div class="row"><span class="lab">文件</span><span class="path">/Users/loong/Downloads</span><span class="open" title="在文件管理器中打开"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span></div>
-    <div class="row"><span class="lab">离线设备保留</span><input class="num" type="number" value="60"><span class="hint">分钟,0=永不移除</span></div>
-  </div>
-  <div class="m-f"><button class="btn">取消</button><button class="btn p" id="save" onclick="saved()">保存</button></div>
+  <!-- 改完文件夹后的一次性说明 -->
+  <div class="note" id="noteBox" hidden>此前收到的文件仍在原文件夹,Transfer 不会移动它们。</div>
+
+  <div class="sec-t">快捷键</div>
+  <div class="row"><span>截图:</span><span class="rec">F1</span></div>
+
+  <div class="sec-t">设备发现</div>
+  <div class="row">离线设备保留: <select class="sel"><option>1 小时</option><option>永不移除</option></select></div>
+  <div class="hint">离线设备灰置底保留多久后从列表移除</div>
+
+  <div class="sec-t">语言</div>
+  <div class="row"><select class="sel"><option>中文</option><option>English</option><option>跟随系统</option></select></div>
+
+  <div class="foot"><button class="btn">取消</button><button class="btn p">保存</button></div>
+</div>
 </div>
 
 <script>
-  function seg(ev){ if(ev.target.tagName!=='SPAN'||ev.target.classList.contains('seg')) return;
-    ev.currentTarget.querySelectorAll('span').forEach(s=>s.classList.remove('on')); ev.target.classList.add('on'); }
-  let armed=null;
-  function arm(el){ if(armed) disarm(); armed=el; el.dataset.old=el.textContent; el.textContent='按下快捷键…'; el.classList.add('armed'); }
-  function disarm(){ if(!armed) return; armed.textContent=armed.dataset.old; armed.classList.remove('armed'); armed=null; }
-  addEventListener('keydown',(e)=>{ if(!armed) return; e.preventDefault();
-    if(e.key==='Escape'){ disarm(); return; }
-    const mods=[e.metaKey&&'⌘',e.ctrlKey&&'Ctrl',e.altKey&&'⌥',e.shiftKey&&'⇧'].filter(Boolean);
-    const k=/^[a-z0-9]$|^F\d+$/i.test(e.key)?e.key.toUpperCase():null;
-    if(k){ armed.textContent=[...mods,k].join('+'); armed.classList.remove('armed'); armed=null; }
-  },true);
-  function saved(){ const b=document.getElementById('save'); b.textContent='已保存 ✓';
-    setTimeout(()=>{ b.textContent='保存'; },900); }
+  // 「接收文件夹」四态。默认态没有「恢复默认」——已经是默认了,那个按钮点了什么也不会发生。
+  const DEFAULT_DIR='/Users/loong_zhou/Downloads', CUSTOM_DIR='/Volumes/SSD/Transfer 收件';
+  const STATES={
+    default:{ dir:DEFAULT_DIR, reset:false, note:false, warn:false },
+    custom :{ dir:CUSTOM_DIR,  reset:true,  note:false, warn:false },
+    changed:{ dir:CUSTOM_DIR,  reset:true,  note:true,  warn:false },
+    // 失效态 = 默认态 + 一条告知:目录已自动退回默认,所以路径显示的就是默认目录、
+    // 也不出现「恢复默认」。原来选的那个路径**不再记得**,故告知里说不出是哪个。
+    broken :{ dir:DEFAULT_DIR, reset:false, note:false, warn:true }
+  };
+  function setState(name, btn){
+    const s=STATES[name];
+    document.getElementById('pathText').textContent=s.dir;       // <bdi>,只承载文本与方向隔离
+    document.getElementById('btnReset').hidden=!s.reset;
+    document.getElementById('warnBox').hidden=!s.warn;
+    document.getElementById('noteBox').hidden=!s.note;
+    document.querySelectorAll('.rig button').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+  }
+  // 三个操作都**立即生效**(与同页的语言、离线保留一致);「取消」不回滚它们。
+  const RIG=(i)=>document.querySelectorAll('.rig button')[i];
+  // 「更改…」:真实里这一步是系统选择器,选定后立刻落盘并提示旧文件仍在原处
+  function pick(){ setState('changed', RIG(2)); }
+  function reset(){ setState('default', RIG(0)); }
+  // 「知道了」= 清掉那个标记位。清完就回到默认态——路径本来就已经是默认目录了,
+  // 唯一的变化是告知消失。**不可撤销**:原来选的路径没记,没有"再看一眼"这回事。
+  function dismiss(){ setState('default', RIG(0)); }
+
+  setState('default', document.querySelector('.rig button'));
 </script>
 </body>
 </html>

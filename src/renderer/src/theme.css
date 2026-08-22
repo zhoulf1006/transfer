@@ -33,6 +33,11 @@
   --online: #22c55e;
   --offline: #b7bbc2;
   --danger: #dc2626;
+  /* 警告(琥珀):目录失效这类**需要注意但不是出错**的状态。红色会让人以为出了故障,
+     而文件其实没丢、接收也没断,只是落点换了。取 amber-600/400 一档;
+     orange-600(色相 25°)红味仍重,并排比更像报错。 */
+  --warn: #d97706;
+  --warn-soft: #fdf6ea;
 
   /* 进度条轨道 */
   --track: rgba(20, 22, 26, 0.09);
@@ -75,6 +80,9 @@
     --online: #34d17d;
     --offline: #5a5f66;
     --danger: #f87171;
+    /* 深色下提亮一档(amber-600→amber-400),与 --danger 在深色里的处理同源 */
+    --warn: #fbbf24;
+    --warn-soft: #2c2615;
 
     --track: rgba(255, 255, 255, 0.1);
 
@@ -111,6 +119,8 @@
   --online: #22c55e;
   --offline: #b7bbc2;
   --danger: #dc2626;
+  --warn: #d97706;
+  --warn-soft: #fdf6ea;
   --track: rgba(20, 22, 26, 0.09);
   --shadow-sm: 0 1px 2px rgba(20, 22, 26, 0.04);
   --shadow-md: 0 4px 16px -6px rgba(20, 22, 26, 0.12);
@@ -142,6 +152,8 @@
   --online: #34d17d;
   --offline: #5a5f66;
   --danger: #f87171;
+  --warn: #fbbf24;
+  --warn-soft: #2c2615;
   --track: rgba(255, 255, 255, 0.1);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 6px 20px -8px rgba(0, 0, 0, 0.5);
@@ -213,6 +225,33 @@ body {
 }
 .tf-icon-btn:hover {
   background: var(--hover);
+}
+/* 文字按钮(设置页「更改…」「恢复默认」「知道了」):无边框无底,靠颜色表明可点。
+ * color 整个落在 class 里、不写内联 —— 内联优先级高于任何 class 选择器,base 写内联
+ * 会把下面的 :hover 整条压死,且不报错、类型检查也不拦,表现只是"hover 毫无反应"。
+ * 几何/间距仍走内联(见 App.tsx 的 linkBtn)。 */
+.tf-link-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+.tf-link-btn:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+/* 告知块内的「知道了」:颜色跟着告知走而不是主题强调色 —— 它是那个块的出口,
+ * 不是页面级操作。与上面同特异性,靠书写顺序在后取胜(两条都要写,hover 也不例外)。 */
+.tf-link-btn-warn {
+  color: var(--warn);
+  font-weight: 600;
+}
+.tf-link-btn-warn:hover {
+  color: var(--warn);
 }
 /* 「跳到最新」染色玻璃浮控:半透明紫底 + 背景模糊,无描边。
  * 背景与阴影整组落在 class 里(不写内联):内联优先级高于 class,base 若写内联会把
