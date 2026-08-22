@@ -3,7 +3,7 @@
 // 弹框决策通过注入的 askUser 回调完成 —— 主进程用 Electron dialog 实现,
 // 从而核心逻辑不直接依赖 Electron。
 
-import { accessSync, constants, statSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import type { FastifyInstance } from 'fastify'
 import type { DeviceInfo, RemoteDevice } from '@shared/types'
 import { DEFAULT_PORT, T_SWEEP_MS } from '@shared/protocol'
@@ -15,6 +15,7 @@ import { SessionManager } from './transfer/session'
 import { createHttpServer } from './transfer/http-server'
 import { sendFiles, sendText, registerTo, type SendTarget } from './transfer/http-client'
 import { ChatService } from './chat-service'
+import { isDirWritable } from './receive-dir'
 import type { MessageStore } from './db/messages'
 import type { SettingsStore } from './settings'
 import type { Message } from '@shared/message'
@@ -30,7 +31,11 @@ export interface AppCoreEvents {
 export interface AppCoreOpts {
   identity: Identity
   platform: NodeJS.Platform
-  receiveDir: string
+  /**
+   * 本次该往哪儿落。**惰性求值**:目录可能在两次接收之间被拔掉或删掉,
+   * 构造时固化成字符串就检测不到(spec receive-dir C5)。
+   */
+  receiveDir: () => string
   /** 消息持久化(注入,便于测试用 :memory:) */
   store: MessageStore
   /** 设置(自动接收) */
@@ -125,14 +130,9 @@ export class AppCore {
     return buildDeviceInfo(this.opts.identity, this.opts.platform, this.httpPort)
   }
 
-  /** 接收目录是否可写(①-A:自动接收前预检) */
+  /** 接收目录是否可写(①-A:自动接收前预检)。取用即触发一次目录判定,失效时已退回默认。 */
   private isReceiveDirWritable(): boolean {
-    try {
-      accessSync(this.opts.receiveDir, constants.W_OK)
-      return true
-    } catch {
-      return false
-    }
+    return isDirWritable(this.opts.receiveDir())
   }
 
   /** fingerprint → 连接目标 + alias(离线返回 null) */
@@ -192,7 +192,7 @@ export class AppCore {
         sessions: this.sessions,
         tls: { key: this.opts.identity.privateKey, cert: this.opts.identity.cert },
         selfInfo: () => this.selfInfo(),
-        receiveDir: () => this.opts.receiveDir,
+        receiveDir: this.opts.receiveDir,
         onPrepareAsk: (transferId, req, fromIp) => this.chat.askUser(transferId, req, fromIp),
         onTextMessage: (text, from) => this.chat.handleIncomingText(text, from),
         shouldAutoAcceptFiles: (files) => this.chat.shouldAutoAcceptFiles(files),

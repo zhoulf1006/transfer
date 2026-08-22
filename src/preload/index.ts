@@ -17,7 +17,8 @@ import {
   type LangPref,
   type LangResult,
   type Lang,
-  type StorageDirs,
+  type ReceiveDirInfo,
+  type PickReceiveDirResult,
   type SetShortcutResult
 } from '@shared/ipc'
 import type { RemoteDevice } from '@shared/types'
@@ -73,9 +74,14 @@ const api = {
   getOfflineKeep: (): Promise<number> => ipcRenderer.invoke(CMD.getOfflineKeep),
   setOfflineKeep: (minutes: number): Promise<number> =>
     ipcRenderer.invoke(CMD.setOfflineKeep, minutes),
-  /** 存储目录:取路径展示 + 打开(系统文件管理器) */
-  getStorageDirs: (): Promise<StorageDirs> => ipcRenderer.invoke(CMD.getStorageDirs),
-  openDownloadsDir: (): Promise<void> => ipcRenderer.invoke(CMD.openDownloadsDir),
+  /** 接收文件夹:取状态展示 / 打开 / 改 / 恢复默认 / 清告知。后三个**立即生效**,不跟随设置页的「保存」 */
+  getReceiveDir: (): Promise<ReceiveDirInfo> => ipcRenderer.invoke(CMD.getReceiveDir),
+  openReceiveDir: (): Promise<void> => ipcRenderer.invoke(CMD.openReceiveDir),
+  /** 返回改动后的状态;用户取消选择器或选了不可写目录时,返回的状态与改动前一致 */
+  pickReceiveDir: (): Promise<PickReceiveDirResult> => ipcRenderer.invoke(CMD.pickReceiveDir),
+  resetReceiveDir: (): Promise<ReceiveDirInfo> => ipcRenderer.invoke(CMD.resetReceiveDir),
+  dismissReceiveDirNotice: (): Promise<ReceiveDirInfo> =>
+    ipcRenderer.invoke(CMD.dismissReceiveDirNotice),
   /** 在文件管理器中定位并选中收到的文件 */
   showInFolder: (messageId: string): Promise<void> => ipcRenderer.invoke(CMD.showInFolder, messageId),
   /** 同步总未读数给 main(驱动 mac Dock 数字角标) */

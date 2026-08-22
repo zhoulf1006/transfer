@@ -66,10 +66,16 @@ export const CMD = {
   getImageDataUrl: 'message:getImageDataUrl',
   getAutoAccept: 'settings:getAutoAccept',
   setAutoAccept: 'settings:setAutoAccept',
-  /** 取存储目录路径给设置页展示:{ downloads(接收文件), images(截图副本 sent-images) } */
-  getStorageDirs: 'settings:getStorageDirs',
-  /** 打开接收文件的下载目录 */
-  openDownloadsDir: 'settings:openDownloadsDir',
+  /** 取接收文件夹的当前状态给设置页展示(展示路径已解符号链接 + 是否默认 + 有无未读告知) */
+  getReceiveDir: 'settings:getReceiveDir',
+  /** 打开**当前**接收文件夹(可能是用户自选的,不一定是系统下载目录) */
+  openReceiveDir: 'settings:openReceiveDir',
+  /** 弹系统选择器改接收文件夹;选中不可写的目录会被当场拒绝 */
+  pickReceiveDir: 'settings:pickReceiveDir',
+  /** 改回用系统下载目录 */
+  resetReceiveDir: 'settings:resetReceiveDir',
+  /** 清掉「已改回默认」的未读告知(用户点了「知道了」) */
+  dismissReceiveDirNotice: 'settings:dismissReceiveDirNotice',
   /** 主题偏好读写(存 main 侧,避开 file:// 下 localStorage 慢) */
   getTheme: 'settings:getTheme',
   setTheme: 'settings:setTheme',
@@ -182,10 +188,27 @@ export interface AutoAcceptSettings {
   maxBytes: number
 }
 
-/** 存储目录路径(设置页展示用) */
-export interface StorageDirs {
-  /** 接收文件的下载目录(收发的文件/图片都落这) */
-  downloads: string
+/** 接收文件夹的当前状态(设置页「存储」分区展示用) */
+export interface ReceiveDirInfo {
+  /**
+   * 当前接收文件夹的**展示路径**——已解开符号链接。
+   * 沙盒下 downloads 是指向真实 ~/Downloads 的符号链接,不解开会显示一串容器路径。
+   */
+  path: string
+  /** 用的是不是系统下载目录。false 时设置页才出现「恢复默认」 */
+  isDefault: boolean
+  /** 有一条未读的「接收文件夹已改回默认」告知 */
+  notice: boolean
+}
+
+/** 「更改…」的结果。changed 由 main 判定——只有它同时看得到改动前后的选择。 */
+export interface PickReceiveDirResult {
+  info: ReceiveDirInfo
+  /**
+   * 目录确实变了。用来决定要不要提示"旧文件仍在原处"——取消选择器、选了同一个目录、
+   * 选中不可写被拒,这三种都是 false。
+   */
+  changed: boolean
 }
 
 export type { RemoteDevice }

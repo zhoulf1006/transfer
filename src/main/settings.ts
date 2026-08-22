@@ -3,9 +3,10 @@
 // 存 userData/settings.json。默认自动接收**关**(全部文件弹确认);文本不受此约束(永远入流)。
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join, dirname, isAbsolute } from 'node:path'
 import type { LangPref } from '@shared/i18n/resolve'
 import { OFFLINE_KEEP_DEFAULT_MINUTES } from '@shared/offline-keep'
+import type { ReceiveDirState } from './receive-dir'
 
 export interface AutoAcceptSettings {
   /** 是否启用自动接收(仅约束文件,文本永远自动入流) */
@@ -34,6 +35,21 @@ export interface AppSettings {
    * 只存分钟数,Infinity 只在 registry 运行时存在(见 @shared/offline-keep)。默认 60。
    */
   offlineKeepMinutes: number
+  /**
+   * 用户选定的接收文件夹(绝对路径);**null = 用系统下载目录**。
+   * 不把默认路径写进来:那样系统下载目录一变,这里就留下一个过期的绝对路径。
+   */
+  receiveDir: string | null
+  /** 有一条未读的「接收文件夹已改回默认」告知。必须持久化——它要活过重启(spec receive-dir D3)。 */
+  receiveDirNotice: boolean
+  /**
+   * 用户选定目录时拿到的 security-scoped bookmark(base64)。**只有 Mac App Store 沙盒版用得上**:
+   * 沙盒进程重启后不自动保留对用户选定目录的写权限,得靠它重新取得。
+   * 少了它,沙盒版每次重启都会因写不进去而被判目录失效、退回默认——用户看到的是
+   * "我明明设过,怎么又变回去了",而失败发生在收文件那一刻,离配置很远。
+   * 恒与 `receiveDir` 同生共死(见 normalize):后者为 null 时它必为 null。
+   */
+  receiveDirBookmark: string | null
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -45,7 +61,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   language: 'system',
   shortcutCapture: DEFAULT_SHORTCUT_CAPTURE,
   deviceAliases: {},
-  offlineKeepMinutes: OFFLINE_KEEP_DEFAULT_MINUTES
+  offlineKeepMinutes: OFFLINE_KEEP_DEFAULT_MINUTES,
+  receiveDir: null,
+  receiveDirNotice: false,
+  receiveDirBookmark: null
 }
 
 /** 归一化(容错旧/损坏字段),保证返回合法结构 */
@@ -63,6 +82,14 @@ function normalize(raw: unknown): AppSettings {
     typeof r.shortcutCapture === 'string' && r.shortcutCapture.trim()
       ? r.shortcutCapture
       : DEFAULT_SETTINGS.shortcutCapture
+  // 接收文件夹必须是**绝对**路径:相对路径在不同 cwd 下指向不同地方,而这个值要跨进程跨重启使用。
+  // isAbsolute 一条就够——空串与纯空白它同样返回 false,再加一道 trim 判断是冗余的。
+  // 值本身不 trim、不去尾斜杠:它来自系统选择器,擅自改写会让它对不上真实目录
+  // (目录名尾部带空格是合法的)。
+  const receiveDir =
+    typeof r.receiveDir === 'string' && isAbsolute(r.receiveDir)
+      ? r.receiveDir
+      : DEFAULT_SETTINGS.receiveDir
   // 设备备注:非 object → {};逐项过滤,保证 value 恒为非空字符串(消费端不用再判空)。
   const deviceAliases: Record<string, string> = {}
   const rawMap = r.deviceAliases as unknown
@@ -90,7 +117,19 @@ function normalize(raw: unknown): AppSettings {
       Number.isInteger(r.offlineKeepMinutes) &&
       r.offlineKeepMinutes >= 0
         ? r.offlineKeepMinutes
-        : DEFAULT_SETTINGS.offlineKeepMinutes
+        : DEFAULT_SETTINGS.offlineKeepMinutes,
+    receiveDir,
+    receiveDirNotice:
+      typeof r.receiveDirNotice === 'boolean'
+        ? r.receiveDirNotice
+        : DEFAULT_SETTINGS.receiveDirNotice,
+    // 书签与它授权的那个目录绑定:没有自定义目录时留着它没有任何意义,
+    // 只会让"当前用默认目录"与"却持有某处的授权"同时为真。在这里强制同步,
+    // 于是调用方无论怎么写都不可能留下悬空授权。
+    receiveDirBookmark:
+      receiveDir && typeof r.receiveDirBookmark === 'string' && r.receiveDirBookmark
+        ? r.receiveDirBookmark
+        : null
   }
 }
 
@@ -129,6 +168,33 @@ export class SettingsStore {
     })
     this.persist()
     return this.cache
+  }
+
+  /** 接收文件夹的两项设置。它们总是一起变(选定/退回/清告知都同时动),故作为整体存取。 */
+  getReceiveDir(): ReceiveDirState {
+    return { chosen: this.cache.receiveDir, notice: this.cache.receiveDirNotice }
+  }
+
+  /**
+   * 沙盒授权书签(仅 MAS 版有值)。与 `receiveDir` 恒同生共死,见 normalize。
+   */
+  getReceiveDirBookmark(): string | null {
+    return this.cache.receiveDirBookmark
+  }
+
+  /**
+   * 写接收文件夹。`bookmark` **默认不给就是清空** —— 于是"退回默认时忘了清书签"
+   * 这种错写不出来:调用方必须显式传,才可能留下书签。
+   */
+  setReceiveDir(next: ReceiveDirState, bookmark: string | null = null): ReceiveDirState {
+    this.cache = normalize({
+      ...this.cache,
+      receiveDir: next.chosen,
+      receiveDirNotice: next.notice,
+      receiveDirBookmark: bookmark
+    })
+    this.persist()
+    return this.getReceiveDir()
   }
 
   getTheme(): ThemePref {
