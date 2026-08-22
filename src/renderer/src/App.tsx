@@ -82,8 +82,25 @@ export function App(): JSX.Element {
   const [peer, setPeer] = useState<string | null>(null) // 选中对端 fingerprint
   const [messages, setMessages] = useState<UiMessage[]>([])
   const [progress, setProgress] = useState<ProgressMap>({})
-  /** 上一帧的进度采样(算速度用)。终态时随该条进度一并清掉,否则 Map 会随会话无限增长。 */
+  /** 上一帧的进度采样(算速度用)。存 ref 不存 state:它只是计算的中间量,不该驱动重渲染。 */
   const speedRef = useRef<Map<string, SpeedSample>>(new Map())
+
+  /**
+   * 清掉一笔传输的**全部**残留状态。
+   *
+   * 两处状态(进度条数据与速度采样)分开存是对的 —— 后者进 state 会白白触发重渲染。
+   * 但它们必须**同进同出**:清理路径不止一条(收到完成帧 / 消息转终态,将来还可能有取消),
+   * 每条都靠人记得清两处的话迟早漏一处 —— 已经漏过一次(终态那条只清了进度,速度采样
+   * 在每笔失败的传输后越积越多)。所以清理只留这一个入口。
+   */
+  const clearTransferState = useCallback((msgId: string) => {
+    speedRef.current.delete(msgId)
+    setProgress((prev) => {
+      if (!(msgId in prev)) return prev
+      const { [msgId]: _drop, ...rest } = prev
+      return rest
+    })
+  }, [])
   const [showSettings, setShowSettings] = useState(false)
   const [view, setView] = useState<'chat' | 'downloads'>('chat')
   const [auto, setAuto] = useState<AutoAcceptSettings>({ enabled: false, maxBytes: 100 * 1024 * 1024 })
@@ -145,42 +162,35 @@ export function App(): JSX.Element {
           }
           return [...prev, m].sort((a, b) => a.createdAt - b.createdAt)
         })
-        // 消息进入终态 → 清理残留进度条(失败/拒绝/超时不会有 done 进度帧)
-        if (isTerminal(m.status)) {
-          // 速度采样一并清:这几条路径没有 done 帧,只靠 onProgress 里那次 delete 的话,
-          // 每笔失败的传输都会在 Map 里留一个条目,长跑下来只增不减
-          speedRef.current.delete(m.id)
-          setProgress((prev) => {
-            if (!(m.id in prev)) return prev
-            const { [m.id]: _drop, ...rest } = prev
-            return rest
-          })
-        }
+        // 消息进入终态 → 清理残留状态(失败/拒绝/超时不会有完成进度帧)
+        if (isTerminal(m.status)) clearTransferState(m.id)
       }),
-      window.transfer.onProgress((p: ProgressPayload) =>
-        setProgress((prev) => {
-          // 完成即清理该条进度(气泡改由 status 显示"已送达/已接收")
-          if (p.total > 0 && p.sent >= p.total) {
-            speedRef.current.delete(p.messageId)
-            const { [p.messageId]: _drop, ...rest } = prev
-            return rest
-          }
-          // 速度靠两帧之间的字节增量算 —— 进度事件本身不带时间戳。
-          // 上一帧存在 ref 里而不是 state:它只是计算的中间量,不该驱动重渲染。
-          const last = speedRef.current.get(p.messageId)
-          const at = Date.now()
-          const bps = nextSpeed(last, { sent: p.sent, at })
-          speedRef.current.set(p.messageId, { sent: p.sent, at, bps })
-          return { ...prev, [p.messageId]: { sent: p.sent, total: p.total, bps, elapsedMs: p.elapsedMs } }
-        })
-      ),
+      window.transfer.onProgress((p: ProgressPayload) => {
+        // 完成即清理(气泡改由 status 显示"已送达/已接收")。判断放在 updater 外,
+        // 才能与终态那条走同一个清理入口。
+        if (p.total > 0 && p.sent >= p.total) {
+          clearTransferState(p.messageId)
+          return
+        }
+        // 速度靠两帧之间的字节增量算 —— 进度事件本身不带时间戳
+        const last = speedRef.current.get(p.messageId)
+        const at = Date.now()
+        const bps = nextSpeed(last, { sent: p.sent, at })
+        speedRef.current.set(p.messageId, { sent: p.sent, at, bps })
+        setProgress((prev) => ({
+          ...prev,
+          [p.messageId]: { sent: p.sent, total: p.total, bps, elapsedMs: p.elapsedMs }
+        }))
+      }),
       window.transfer.onWindowFocus((f) => {
         focusedRef.current = f // 立即更新 ref(供消息回调读)
         setFocused(f) // 驱动清零 effect(聚焦到正在看的会话时清未读)
       })
     ]
     return () => unsubs.forEach((u) => u())
-  }, [])
+    // clearTransferState 是 useCallback([]),引用恒定 —— 列进来只为依赖完整,不会让本 effect 重跑
+    // (重跑意味着退订再订阅一遍全部 IPC 监听)
+  }, [clearTransferState])
 
   // 同步"当前聊天对象"给 main(决定截图"发聊天"可用性,§4.3)。
   // 仅聊天视图下的选中 peer 才算活跃对象;下载页/未选设备时为 null。
