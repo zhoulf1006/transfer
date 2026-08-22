@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto'
 import type { DeviceInfo, PrepareUploadRequest } from '@shared/types'
 import { T_ACCEPT_MS } from '@shared/protocol'
+import type { ProgressPayload } from '@shared/ipc'
 import { MessageStore } from './db/messages'
 import { isTerminal, type ErrorReason, type Message } from '@shared/message'
 import { SettingsStore } from './settings'
@@ -39,7 +40,9 @@ export interface ChatServiceDeps {
   /** 单条消息新增/更新时通知 UI */
   onMessageUpserted: (msg: Message) => void
   /** 传输进度通知 UI(不落库,§12.3):messageId + 已传/总字节 + 方向 */
-  onProgress?: (p: { messageId: string; sent: number; total: number; direction: 'send' | 'recv' }) => void
+  /** 进度帧。形状用 ProgressPayload,**不在此重复声明** —— 两处各写一份时改一处另一处不跟,
+   *  而编译器不会察觉(两个结构相同的字面类型互相兼容)。 */
+  onProgress?: (p: ProgressPayload) => void
   /** 注入时钟(测试) */
   now?: () => number
   /** 确认超时(默认 T_ACCEPT_MS);测试可缩短 */
@@ -336,7 +339,7 @@ export class ChatService {
     // 节流:仅当已有过一次推送、且距上次 <100ms 才丢弃(首帧永远推;100% 强制推)
     if (!done && last !== undefined && now - last < 100) return
     this.lastProgressAt.set(messageId, now)
-    this.d.onProgress({ messageId, sent, total, direction })
+    this.d.onProgress({ messageId, sent, total, direction, elapsedMs: this.d.store.elapsedMs(messageId) })
     if (done) this.lastProgressAt.delete(messageId) // 终态后清理节流状态
   }
 

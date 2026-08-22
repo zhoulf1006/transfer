@@ -2,7 +2,7 @@ import { test, expect, describe, beforeEach } from 'vitest'
 import { MessageStore } from './messages'
 import type { Message } from '@shared/message'
 
-function baseMsg(over: Partial<Message>): Omit<Message, 'createdAt'> & { createdAt?: number } {
+function baseMsg(over: Partial<Message>): Omit<Message, 'createdAt' | 'durationMs'> & { createdAt?: number } {
   // 用 'in' 判断而非 ?? ,否则显式传 null 会被默认值覆盖(content:null → 'hello' 的坑)
   const has = <K extends keyof Message>(k: K): boolean => k in over
   return {

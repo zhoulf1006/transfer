@@ -40,9 +40,10 @@ import {
   RadarIcon,
   MessageCircleIcon,
   SendIcon, ChevronDownIcon } from './icons'
+import { fmtDuration, fmtSpeed, nextSpeed, type SpeedSample } from './transfer-stats'
 
-/** 传输进度快照:messageId → 已传/总字节(不落库,仅内存) */
-type ProgressMap = Record<string, { sent: number; total: number }>
+/** 传输进度快照:messageId → 已传/总字节 + 实时速度(不落库,仅内存)。bps 为 null = 还算不出 */
+type ProgressMap = Record<string, { sent: number; total: number; bps: number | null; elapsedMs: number | null }>
 
 type ThemePref = 'system' | 'light' | 'dark'
 
@@ -81,6 +82,25 @@ export function App(): JSX.Element {
   const [peer, setPeer] = useState<string | null>(null) // 选中对端 fingerprint
   const [messages, setMessages] = useState<UiMessage[]>([])
   const [progress, setProgress] = useState<ProgressMap>({})
+  /** 上一帧的进度采样(算速度用)。存 ref 不存 state:它只是计算的中间量,不该驱动重渲染。 */
+  const speedRef = useRef<Map<string, SpeedSample>>(new Map())
+
+  /**
+   * 清掉一笔传输的**全部**残留状态。
+   *
+   * 两处状态(进度条数据与速度采样)分开存是对的 —— 后者进 state 会白白触发重渲染。
+   * 但它们必须**同进同出**:清理路径不止一条(收到完成帧 / 消息转终态,将来还可能有取消),
+   * 每条都靠人记得清两处的话迟早漏一处 —— 已经漏过一次(终态那条只清了进度,速度采样
+   * 在每笔失败的传输后越积越多)。所以清理只留这一个入口。
+   */
+  const clearTransferState = useCallback((msgId: string) => {
+    speedRef.current.delete(msgId)
+    setProgress((prev) => {
+      if (!(msgId in prev)) return prev
+      const { [msgId]: _drop, ...rest } = prev
+      return rest
+    })
+  }, [])
   const [showSettings, setShowSettings] = useState(false)
   const [view, setView] = useState<'chat' | 'downloads'>('chat')
   const [auto, setAuto] = useState<AutoAcceptSettings>({ enabled: false, maxBytes: 100 * 1024 * 1024 })
@@ -142,32 +162,35 @@ export function App(): JSX.Element {
           }
           return [...prev, m].sort((a, b) => a.createdAt - b.createdAt)
         })
-        // 消息进入终态 → 清理残留进度条(失败/拒绝/超时不会有 done 进度帧)
-        if (isTerminal(m.status)) {
-          setProgress((prev) => {
-            if (!(m.id in prev)) return prev
-            const { [m.id]: _drop, ...rest } = prev
-            return rest
-          })
-        }
+        // 消息进入终态 → 清理残留状态(失败/拒绝/超时不会有完成进度帧)
+        if (isTerminal(m.status)) clearTransferState(m.id)
       }),
-      window.transfer.onProgress((p: ProgressPayload) =>
-        setProgress((prev) => {
-          // 完成即清理该条进度(气泡改由 status 显示"已送达/已接收")
-          if (p.total > 0 && p.sent >= p.total) {
-            const { [p.messageId]: _drop, ...rest } = prev
-            return rest
-          }
-          return { ...prev, [p.messageId]: { sent: p.sent, total: p.total } }
-        })
-      ),
+      window.transfer.onProgress((p: ProgressPayload) => {
+        // 完成即清理(气泡改由 status 显示"已送达/已接收")。判断放在 updater 外,
+        // 才能与终态那条走同一个清理入口。
+        if (p.total > 0 && p.sent >= p.total) {
+          clearTransferState(p.messageId)
+          return
+        }
+        // 速度靠两帧之间的字节增量算 —— 进度事件本身不带时间戳
+        const last = speedRef.current.get(p.messageId)
+        const at = Date.now()
+        const bps = nextSpeed(last, { sent: p.sent, at })
+        speedRef.current.set(p.messageId, { sent: p.sent, at, bps })
+        setProgress((prev) => ({
+          ...prev,
+          [p.messageId]: { sent: p.sent, total: p.total, bps, elapsedMs: p.elapsedMs }
+        }))
+      }),
       window.transfer.onWindowFocus((f) => {
         focusedRef.current = f // 立即更新 ref(供消息回调读)
         setFocused(f) // 驱动清零 effect(聚焦到正在看的会话时清未读)
       })
     ]
     return () => unsubs.forEach((u) => u())
-  }, [])
+    // clearTransferState 是 useCallback([]),引用恒定 —— 列进来只为依赖完整,不会让本 effect 重跑
+    // (重跑意味着退订再订阅一遍全部 IPC 监听)
+  }, [clearTransferState])
 
   // 同步"当前聊天对象"给 main(决定截图"发聊天"可用性,§4.3)。
   // 仅聊天视图下的选中 peer 才算活跃对象;下载页/未选设备时为 null。
@@ -792,7 +815,7 @@ function Downloads(): JSX.Element {
   )
 }
 
-function Bubble({ msg, prog }: { msg: UiMessage; prog?: { sent: number; total: number } }): JSX.Element {
+function Bubble({ msg, prog }: { msg: UiMessage; prog?: ProgressMap[string] }): JSX.Element {
   const { t } = useI18n()
   const own = msg.direction === 'sent'
   return (
@@ -842,7 +865,7 @@ function FileBubble({
   own
 }: {
   msg: UiMessage
-  prog?: { sent: number; total: number }
+  prog?: ProgressMap[string]
   own: boolean
 }): JSX.Element {
   const { t } = useI18n()
@@ -851,8 +874,17 @@ function FileBubble({
   // 传输中(pending/accepted)且有进度 → 百分比进度条(§12.3)
   const transferring = isTransferring(msg.status)
   const pct = prog && prog.total > 0 ? Math.min(100, Math.round((prog.sent / prog.total) * 100)) : null
+  const speed = prog ? fmtSpeed(prog.bps) : null
   // 图片消息(已完成落盘)尝试缩略图;拿不到(GIF/WEBP/失败)由 ImageThumb 回退文件行
   const showThumb = canOpen && isImageFile(msg.fileName)
+  /**
+   * 用时。**图片消息不显示** —— 它传完变缩略图,那一支整个没有文件行,没有依附的位置;
+   * 为它单独造一行不值得(2026-08-22 用户裁定)。失败照常显示:花掉的时间是事实。
+   * 拿不到时长(升级前的老消息、重启后失去起点的)时 fmtDuration 返回 null,整个右端不出现。
+   */
+  // 传输中用进度帧带来的已用时间(每帧刷新,所以它会走);终态用落库定格的时长。
+  // 两者同源(都是"从点发送/点接收算起"),所以传完的瞬间数字不会跳。
+  const took = showThumb ? null : fmtDuration(prog ? prog.elapsedMs : msg.durationMs)
   return (
     <div>
       {showThumb ? (
@@ -860,9 +892,15 @@ function FileBubble({
       ) : (
         <div style={S.fileLine}>
           <div style={own ? S.fileIconOwn : S.fileIcon}>{fileTypeIcon(msg.fileName)}</div>
-          <div style={{ minWidth: 0 }}>
+          {/* flex:1 让这块撑到气泡内容区右边缘 —— 用时因此与进度条、速度的右端对齐成一条竖线。
+              用时必须放在**这块内部**:挂到文件行那一层会让它的宽度叠加在文件名的完整宽度之上
+              (文件名 nowrap,按 max-content 撑开),把气泡额外撑长(实测 44px),且文件名越长框越长。 */}
+          <div style={S.fileMeta}>
             <div style={S.fileName}>{msg.fileName}</div>
-            {msg.fileSize != null && <div style={S.fileSize}>{fmtSize(msg.fileSize)}</div>}
+            <div style={S.sizeRow}>
+              <span>{msg.fileSize != null ? fmtSize(msg.fileSize) : ''}</span>
+              {took && <span style={S.took}>{took}</span>}
+            </div>
           </div>
         </div>
       )}
@@ -871,7 +909,11 @@ function FileBubble({
           <div style={own ? S.progWrapOwn : S.progWrap}>
             <div style={{ ...(own ? S.progBarOwn : S.progBar), width: `${pct}%` }} />
           </div>
-          <div style={S.progPct}>{pct}%</div>
+          <div style={S.progRow}>
+            <span>{pct}%</span>
+            {/* 速度算不出来时该位留空(第一帧还没有可比的前帧),不显示 0 MB/s 误导 */}
+            {speed && <span>{speed}</span>}
+          </div>
         </>
       )}
       {/* 接收确认按钮只出现在 recv(对方=灰底气泡),用中性描边按钮 */}
@@ -1322,6 +1364,20 @@ const S: Record<string, React.CSSProperties> = {
   fileIconOwn: { width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', flexShrink: 0, background: 'var(--own-wash)', color: 'var(--accent)' },
   fileName: { fontWeight: 560, fontSize: 12.5 },
   fileSize: { fontSize: 10.5, opacity: 0.65, marginTop: 1 },
+  // flex:1 让这块撑到气泡内容区右边缘,用时的右端因此与进度条、速度对齐(见 FileBubble 注释)
+  fileMeta: { flex: 1, minWidth: 0 },
+  sizeRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    gap: 14,
+    fontSize: 10.5,
+    opacity: 0.65,
+    marginTop: 1,
+    fontVariantNumeric: 'tabular-nums'
+  },
+  // 等宽数字 + 不折行:时长每秒都在变,宽度一抖右端就左右摆
+  took: { whiteSpace: 'nowrap', flexShrink: 0 },
   thumb: {
     display: 'block',
     maxWidth: 180,
@@ -1380,7 +1436,17 @@ const S: Record<string, React.CSSProperties> = {
   progBar: { position: 'absolute', left: 0, top: 0, bottom: 0, background: 'var(--accent)', borderRadius: 3, transition: 'width 0.12s linear' },
   // 全柔紫方案:me 气泡里的填充条也用中等紫(和非 own 一致),柔底上够清楚
   progBarOwn: { position: 'absolute', left: 0, top: 0, bottom: 0, background: 'var(--accent)', borderRadius: 3, transition: 'width 0.12s linear' },
-  progPct: { fontSize: 9.5, marginTop: 3, opacity: 0.85, fontVariantNumeric: 'tabular-nums' },
+  // 左端百分比、右端速度。两端分居而不是串排:速度位数一变,串排会把百分比也推得左右晃
+  progRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    gap: 10,
+    fontSize: 9.5,
+    marginTop: 3,
+    opacity: 0.85,
+    fontVariantNumeric: 'tabular-nums'
+  },
   dlRow: { display: 'flex', alignItems: 'center', gap: 12, padding: '11px 4px', borderBottom: '1px solid var(--line)' },
   dlName: { fontWeight: 550, fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   dlMeta: { fontSize: 10.5, color: 'var(--muted)', marginTop: 2, fontVariantNumeric: 'tabular-nums' },
