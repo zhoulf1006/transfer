@@ -68,6 +68,12 @@ export interface Message {
   errorReason: ErrorReason | null
   transferId: string | null
   createdAt: number
+  /**
+   * 传输总耗时(毫秒),终态时定格。**拿不到时是 null,不是 0** ——
+   * 升级前的老消息、以及重启后失去起点的消息都属这类,界面必须据此不显示,
+   * 而不是显示成 0s。只有文件消息有值:文本气泡没有文件行,无处显示。
+   */
+  durationMs: number | null
 }
 
 /** 终态:传输已结束,不会再有进度帧(进度节流状态与进度条都在此清理) */

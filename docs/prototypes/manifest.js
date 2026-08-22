@@ -12,6 +12,11 @@ window.PROTOTYPES = [
     path: 'transfer-chat/prototype-file-type-icons.html'
   },
   {
+    module: 'transfer-chat', type: 'ui', id: 'transfer-speed',
+    name: '传输速度与总耗时',
+    path: 'transfer-chat/prototype-transfer-speed.html'
+  },
+  {
     module: 'transfer-chat', type: 'ui', id: 'empty-state-icon',
     name: '聊天空状态图标(选型)',
     path: 'transfer-chat/prototype-empty-state-icon.html'

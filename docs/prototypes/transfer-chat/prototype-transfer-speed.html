@@ -1,0 +1,227 @@
+<!doctype html><meta charset="utf-8">
+<title>传输速度与总耗时 — 文件气泡</title>
+<!--
+  目标功能:文件气泡在传输中显示实时速度、完成后显示总耗时。
+  原型化的问题:这两个数字放哪、完成后那一行是消失还是换内容、以及几种边界下会不会挤炸。
+
+  已定方案(2026-08-22 用户裁定,以其标注图为准):
+    · **用时钉在文件大小行的右端** —— 传输中显示已走的时间、完成后停在总时长,
+      **位置不随状态变化**(这就是"保持在一行"的含义:不因传完而挪窝、不新增行)。
+    · **速度留在进度条下面那行的右端**,左端百分比;完成后进度条连同该行一起消失。
+    · 时长统一 **h/m/s**,**不随语言变**、不加空格,不足 1 时不写 h、不足 1 分不写 m(45s / 4m12s / 1h23m45s)。
+    · 不写"用时/Elapsed"前缀,直接给数字。
+    · **图片消息不显示用时** —— 它传完变缩略图,那一支没有文件行,不为它单独造一行。
+    · **失败也显示用时** —— 花掉的时间是事实。
+  配套决策:总耗时**存进库**(重启后历史消息仍有);计时**从点发送算起**(含发送前算摘要那段)。
+
+  几何抄自 App.tsx:气泡 max-width 74% / padding 8px 12px / radius 14(自己发的右下角 5);
+  文件行 flex gap 9,图标 30x30 radius 8;文件名 12.5px/560,大小 10.5px/opacity .65;
+  进度条高 5、radius 3、margin-top 8,轨道 --track(自己发的用 --own-wash);
+  那一行文字 9.5px、margin-top 3、opacity .85、tabular-nums(等宽数字,防跳动)。
+
+  演示基建(非设计的一部分,勿实现):底部悬浮的「演示·」控制条(语言切换、长文件名开关)。
+  真实语言由设置决定,app 内无此开关;气泡状态由消息真实状态决定,这里是并排铺开的 mock。
+-->
+<style>
+ .light{--bg:#f7f8f9;--card:#ffffff;--ink:#1a1c1f;--ink-2:#52565c;--muted:#868b93;--line:#e8eaed;
+   --accent:#8a67ab;--accent-soft:#f0ebf6;--bubble-me:#f6f3f8;--bubble-you:#eef0f3;
+   --own-wash:rgba(138,103,171,.16);--track:rgba(20,22,26,.09);--danger:#c0392b}
+ .dark{--bg:#18191b;--card:#1f2124;--ink:#e9eaed;--ink-2:#b4b8bd;--muted:#7f858c;--line:#2a2c30;
+   --accent:#a084c7;--accent-soft:#2a2430;--bubble-me:#2a2430;--bubble-you:#26282c;
+   --own-wash:rgba(160,132,199,.2);--track:rgba(255,255,255,.1);--danger:#e57373}
+
+ body{background:#e9ebee;margin:0;padding:20px 20px 96px;
+   font:13px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#1a1c1f}
+ h1{font-size:14px;margin:0 0 4px} .lead{color:#6d727a;font-size:12px;margin:0 0 16px;max-width:900px}
+ .panes{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+ .pane{flex:1 1 380px;min-width:340px}
+ .tag{font-size:11px;color:#6d727a;margin-bottom:6px}
+
+ /* ── 简化的聊天外壳(防真空:让气泡处在真实密度里)────────────── */
+ .shell{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+ .shell-head{padding:9px 12px;border-bottom:1px solid var(--line);font-size:12.5px;
+   font-weight:560;color:var(--ink)}
+ .stream{padding:12px;display:flex;flex-direction:column;gap:10px;background:var(--card)}
+ .row{display:flex} .row.own{justify-content:flex-end}
+
+ /* ── 被评判的设计从这里开始 ───────────────────────────────── */
+ .bubble{max-width:74%;padding:8px 12px;border-radius:14px;color:var(--ink);
+   background:var(--bubble-you);border-bottom-left-radius:5px}
+ .own .bubble{background:var(--bubble-me);border-bottom-left-radius:14px;border-bottom-right-radius:5px}
+
+ .fileLine{display:flex;align-items:center;gap:9px}
+ .fileIcon{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex-shrink:0;
+   background:var(--accent-soft);color:var(--accent)}
+ .own .fileIcon{background:var(--own-wash)}
+ .fileName{font-weight:560;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ /* flex:1 让 fileMeta 撑到气泡内容区右边缘 —— 大小行的右端因此与进度条右端天然对齐。
+    用时必须放在 fileMeta **内部**:放到 fileLine 这一层会让它的宽度叠加在文件名的完整宽度
+    之上(文件名 nowrap,按 max-content 撑开),把气泡额外撑长一个 gap+用时的量(实测 44px)。 */
+ .fileMeta{flex:1;min-width:0}
+ .sizeRow{display:flex;justify-content:space-between;align-items:baseline;gap:14px;
+   font-size:10.5px;opacity:.65;margin-top:1px;font-variant-numeric:tabular-nums}
+ .sizeRow .took{white-space:nowrap;flex-shrink:0}
+
+ .progWrap{position:relative;height:5px;background:var(--track);border-radius:3px;
+   margin-top:8px;overflow:hidden}
+ .own .progWrap{background:var(--own-wash)}
+ .progBar{position:absolute;left:0;top:0;bottom:0;background:var(--accent);border-radius:3px}
+
+ /* 进度条下面那行:左百分比、右速度。完成后连同进度条一起消失。 */
+ .metaRow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+   font-size:9.5px;margin-top:3px;opacity:.85;font-variant-numeric:tabular-nums}
+ .metaRow .r{margin-left:auto}
+ .thumb{width:150px;height:100px;border-radius:9px;
+   background:linear-gradient(135deg,var(--accent-soft),var(--own-wash))}
+ .err{font-size:10.5px;color:var(--danger);margin-top:5px}
+ /* 气泡本来就有的底行(状态 · 时间),新增那行贴在它上面 —— 两者的关系正是要评判的 */
+ .bmeta{font-size:9.5px;opacity:.7;margin-top:4px}
+ /* ── 被评判的设计到此为止 ─────────────────────────────────── */
+
+ .note{font-size:11px;color:#6d727a;margin:10px 2px 0;line-height:1.6;max-width:900px}
+ .note b{color:#3a3f46}
+ .q{background:#fff6e5;border:1px solid #e8d5a8;border-radius:8px;padding:9px 12px;
+   font-size:11.5px;margin:14px 0 0;max-width:900px;line-height:1.65}
+
+ /* ── 演示基建(独立悬浮层,不嵌页面内容流)──────────────────── */
+ .harness{position:fixed;left:0;right:0;bottom:14px;margin:0 auto;width:max-content;max-width:92vw;
+   background:#22252a;color:#e6e8ea;border-radius:999px;padding:7px 14px;display:flex;
+   align-items:center;gap:10px;font-size:11.5px;box-shadow:0 6px 24px rgba(0,0,0,.28);z-index:9}
+ .harness .pfx{opacity:.55;padding-right:2px}
+ .harness .sep{width:1px;align-self:stretch;background:rgba(255,255,255,.16)}
+ .harness button{font:inherit;background:rgba(255,255,255,.1);color:inherit;border:0;
+   border-radius:999px;padding:3px 11px;cursor:pointer}
+ .harness button[aria-pressed=true]{background:#e6e8ea;color:#22252a}
+</style>
+
+<h1>传输速度与总耗时 — 文件气泡</h1>
+<p class="lead">
+  <b>用时钉在文件大小行的右端</b>——传输中走着、完成后停住,<b>位置不随状态变化</b>;
+  <b>速度在进度条下面那行的右端</b>,完成后连同进度条一起消失。
+  时长统一 h/m/s、不随语言变。下面是同一条消息流里铺开的十种情形,含几种容易挤炸的边界。
+</p>
+
+<div class="panes">
+  <div class="pane"><div class="tag">浅色</div><div class="shell light" id="p-light"></div></div>
+  <div class="pane"><div class="tag">深色</div><div class="shell dark" id="p-dark"></div></div>
+</div>
+
+<p class="note">
+  <b>用时放在文件名下面那块的内部,不是文件行这一层。</b>那块有 flex:1,右端就是气泡内容区右端,
+  所以用时、进度条、速度三个右端天然落在同一条竖线上。
+  放到文件行这一层反而会出事:它的宽度会<b>叠加在文件名的完整宽度之上</b>(文件名 nowrap,按 max-content 撑开),
+  把气泡额外撑长一个 gap+用时的量 —— 实测 44px,且文件名越长框越长。
+  <br><b>刚开始还没有速度样本时</b>(第 2 条):速度位留空,只显示百分比;<b>但用时已经在走</b>。
+  速度要靠两次进度事件之间的字节增量算,第一帧到达前算不出来,与其显示「0 MB/s」误导,不如空着。
+  <br><b>不足 1 秒向上取整成 1s</b>(第 7 条):否则会出现「0s」,看着像根本没传。
+  <br><b>时长不随语言变</b>:中英共用 h/m/s,宽度在两种语言下完全一致,也省掉一组要维护的文案。
+  <br><b>失败也显示用时</b>(第 9 条):它花掉的时间是事实。
+  <br><b>升级前的老消息没有用时</b>(第 10 条):时长要新加一个库字段,老消息该字段为空 —— 右端<b>整个不出现</b>,
+  不能退化成「0s」或空出一块。升级后打开 app,整屏历史都是这个样子,这是老用户见到的第一眼。
+</p>
+
+<div class="q">
+  <b>图片消息不显示用时(已定)。</b>图片传完变缩略图(第 8 条),那一支整个没有文件行,
+  用时依附的位置不存在;为它单独造一行不值得,于是不显示。文件消息不受影响。
+</div>
+
+<div class="harness" data-demo-harness>
+  <span class="pfx">演示 ·</span>
+  <span>语言</span>
+  <button id="lang-zh" aria-pressed="true">中文</button>
+  <button id="lang-en" aria-pressed="false">English</button>
+  <span class="sep"></span>
+  <button id="toggle-long" aria-pressed="false">超长文件名</button>
+</div>
+
+<script>
+  const SHORT = { zh: '设计稿-v3.sketch', en: 'design-draft-v3.sketch' }
+  const LONG = {
+    zh: '2026年第三季度产品需求与竞品分析汇总-最终确认版-v7.sketch',
+    en: 'Q3-2026-product-requirements-and-competitive-analysis-final-v7.sketch'
+  }
+  // 文案取两种语言各自的实测写法;英文普遍更长,挤压态以它为准
+  const T = {
+    zh: { head: '客厅 Mac',
+          enospc: '接收失败:磁盘空间不足',
+          st: { sending: '发送中', recving: '接收中', delivered: '已送达', received: '已接收', failed: '失败' } },
+    en: { head: 'Living Room Mac',
+          enospc: 'Receive failed: not enough disk space',
+          st: { sending: 'Sending', recving: 'Receiving', delivered: 'Delivered', received: 'Received', failed: 'Failed' } }
+  }
+
+  /**
+   * 时长:统一 h/m/s,**不随语言变**(2026-08-22 用户裁定) —— 单位符号是国际通用记法,
+   * 中英共用一套省掉一组文案,也让宽度在两种语言下完全一致。不加空格。
+   * 不足 1 时不写 h、不足 1 分不写 m;不足 1 秒向上取整成 1s —— 否则会出现"0s",看着像没传。
+   */
+  function dur(totalSec) {
+    const t = Math.max(1, Math.round(totalSec))
+    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60
+    if (h > 0) return `${h}h${m}m${s}s`
+    if (m > 0) return `${m}m${s}s`
+    return `${s}s`
+  }
+  const FILE_SVG = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/></svg>'
+  const IMG_SVG = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><circle cx="10" cy="12" r="2"/><path d="m20 17-1.296-1.296a2.41 2.41 0 0 0-3.408 0L9 22"/></svg>'
+
+  let lang = 'zh', long = false
+
+  /** 一条文件气泡。took=大小行右端的时长;left/right=进度条下那行的两端 */
+  function bubble({ own, name, size, took, pct, left, right, err, thumb, icon, status }) {
+    const bar = pct == null ? '' :
+      `<div class="progWrap"><div class="progBar" style="width:${pct}%"></div></div>`
+    const meta = (left || right)
+      ? `<div class="metaRow"><span>${left || ''}</span><span class="r">${right || ''}</span></div>` : ''
+    const head = thumb
+      ? `<div class="thumb"></div>`
+      : `<div class="fileLine"><div class="fileIcon">${icon || FILE_SVG}</div>
+           <div class="fileMeta"><div class="fileName">${name}</div>
+           <div class="sizeRow"><span>${size}</span>${took ? `<span class="took">${took}</span>` : ''}</div>
+           </div></div>`
+    return `<div class="row ${own ? 'own' : ''}"><div class="bubble">
+      ${head}${bar}${meta}${err ? `<div class="err">${err}</div>` : ''}
+      <div class="bmeta">${status} · 14:32</div></div></div>`
+  }
+
+  function render(el) {
+    const t = T[lang]
+    const n = (long ? LONG : SHORT)[lang]
+    const items = [
+      // 1 传输中 · 常规。用时在大小行右端(走着),速度在进度条下面
+      bubble({ own: false, name: n, size: '482.3 MB', took: dur(32), pct: 45, left: '45%', right: '12.3 MB/s', status: t.st.recving }),
+      // 2 传输中 · 刚开始:还算不出速度(速度位留空),但用时已经在走
+      bubble({ own: true, name: n, size: '482.3 MB', took: dur(2), pct: 3, left: '3%', right: '', status: t.st.sending }),
+      // 3 传输中 · 极慢(速度掉到 KB/s,用时跨过 1 分钟)
+      bubble({ own: true, name: n, size: '482.3 MB', took: dur(245), pct: 12, left: '12%', right: '340 KB/s', status: t.st.sending }),
+      // 4 传输中 · 用时跨过 1 小时(时长最宽的情形)+ 三位数速度
+      bubble({ own: false, name: n, size: '4.7 GB', took: dur(5025), pct: 88, left: '88%', right: '118 MB/s', status: t.st.recving }),
+      // 5 完成 · 秒。进度条与速度行一起消失,用时留在原位不挪窝
+      bubble({ own: true, name: n, size: '482.3 MB', took: dur(18), status: t.st.delivered }),
+      // 6 完成 · 分+秒
+      bubble({ own: false, name: n, size: '4.7 GB', took: dur(252), status: t.st.received }),
+      // 7 完成 · 瞬间完成:向上取整到 1 秒,不出现"0秒"
+      bubble({ own: true, name: n, size: '96 KB', took: dur(0.4), status: t.st.delivered }),
+      // 8 图片完成 · 缩略图分支没有大小行 → **不显示用时**(用户裁定),只有缩略图与状态行
+      bubble({ own: true, thumb: true, status: t.st.delivered }),
+      // 9 失败 · 用时照旧显示(它花掉的时间是事实),进度条与速度行不出现
+      bubble({ own: false, name: n, size: '482.3 MB', took: dur(74), err: t.enospc, icon: FILE_SVG, status: t.st.failed }),
+      // 10 **升级前的老消息**:库里没有时长(NULL) → 右端整个不出现,不能显示 0s 或空洞。
+      //    这是老用户升级后看到的第一屏 —— 整屏历史都是这个样子。
+      bubble({ own: true, name: n, size: '482.3 MB', status: t.st.delivered })
+    ].join('')
+    el.innerHTML = `<div class="shell-head">${t.head}</div><div class="stream">${items}</div>`
+  }
+
+  function paint() {
+    render(document.getElementById('p-light'))
+    render(document.getElementById('p-dark'))
+    document.getElementById('lang-zh').setAttribute('aria-pressed', String(lang === 'zh'))
+    document.getElementById('lang-en').setAttribute('aria-pressed', String(lang === 'en'))
+    document.getElementById('toggle-long').setAttribute('aria-pressed', String(long))
+  }
+  document.getElementById('lang-zh').onclick = () => { lang = 'zh'; paint() }
+  document.getElementById('lang-en').onclick = () => { lang = 'en'; paint() }
+  document.getElementById('toggle-long').onclick = () => { long = !long; paint() }
+  paint()
+</script>

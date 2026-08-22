@@ -32,6 +32,12 @@ export interface ProgressPayload {
   sent: number
   total: number
   direction: 'send' | 'recv'
+  /**
+   * 传输**已用**毫秒数。由主进程算并随帧带过来 —— 起点(点发送/点接收那一刻)只有
+   * 主进程知道,渲染层拿首帧时间自己算会漏掉发送前算摘要那段(大文件时那正是几十秒
+   * "点了没反应"的时间,而用户要的口径恰好包含它)。拿不到起点时为 null。
+   */
+  elapsedMs: number | null
 }
 
 // ── 渲染 → 主 调用 channel ──

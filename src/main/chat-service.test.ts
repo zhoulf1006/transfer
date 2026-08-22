@@ -1,4 +1,5 @@
 import { test, expect, describe, beforeEach, afterEach } from 'vitest'
+import type { ProgressPayload } from '@shared/ipc'
 import { ChatService, classifyError, classifySendError } from './chat-service'
 import { MessageStore } from './db/messages'
 import type { Message } from '@shared/message'
@@ -453,7 +454,7 @@ describe('ChatService 进度', () => {
   let settings: SettingsStore
   let dirs: string[]
   let clock: number
-  let progress: { messageId: string; sent: number; total: number; direction: 'send' | 'recv' }[]
+  let progress: ProgressPayload[]
   let sendProgressDriver: ((cb: (fileId: string, sent: number, total: number) => void, fileId: string) => void) | null
   let chat: ChatService
 
@@ -497,7 +498,11 @@ describe('ChatService 进度', () => {
     // 自动接收路径入库 accepted + 建 fileId→msgId 映射
     chat.handleAutoAccept(fileReq('P', { fA: { fileName: 'a.bin', size: 1000 } }).files, peer('P'))
     chat.handleReceiveProgress('fA', 500, 1000)
-    expect(progress).toEqual([{ messageId: expect.any(String), sent: 500, total: 1000, direction: 'recv' }])
+    // elapsedMs 为 null 是**有信息量的**:这条 recv 消息没走过 pending→accepted,
+    // 也就没有起点可算 —— 拿不到起点时宁可不显示,不能拿 createdAt 硬凑一个数
+    expect(progress).toEqual([
+      { messageId: expect.any(String), sent: 500, total: 1000, direction: 'recv', elapsedMs: null }
+    ])
     // 未知 fileId 静默忽略
     chat.handleReceiveProgress('unknown', 1, 2)
     expect(progress).toHaveLength(1)

@@ -477,8 +477,10 @@ status       TEXT               -- 见下方流转表
 error_reason TEXT               -- failed 时的原因:'busy'|'enospc'|'sha256'|'network'|'no-file'...
 transfer_id  TEXT               -- 关联挂起会话(pending 时)
 created_at   INTEGER            -- ms 时间戳
+duration_ms  INTEGER            -- 传输总耗时;终态时定格,升级前的老消息为 null
 ```
 索引:`CREATE INDEX idx_messages_created_at ON messages(created_at)`(避免全表扫描+排序)。
+⚠️ 列的**单一事实源是代码里的 `MESSAGE_COLUMNS`**,建表与老库补列都从它派生(ADR-0021);上面这份是给人读的副本,改结构以代码为准。
 
 **direction × status 流转表(P1,钉死每条路径)**:
 
@@ -491,7 +493,7 @@ created_at   INTEGER            -- ms 时间戳
 | recv / text | **入库即 `done`,正文立即可见**(正文在 preview,无需等确认);向发送方回 204 让其收尾(可自动回,不阻塞正文显示) |
 
 - **direction/status 入库时机**:sent 消息**发送前**以 `pending` 入库(崩溃也有记录),再异步更新;recv 文本入库即 `done`。
-- **progress 不落库**(P1):进度高频,只走 IPC `transfer:progress` 实时推 UI,DB 只存最终 status。§11.7"进度条"指运行时 UI 状态。
+- **progress 不落库**(P1):进度高频,只走 IPC `transfer:progress` 实时推 UI,DB 只存最终 status **与终态结果**(如 `duration_ms`)。不落的是**过程量**,不是"一切与传输有关的数据"。§11.7"进度条"指运行时 UI 状态。
 - **node:sqlite 同步阻塞(P0/事实)**:全同步 API 跑在主进程事件循环。控制:①`created_at` 索引;②`message:list` 硬上限 `limit ≤ 200` + 分页;③禁止无分页全量查询。单条 insert/update 微秒级可接受,**MVP 不上 worker 线程**(单进程同步写 ⇒ 无并发写竞争,是优点)。
 - **recv 文本"接收"语义澄清(P1,消除口径不一致)**:文本正文在 preview 里,入库即显示,**不需要用户点接收才可见**。"自动接收关"时对文本的唯一影响是:是否**自动回 204**(标记已读让发送方安心)——默认可自动回,文本不进"待确认"队列。**自动接收开关只约束文件,不约束文本正文的显示**。
 
@@ -594,7 +596,7 @@ settings.ts            # 自动接收开关+阈值(持久化,复用 identity.jso
 
 - **发送方**:`http-client.sendFiles` 的 upload 从"`readFile` 整块 body"改为"`createReadStream` + `Readable.toWeb` + `TransformStream` 计数 + `duplex:'half'` + `Content-Length`"。每块回调 `onProgress(fileId, sent, total)`。
 - **接收方**:`receive-file` 的 `stream.on('data')` 累加 received,回调 `onProgress(received, total)`(total 从 header)。http-server 透传到 ChatService。
-- **进度不落库**(§11.3 已定):走 IPC `transfer:progress { messageId, sent, total }` 实时推 UI,DB 只存最终 status。ChatService 维护 fileId→messageId 已有(`recvFileMsg`),发送方 fileId=msgId 直接用。
+- **进度不落库**(§11.3 已定):走 IPC `transfer:progress { messageId, sent, total, direction, elapsedMs }` 实时推 UI,DB 只存最终 status 与终态结果。`elapsedMs` 是已用时长,由主进程算(起点只有它知道)。ChatService 维护 fileId→messageId 已有(`recvFileMsg`),发送方 fileId=msgId 直接用。
 - **节流**(实现):`emitProgress` 按 messageId 每 **100ms** 最多推一次;**首帧永远推**(用 `has()` 判空,区分"从未推"与"t=0 推")、**100%(`sent>=total`)强制推**(终态不丢完成帧)。
 - **节流状态清理**(2-C 修复,防泄漏):节流用的 `lastProgressAt` Map,在**任意消息进入终态**(done/failed/rejected/expired)时于 `upsert` 处统一 `delete`。覆盖发送失败/拒绝/超时、接收 `total=0` 降级等**没有 100% 完成帧**的所有路径。`ChatService.upsert` 是唯一收口点。
 - **UI**:传输中(status `pending`/`accepted` 且有 progress)的文件气泡显示进度条;终态清理由 `onMessageUpserted` 里对终态 status 主动 `setProgress` 删除(前端亦不依赖 100% 帧)。
