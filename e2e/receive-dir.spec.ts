@@ -8,7 +8,17 @@
 // 另守一条端到端链路:预置一个不存在的目录 → 启动时的检测应自己退回默认并置告知。
 //
 // 运行不打扰使用者:每个用例独立 userData + TRANSFER_E2E_QUIET(见 ui-icons.spec.ts 的说明)。
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, symlinkSync } from 'node:fs'
+import {
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  symlinkSync,
+  chmodSync,
+  accessSync,
+  constants
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test'
@@ -200,12 +210,17 @@ test('取消选择器 → 什么都不变(A1)', async () => {
   }
 })
 
-test('启动时目录已不可用 → 自动退回默认并给出告知(C1)', async () => {
-  // 整条链路:启动检测 → 决策 → 写回设置 → 设置页显示告知
+test('启动时目录已不可用 → 经复验后退回默认并给出告知(C1)', async () => {
+  // 整条链路:启动检测 → 复验 → 决策 → 写回设置 → 设置页显示告知。
+  // 退回**不是立即**发生的(C12:先给瞬时抖动一次恢复的机会),所以这里等复验窗口过去;
+  // 设置页要重开一次才看得到——它的状态是打开那一刻拉的,不订阅后续变化。
   const l = await launch({ receiveDir: '/Volumes/NoSuchDisk/收件', receiveDirNotice: false })
   try {
-    await openSettings(l)
     const page = await l.app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+    await expect.poll(() => settingsOnDisk(l.userData).receiveDir, { timeout: 6000 }).toBeNull()
+
+    await openSettings(l)
     await expect(page.getByTestId('receive-dir-notice')).toBeVisible()
     // 已退回默认 → 不该有「恢复默认」
     await expect(page.getByTestId('btn-reset-receive-dir')).toHaveCount(0)
@@ -244,5 +259,61 @@ test('「打开文件夹」打开的是**当前**接收文件夹,不是系统下
   } finally {
     await close(l)
     rmSync(custom, { recursive: true, force: true })
+  }
+})
+
+// ── C12:瞬时不可用不该造成不可逆退回 ──
+// 一次探测失败就清掉用户的选择,意味着拔一次盘、网络卷抖一下,配置就永久没了
+// (「退回即忘」下路径找不回来)。所以探不到时先不下结论,隔一会儿复验,仍失败才退回。
+
+test('C12 探不到时先落默认但**不立即**退回,给一次复验的机会', async () => {
+  const l = await launch({ receiveDir: '/Volumes/NoSuchDisk/收件', receiveDirNotice: false })
+  try {
+    const page = await l.app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+    // 启动判定刚跑完:这一刻还不该下结论
+    expect(settingsOnDisk(l.userData).receiveDir).toBe('/Volumes/NoSuchDisk/收件')
+
+    // 复验之后才退回
+    await expect.poll(() => settingsOnDisk(l.userData).receiveDir, { timeout: 6000 }).toBeNull()
+    expect(settingsOnDisk(l.userData).receiveDirNotice).toBe(true)
+  } finally {
+    await close(l)
+  }
+})
+
+test('C12 探测失败但复验前就恢复了 → 保住用户的选择,不退回', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'flaky-recv-'))
+  // 前置:确认 chmod 000 在本环境下**真的**挡得住写入。root 下挡不住,
+  // 那样整条用例会变成一个恒真的绿——宁可显式跳过。
+  chmodSync(dir, 0o000)
+  let blocked = false
+  try {
+    accessSync(dir, constants.W_OK)
+  } catch {
+    blocked = true
+  }
+  if (!blocked) {
+    chmodSync(dir, 0o755)
+    rmSync(dir, { recursive: true, force: true })
+    test.skip(true, '本环境下 chmod 000 挡不住写入(多半以 root 运行),此用例无法成立')
+    return
+  }
+
+  const l = await launch({ receiveDir: dir, receiveDirNotice: false })
+  try {
+    const page = await l.app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+    // 模拟"抖了一下就好了":在复验发生之前恢复权限
+    chmodSync(dir, 0o755)
+
+    // 等够复验窗口 + 余量,它**不该**被退回
+    await page.waitForTimeout(4000)
+    expect(settingsOnDisk(l.userData).receiveDir).toBe(dir)
+    expect(settingsOnDisk(l.userData).receiveDirNotice).toBe(false)
+  } finally {
+    await close(l)
+    chmodSync(dir, 0o755)
+    rmSync(dir, { recursive: true, force: true })
   }
 })

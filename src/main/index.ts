@@ -29,7 +29,13 @@ import { SettingsStore } from './settings'
 import { ScreenshotService, persistAndSend } from './screenshot-service'
 import { APP_HOST, registerAppProtocol } from './app-protocol'
 import { t, setMainLang, resolveSystemEffective } from './i18n'
-import { resolveReceiveDir, chooseDir, displayPath, isDirWritable } from './receive-dir'
+import {
+  resolveReceiveDir,
+  chooseDir,
+  displayPath,
+  isDirWritable,
+  RECHECK_DELAY_MS
+} from './receive-dir'
 
 // 统一 userData 目录名:dev(未打包)默认读 package.json name='transfer'(小写),
 // 打包版读 productName='Transfer'(大写)→ 两者目录名不一致。显式 setName 统一为 'Transfer',
@@ -144,18 +150,45 @@ function acquireReceiveDirAccess(bookmark: string | null): void {
   }
 }
 
+/** 已经安排了一次复验,别重复排(spec receive-dir C12) */
+let recheckTimer: NodeJS.Timeout | null = null
+
+/**
+ * 复验:确认目录**真的**不可用之后才退回默认并告知。
+ *
+ * 探不到时不当场下结论,是因为「退回即忘」让退回不可逆——瞬时抖动会永久吃掉用户的选择。
+ */
+function scheduleReceiveDirRecheck(): void {
+  if (recheckTimer) return
+  recheckTimer = setTimeout(() => {
+    recheckTimer = null
+    if (!settings) return
+    const r = resolveReceiveDir(settings.getReceiveDir(), app.getPath('downloads'), isDirWritable)
+    if (!r.next) return // 这一秒里恢复了(或用户自己改了),什么都不做
+    settings.setReceiveDir(r.next) // 不传书签 = 一并清掉,那个目录已经用不了了
+    acquireReceiveDirAccess(null) // 连同沙盒授权一起释放
+  }, RECHECK_DELAY_MS)
+  recheckTimer.unref?.() // 别因为这个定时器拖住退出
+}
+
 /**
  * 本次该往哪儿落(spec receive-dir C 组)。
  *
  * **每次取用都重新判定**——目录可能在两次接收之间被删掉、改名,或所在磁盘被拔走。
- * 判定发现失效就地退回默认目录并置告知标记,于是文件不会因为一个失效的配置而收不到。
+ * 探不到时这一次先给默认目录(文件不能等),但**不在这里下"失效"的结论**:
+ * 那个判定交给复验(C12),于是一次瞬时抖动不会永久吃掉用户的选择。
  */
 function currentReceiveDir(): string {
   const defaultDir = app.getPath('downloads')
-  const r = resolveReceiveDir(settings!.getReceiveDir(), defaultDir, isDirWritable)
+  const state = settings!.getReceiveDir()
+  if (state.chosen !== null && !isDirWritable(state.chosen)) {
+    scheduleReceiveDirRecheck()
+    return defaultDir
+  }
+  const r = resolveReceiveDir(state, defaultDir, isDirWritable)
   if (r.next) {
-    settings!.setReceiveDir(r.next) // 不传书签 = 一并清掉,那个目录已经用不了了
-    acquireReceiveDirAccess(null) // 连同沙盒授权一起释放
+    settings!.setReceiveDir(r.next)
+    acquireReceiveDirAccess(null)
   }
   // C10:默认目录自己也可能不在(用户把 ~/Downloads 删了)。建一次试试;
   // **兜底链到此为止**——建不出来就让接收走既有失败路径报错,不静默改落别处。
