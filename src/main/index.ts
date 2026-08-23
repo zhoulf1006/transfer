@@ -34,7 +34,8 @@ import {
   chooseDir,
   displayPath,
   isDirWritable,
-  RECHECK_DELAY_MS
+  RECHECK_DELAY_MS,
+  RECHECK_ATTEMPTS
 } from './receive-dir'
 
 // 统一 userData 目录名:dev(未打包)默认读 package.json name='transfer'(小写),
@@ -150,11 +151,24 @@ function acquireReceiveDirAccess(bookmark: string | null): void {
   }
 }
 
-/** 已经安排了一次复验,别重复排(spec receive-dir C12) */
+/** 待定的复验(spec receive-dir C12);非空表示已经排了一次,别重复排 */
 let recheckTimer: NodeJS.Timeout | null = null
+/** 已经连着探不到几次。计数只对**当前**这个目录有意义,目录一变就得清零 */
+let recheckAttempts = 0
 
 /**
- * 复验:确认目录**真的**不可用之后才退回默认并告知。
+ * 目录被用户改动 → 取消待定的复验并清零计数。
+ *
+ * 不清的话,那些计数是冲着**旧目录**攒的,会让新目录的第一次探测失败就逼近阈值。
+ */
+function cancelReceiveDirRecheck(): void {
+  if (recheckTimer) clearTimeout(recheckTimer)
+  recheckTimer = null
+  recheckAttempts = 0
+}
+
+/**
+ * 复验:连着 RECHECK_ATTEMPTS 次都探不到,才判失效、退回默认并告知。
  *
  * 探不到时不当场下结论,是因为「退回即忘」让退回不可逆——瞬时抖动会永久吃掉用户的选择。
  */
@@ -163,8 +177,24 @@ function scheduleReceiveDirRecheck(): void {
   recheckTimer = setTimeout(() => {
     recheckTimer = null
     if (!settings) return
-    const r = resolveReceiveDir(settings.getReceiveDir(), app.getPath('downloads'), isDirWritable)
-    if (!r.next) return // 这一秒里恢复了(或用户自己改了),什么都不做
+    const state = settings.getReceiveDir()
+    // 目录已经不是自定义的了(用户自己改了/别处已退回)→ 这轮计数作废
+    if (state.chosen === null) {
+      recheckAttempts = 0
+      return
+    }
+    if (isDirWritable(state.chosen)) {
+      recheckAttempts = 0 // 恢复了,前面攒的次数一笔勾销
+      return
+    }
+    recheckAttempts += 1
+    if (recheckAttempts < RECHECK_ATTEMPTS) {
+      scheduleReceiveDirRecheck() // 还没到阈值,再等一轮
+      return
+    }
+    recheckAttempts = 0
+    const r = resolveReceiveDir(state, app.getPath('downloads'), isDirWritable)
+    if (!r.next) return
     settings.setReceiveDir(r.next) // 不传书签 = 一并清掉,那个目录已经用不了了
     acquireReceiveDirAccess(null) // 连同沙盒授权一起释放
   }, RECHECK_DELAY_MS)
@@ -410,12 +440,14 @@ function registerIpc(): void {
     const bookmark = state.chosen === null ? null : (r.bookmarks?.[0] ?? null)
     settings!.setReceiveDir(state, bookmark)
     acquireReceiveDirAccess(bookmark)
+    cancelReceiveDirRecheck() // 目录换了,冲旧目录攒的复验计数作废
     return { info: receiveDirInfo(), changed }
   })
 
   ipcMain.handle(CMD.resetReceiveDir, (): ReceiveDirInfo => {
     settings!.setReceiveDir({ chosen: null, notice: false })
     acquireReceiveDirAccess(null)
+    cancelReceiveDirRecheck()
     return receiveDirInfo()
   })
 

@@ -28,8 +28,12 @@ interface Launched {
   userData: string
 }
 
-/** seed:写进 settings.json 的初始内容(测失效退回、自选态都靠它构造) */
-async function launch(seed?: Record<string, unknown>): Promise<Launched> {
+/**
+ * seed:写进 settings.json 的初始内容(测失效退回、自选态都靠它构造)。
+ * recheckMs:复验间隔。产品默认 5 秒 × 3 次 = 15 秒,每条用例真等 15 秒不现实;
+ * 注入小值只压缩节奏,重试次数与判定逻辑不变(见 receive-dir.ts 的 RECHECK_DELAY_MS)。
+ */
+async function launch(seed?: Record<string, unknown>, recheckMs = 200): Promise<Launched> {
   const userData = mkdtempSync(join(tmpdir(), 'transfer-recvdir-e2e-'))
   if (seed) writeFileSync(join(userData, 'settings.json'), JSON.stringify(seed))
   const app = await electron.launch({
@@ -38,7 +42,8 @@ async function launch(seed?: Record<string, unknown>): Promise<Launched> {
       ...process.env,
       NODE_ENV: 'production',
       TRANSFER_E2E_QUIET: '1',
-      TRANSFER_USERDATA: userData
+      TRANSFER_USERDATA: userData,
+      TRANSFER_RECHECK_MS: String(recheckMs)
     }
   })
   return { app, userData }
@@ -266,16 +271,22 @@ test('「打开文件夹」打开的是**当前**接收文件夹,不是系统下
 // 一次探测失败就清掉用户的选择,意味着拔一次盘、网络卷抖一下,配置就永久没了
 // (「退回即忘」下路径找不回来)。所以探不到时先不下结论,隔一会儿复验,仍失败才退回。
 
-test('C12 探不到时先落默认但**不立即**退回,给一次复验的机会', async () => {
-  const l = await launch({ receiveDir: '/Volumes/NoSuchDisk/收件', receiveDirNotice: false })
+test('C12 探不到时先落默认,连着复验 3 次仍不可用才退回', async () => {
+  const RECHECK = 400 // 3 次 = 1200ms 才到阈值
+  const l = await launch({ receiveDir: '/Volumes/NoSuchDisk/收件', receiveDirNotice: false }, RECHECK)
   try {
     const page = await l.app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
     // 启动判定刚跑完:这一刻还不该下结论
     expect(settingsOnDisk(l.userData).receiveDir).toBe('/Volumes/NoSuchDisk/收件')
 
-    // 复验之后才退回
-    await expect.poll(() => settingsOnDisk(l.userData).receiveDir, { timeout: 6000 }).toBeNull()
+    // 跨过第 1 次复验,仍不该退回 —— 这一条把"重试多次"与"只重试一次"区分开:
+    // 若实现只等一轮就下结论,此刻已经是 null 了。
+    await page.waitForTimeout(RECHECK * 1.5)
+    expect(settingsOnDisk(l.userData).receiveDir).toBe('/Volumes/NoSuchDisk/收件')
+
+    // 三次都探不到之后才退回
+    await expect.poll(() => settingsOnDisk(l.userData).receiveDir, { timeout: 8000 }).toBeNull()
     expect(settingsOnDisk(l.userData).receiveDirNotice).toBe(true)
   } finally {
     await close(l)
@@ -300,15 +311,62 @@ test('C12 探测失败但复验前就恢复了 → 保住用户的选择,不退�
     return
   }
 
-  const l = await launch({ receiveDir: dir, receiveDirNotice: false })
+  const RECHECK = 300
+  const l = await launch({ receiveDir: dir, receiveDirNotice: false }, RECHECK)
   try {
     const page = await l.app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
     // 模拟"抖了一下就好了":在复验发生之前恢复权限
     chmodSync(dir, 0o755)
 
-    // 等够复验窗口 + 余量,它**不该**被退回
-    await page.waitForTimeout(4000)
+    // 等够整个重试窗口(3 次)+ 余量,它**不该**被退回
+    await page.waitForTimeout(RECHECK * 5)
+    expect(settingsOnDisk(l.userData).receiveDir).toBe(dir)
+    expect(settingsOnDisk(l.userData).receiveDirNotice).toBe(false)
+  } finally {
+    await close(l)
+    chmodSync(dir, 0o755)
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('C12 抖动→恢复→再抖动:计数不跨抖动累积,不会被攒够次数误判', async () => {
+  // 反复抖动的网络卷正是 C12 要防的场景。若复验成功时不把计数清零,
+  // 几次互不相干的抖动会攒够阈值,把用户的配置误判成失效 —— 而每一次抖动
+  // 单独看都在窗口内恢复了,本不该出事。
+  const dir = mkdtempSync(join(tmpdir(), 'flap-recv-'))
+  chmodSync(dir, 0o000)
+  let blocked = false
+  try {
+    accessSync(dir, constants.W_OK)
+  } catch {
+    blocked = true
+  }
+  if (!blocked) {
+    chmodSync(dir, 0o755)
+    rmSync(dir, { recursive: true, force: true })
+    test.skip(true, '本环境下 chmod 000 挡不住写入(多半以 root 运行),此用例无法成立')
+    return
+  }
+
+  const RECHECK = 300
+  const l = await launch({ receiveDir: dir, receiveDirNotice: false }, RECHECK)
+  try {
+    const page = await l.app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+
+    // 第一次抖动:让它复验到 1 次失败,然后恢复
+    await page.waitForTimeout(RECHECK * 1.5)
+    chmodSync(dir, 0o755)
+    await page.waitForTimeout(RECHECK * 1.5) // 这一轮复验会看到"可用",计数应清零
+
+    // 第二次抖动。开设置页触发一次取目录,好让复验重新排上
+    chmodSync(dir, 0o000)
+    await page.getByTestId('btn-settings').click()
+    await page.getByTestId('btn-open-receive-dir').waitFor()
+    await page.waitForTimeout(RECHECK * 2.5) // 够两次复验,但不够三次
+
+    // 计数若跨抖动累积,此刻已被误判失效
     expect(settingsOnDisk(l.userData).receiveDir).toBe(dir)
     expect(settingsOnDisk(l.userData).receiveDirNotice).toBe(false)
   } finally {
