@@ -67,8 +67,13 @@ lipo -archs "$APP/Contents/MacOS/Transfer"          # 期望: x86_64 arm64
 # ② bundle id 必须是 MAS 专用的那个,不是 DMG 线的
 codesign -dv "$APP" 2>&1 | grep Identifier=          # 期望: com.aloongplanet.transfer
 
-# ③ 签名身份
-codesign -dv "$APP" 2>&1 | grep -E "Authority|TeamIdentifier"
+# ③ 签名身份 —— 必须 -dvv,**-dv 拿不到 Authority**(只有 Identifier/TeamIdentifier)
+codesign -dvv "$APP" 2>&1 | grep Authority
+# 期望三行: Apple Distribution → Apple Worldwide Developer Relations → Apple Root CA
+
+# ③b 签名有效性。比读 Authority 更有力:它真的去校验每个嵌套组件
+codesign --verify --deep --strict --verbose=2 "$APP"
+# 期望结尾两行: valid on disk / satisfies its Designated Requirement"
 
 # ④ 沙盒与权限
 codesign -d --entitlements - --xml "$APP" | plutil -convert xml1 -o - - \
