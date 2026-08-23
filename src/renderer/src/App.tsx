@@ -14,7 +14,7 @@ import type {
   UiMessage,
   AutoAcceptSettings,
   ProgressPayload,
-  StorageDirs,
+  ReceiveDirInfo,
   LangPref
 } from '@shared/ipc'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -30,6 +30,7 @@ import {
   PaperclipIcon,
   InboxIcon,
   FolderOpenIcon,
+  TriangleAlertIcon,
   FileImageIcon,
   FileVideoIcon,
   FileAudioIcon,
@@ -1165,10 +1166,12 @@ function SettingsModal(props: {
   const { t, pref: langPref, setPref: setLangPref } = useI18n()
   const [enabled, setEnabled] = useState(props.value.enabled)
   const [mb, setMb] = useState(Math.round(props.value.maxBytes / (1024 * 1024)))
-  const [dirs, setDirs] = useState<StorageDirs | null>(null)
+  const [recvDir, setRecvDir] = useState<ReceiveDirInfo | null>(null)
+  /** 刚改过接收文件夹 → 提示旧文件仍在原处。只在本次开着设置页期间显示,不持久化 */
+  const [justMoved, setJustMoved] = useState(false)
   const [offlineKeep, setOfflineKeep] = useState<number | null>(null)
   useEffect(() => {
-    window.transfer.getStorageDirs().then(setDirs)
+    window.transfer.getReceiveDir().then(setRecvDir)
     window.transfer.getOfflineKeep().then(setOfflineKeep)
   }, [])
   return (
@@ -1195,20 +1198,81 @@ function SettingsModal(props: {
 
         <div style={S.settingSectionTitle}>{t('settings.sectionStorage')}</div>
         <div style={S.storageRow}>
-          <span style={S.storageLabel}>{t('settings.fileLabel')}</span>
-          <span style={S.storagePath} title={dirs?.downloads ?? ''}>
-            {dirs?.downloads ?? '…'}
+          <span style={S.storageLabel}>{t('settings.receiveDirLabel')}</span>
+          {/*
+            <bdi> 隔离文本方向。外层 storagePath 是 direction:rtl —— 那是为了让省略号落在
+            **左边**(路径太长时省掉前缀、保留末尾的文件夹名,信息量在末尾)。代价是开头的 "/"
+            属中性字符,会被双向算法重排到末尾,显示成 "Users/me/Downloads/"。
+            包一层 bdi 让路径自成左到右段落,截断仍归外层管。
+            改成整体左到右不行:省略号会跟着跑到右边,把末尾文件夹名截掉。
+          */}
+          <span style={S.storagePath} title={recvDir?.path ?? ''}>
+            <bdi>{recvDir?.path ?? '…'}</bdi>
           </span>
           <button
             className="tf-icon-btn"
-            data-testid="btn-open-downloads"
+            data-testid="btn-open-receive-dir"
             style={S.storageIconBtn}
             title={t('settings.openFolderTitle')}
-            onClick={() => window.transfer.openDownloadsDir()}
+            onClick={() => window.transfer.openReceiveDir()}
           >
             <FolderOpenIcon size={15} />
           </button>
         </div>
+        {/*
+          三个操作都**立即生效**,不跟随本页的「保存」——与同页的语言、离线设备保留一致。
+          「保存」只管自动接收开关与大小上限。
+        */}
+        <div style={S.receiveDirActions}>
+          <button
+            className="tf-link-btn"
+            data-testid="btn-change-receive-dir"
+            onClick={async () => {
+              // changed 由 main 判定:只有它同时看得到改动前后的选择。
+              // 在这儿比较展示路径也能得出近似答案,但那是第二处判定,会与 main 的口径漂移。
+              const { info, changed } = await window.transfer.pickReceiveDir()
+              setRecvDir(info)
+              setJustMoved(changed)
+            }}
+          >
+            {t('settings.receiveDir.change')}
+          </button>
+          {/* 已经是默认目录时不出现:那个按钮点了什么也不会发生 */}
+          {recvDir && !recvDir.isDefault && (
+            <button
+              className="tf-link-btn"
+              data-testid="btn-reset-receive-dir"
+              onClick={async () => {
+                setRecvDir(await window.transfer.resetReceiveDir())
+                setJustMoved(false)
+              }}
+            >
+              {t('settings.receiveDir.reset')}
+            </button>
+          )}
+        </div>
+        {recvDir?.notice && (
+          <div style={S.receiveDirNotice} data-testid="receive-dir-notice">
+            <TriangleAlertIcon size={14} />
+            <div>
+              <div style={S.receiveDirNoticeTitle}>{t('settings.receiveDir.noticeTitle')}</div>
+              <div style={S.receiveDirNoticeBody}>{t('settings.receiveDir.noticeBody')}</div>
+              <button
+                className="tf-link-btn tf-link-btn-warn"
+                data-testid="btn-dismiss-receive-dir-notice"
+                style={S.receiveDirDismiss}
+                onClick={async () => setRecvDir(await window.transfer.dismissReceiveDirNotice())}
+              >
+                {t('settings.receiveDir.dismiss')}
+              </button>
+            </div>
+          </div>
+        )}
+        {justMoved && (
+          <div style={S.receiveDirMoved} data-testid="receive-dir-moved">
+            {t('settings.receiveDir.movedNote')}
+          </div>
+        )}
 
         <div style={S.settingSectionTitle}>{t('settings.sectionShortcut')}</div>
         <ShortcutRecorder />
@@ -1469,6 +1533,15 @@ const S: Record<string, React.CSSProperties> = {
   storagePath: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--muted)', direction: 'rtl', textAlign: 'left' },
   // 同 iconBtn:background 归 .tf-icon-btn 管
   storageIconBtn: { flexShrink: 0, border: 'none', cursor: 'pointer', color: 'var(--muted)', width: 22, height: 22, borderRadius: 6, padding: 0, display: 'grid', placeItems: 'center' },
+  // 接收文件夹的操作行与两个提示块。**不缩进**,左对齐到弹层内边距——与同页的 langHint 一致;
+  // 标签宽度随语言变(中文「接收文件夹:」比英文 "Receive folder:" 窄),固定 px 缩进必错位。
+  // 颜色与交互态归 .tf-link-btn(见 theme.css),这里只管几何。
+  receiveDirActions: { display: 'flex', gap: 14, margin: '-2px 0 4px' },
+  receiveDirNotice: { display: 'flex', gap: 7, margin: '6px 0 4px', padding: '8px 10px', borderRadius: 7, background: 'var(--warn-soft)', border: '1px solid var(--warn)', color: 'var(--warn)' },
+  receiveDirNoticeTitle: { fontSize: 12, fontWeight: 600 },
+  receiveDirNoticeBody: { fontSize: 11.5, marginTop: 2, opacity: 0.92, lineHeight: 1.45 },
+  receiveDirDismiss: { marginTop: 5 },
+  receiveDirMoved: { margin: '6px 0 4px', padding: '8px 10px', borderRadius: 7, fontSize: 11.5, lineHeight: 1.45, background: 'var(--accent-soft)', color: 'var(--ink-2)' },
   shortcutBox: { minWidth: 120, padding: '4px 12px', border: '1px solid var(--line-strong)', borderRadius: 6, background: 'var(--bg)', color: 'var(--ink)', cursor: 'pointer', fontSize: 12, fontFamily: 'ui-monospace, monospace', textAlign: 'center' },
   shortcutBoxRec: { borderColor: 'var(--accent)', color: 'var(--accent)' },
   shortcutHint: { fontSize: 11, flex: 1, minWidth: 0 },

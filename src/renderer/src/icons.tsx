@@ -169,6 +169,17 @@ export function FolderOpenIcon(props: { size?: number }): JSX.Element {
   )
 }
 
+/** Lucide triangle-alert(设置页"接收文件夹已改回默认"的告知块) */
+export function TriangleAlertIcon(props: { size?: number }): JSX.Element {
+  return (
+    <Icon size={props.size}>
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </Icon>
+  )
+}
+
 /** Lucide chevron-down(聊天流"跳到最新"按钮) */
 export function ChevronDownIcon(props: { size?: number }): JSX.Element {
   return (

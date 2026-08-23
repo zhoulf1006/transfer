@@ -7,6 +7,9 @@
 
 详细设计和失败路径见 [dmg-notarization-pipeline.md](./dmg-notarization-pipeline.md)。
 
+> **本文只讲 Developer ID(DMG)这条线。** Mac App Store 那条几乎没有共用步骤——
+> 签名身份、描述文件、沙盒、架构数量都不同,且**不公证**。见 [mas-submission.md](./mas-submission.md)。
+
 ## 签名、公证与 staple
 
 - **签名**:用 `Developer ID Application` 标识开发者并保护 App 与最外层 DMG 的完整性;Electron App 同时启用 Hardened Runtime 和所需 entitlements。

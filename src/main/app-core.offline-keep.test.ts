@@ -41,10 +41,12 @@ describe('AppCore 离线保留时长接线', () => {
     const settings = new SettingsStore(setDir)
     const store = new MessageStore(':memory:')
     const updates: RemoteDevice[][] = []
+    // 先求值再包成函数:写成 () => mkdir(...) 会让每次取用都新建一个临时目录
+    const recvDir = mkdir('ok-recv-')
     const core = new AppCore({
       identity: { alias: 'me', fingerprint: 'self-fp', cert: 'c', privateKey: 'k' },
       platform: 'darwin',
-      receiveDir: mkdir('ok-recv-'),
+      receiveDir: () => recvDir,
       store,
       settings,
       events: {

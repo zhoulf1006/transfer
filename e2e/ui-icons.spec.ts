@@ -94,7 +94,7 @@ test('设置页的目录按钮是内联 SVG,不是字符图标', async () => {
     // 开设置弹层(按 title 定位,不依赖 DOM 顺序)
     await page.getByTestId('btn-settings').click()
 
-    const btn = page.getByTestId('btn-open-downloads')
+    const btn = page.getByTestId('btn-open-receive-dir')
     await expect(btn).toBeVisible()
 
     // 图标必须是 SVG;按钮里不得出现任何可见文本(字符图标会以文本形式存在)
@@ -224,7 +224,7 @@ test('每个 .tf-icon-btn 的 hover 底色都真的生效(内联未压死 :hover
 
     // 设置页那个要先开弹层才存在
     await page.getByTestId('btn-settings').click()
-    await checkHover('btn-open-downloads')
+    await checkHover('btn-open-receive-dir')
 
     expect(l.errors).toEqual([])
   } finally {

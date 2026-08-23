@@ -87,8 +87,16 @@ const zh = {
   'settings.autoAcceptLabel': '启用自动接收(文本消息始终自动接收)',
   'settings.maxSizeLabel': '自动接收文件大小上限:',
   'settings.sectionStorage': '存储',
-  'settings.fileLabel': '文件:',
+  // 从「文件:」改名而来:加了可选功能之后,得说清这是**接收**用的文件夹
+  'settings.receiveDirLabel': '接收文件夹:',
   'settings.openFolderTitle': '打开文件夹',
+  'settings.receiveDir.change': '更改…',
+  'settings.receiveDir.reset': '恢复默认',
+  'settings.receiveDir.movedNote': '此前收到的文件仍在原文件夹,Transfer 不会移动它们。',
+  'settings.receiveDir.noticeTitle': '接收文件夹已改回默认',
+  'settings.receiveDir.noticeBody':
+    '之前选择的文件夹不可用(可能已被删除、改名,或所在磁盘已移除)。新收到的文件存到上面这个文件夹。',
+  'settings.receiveDir.dismiss': '知道了',
   'settings.sectionShortcut': '快捷键',
   'settings.sectionDiscovery': '设备发现',
   'settings.sectionLanguage': '语言',
@@ -160,6 +168,9 @@ const zh = {
   'main.dialog.initFailTitle': '初始化失败',
   'main.dialog.initFailBody': '无法生成本机证书(HTTPS 前提):{err}',
   'main.dialog.startFailTitle': '启动失败',
+  'main.dialog.receiveDirNotWritableTitle': '这个文件夹写不进去',
+  'main.dialog.receiveDirNotWritableBody':
+    '{dir}\n\n请选择一个你有写入权限的文件夹。接收文件夹保持不变。',
   'main.dialog.screenPermTitle': '需要屏幕录制权限',
   'main.dialog.screenPermDetail':
     '请在「系统设置 → 隐私与安全性 → 屏幕录制」中允许 Transfer,然后重启应用。',
@@ -246,8 +257,16 @@ const en: Record<TKey, string> = {
   'settings.autoAcceptLabel': 'Enable auto-accept (text messages always auto-accepted)',
   'settings.maxSizeLabel': 'Auto-accept file size limit:',
   'settings.sectionStorage': 'Storage',
-  'settings.fileLabel': 'Files:',
+  'settings.receiveDirLabel': 'Receive folder:',
   'settings.openFolderTitle': 'Open Folder',
+  'settings.receiveDir.change': 'Change…',
+  'settings.receiveDir.reset': 'Reset to Default',
+  'settings.receiveDir.movedNote':
+    'Files you received earlier stay in the previous folder; Transfer does not move them.',
+  'settings.receiveDir.noticeTitle': 'Receive folder reset to default',
+  'settings.receiveDir.noticeBody':
+    'The folder you chose is unavailable (it may have been deleted, renamed, or its disk removed). New files go to the folder shown above.',
+  'settings.receiveDir.dismiss': 'Got it',
   'settings.sectionShortcut': 'Shortcut',
   'settings.sectionDiscovery': 'Device Discovery',
   'settings.sectionLanguage': 'Language',
@@ -311,6 +330,9 @@ const en: Record<TKey, string> = {
   'main.dialog.initFailTitle': 'Initialization Failed',
   'main.dialog.initFailBody': 'Failed to generate local certificate (required for HTTPS): {err}',
   'main.dialog.startFailTitle': 'Startup Failed',
+  'main.dialog.receiveDirNotWritableTitle': 'Cannot write to this folder',
+  'main.dialog.receiveDirNotWritableBody':
+    '{dir}\n\nPick a folder you have permission to write to. The receive folder is unchanged.',
   'main.dialog.screenPermTitle': 'Screen Recording Permission Required',
   'main.dialog.screenPermDetail':
     'Please allow Transfer under System Settings → Privacy & Security → Screen Recording, then restart the app.',

@@ -95,7 +95,7 @@ describe('AppCore 端到端(聊天)', () => {
     const core = new AppCore({
       identity,
       platform: 'darwin',
-      receiveDir: recvDir,
+      receiveDir: () => recvDir,
       multicastPort: 56000,
       interfaceAddr: '', // 测试用 OS 默认接口,隔离本机代理网卡
       httpPort,

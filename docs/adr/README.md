@@ -31,3 +31,4 @@
 | [0019](0019-workings-replace-scratch.md) | 施工文档迁到 docs/.workings/,仍不入库但改为本机保留、不随合并删除 | 已接受 |
 | [0020](0020-upload-idle-timeout-not-total.md) | 传输超时改空闲语义(不限总时长)+ 流式 sha256,解掉能传多大受内存与带宽限制的问题 | 已接受 |
 | [0021](0021-schema-migration-by-declared-columns.md) | 表结构迁移用列声明单一事实源 + 按需补列,不引版本号;新增列必须可空 | 已接受 |
+| [0022](0022-receive-dir-user-selectable.md) | 接收文件夹可由用户选定;失效时自动退回默认且**不保留原路径**;展示路径解符号链接、落盘不解 | 已接受 |

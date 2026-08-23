@@ -29,10 +29,12 @@ describe('AppCore resolvePeer 在线/离线', () => {
   function makeCore(): { core: AppCore; store: MessageStore } {
     const settings = new SettingsStore(mkdir('rp-set-'))
     const store = new MessageStore(':memory:')
+    // 先求值再包成函数:写成 () => mkdir(...) 会让每次取用都新建一个临时目录
+    const recvDir = mkdir('rp-recv-')
     const core = new AppCore({
       identity: { alias: 'me', fingerprint: 'self-fp', cert: 'c', privateKey: 'k' },
       platform: 'darwin',
-      receiveDir: mkdir('rp-recv-'),
+      receiveDir: () => recvDir,
       store,
       settings,
       events: { onDevicesUpdated: () => {}, onMessageUpserted: () => {}, onProgress: () => {} }

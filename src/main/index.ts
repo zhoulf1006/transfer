@@ -1,5 +1,6 @@
 import { join, basename, extname } from 'node:path'
 import { copyFile, readFile } from 'node:fs/promises'
+import { existsSync, mkdirSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, nativeTheme, protocol } from 'electron'
 import {
@@ -16,7 +17,8 @@ import {
   type ThemePref,
   type LangPref,
   type LangResult,
-  type StorageDirs,
+  type ReceiveDirInfo,
+  type PickReceiveDirResult,
   type SetShortcutResult
 } from '@shared/ipc'
 import { isValidAccelerator } from '@shared/accelerator'
@@ -27,6 +29,14 @@ import { SettingsStore } from './settings'
 import { ScreenshotService, persistAndSend } from './screenshot-service'
 import { APP_HOST, registerAppProtocol } from './app-protocol'
 import { t, setMainLang, resolveSystemEffective } from './i18n'
+import {
+  resolveReceiveDir,
+  chooseDir,
+  displayPath,
+  isDirWritable,
+  RECHECK_DELAY_MS,
+  RECHECK_ATTEMPTS
+} from './receive-dir'
 
 // 统一 userData 目录名:dev(未打包)默认读 package.json name='transfer'(小写),
 // 打包版读 productName='Transfer'(大写)→ 两者目录名不一致。显式 setName 统一为 'Transfer',
@@ -111,6 +121,125 @@ let screenshot: ScreenshotService | null = null
 
 function send(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload)
+}
+
+/**
+ * 当前持有的沙盒授权释放函数(仅 MAS 版非空)。
+ *
+ * Electron 文档的硬约束:取得访问权后**必须**在用完时释放,否则泄漏内核资源,
+ * 且 app 会**彻底失去访问沙盒外的能力**直到重启。所以这个引用必须是单例——
+ * 每次取新的之前先释放旧的,退出时也释放。
+ */
+let releaseReceiveDirAccess: (() => void) | null = null
+
+/**
+ * 取得对用户选定目录的沙盒访问权(spec receive-dir A8)。
+ *
+ * 非 MAS 构建下整个是空操作:Developer ID 版不受沙盒约束,存路径就够了。
+ * 传 null 表示"回到默认目录",只释放不取得。
+ */
+function acquireReceiveDirAccess(bookmark: string | null): void {
+  releaseReceiveDirAccess?.()
+  releaseReceiveDirAccess = null
+  if (!bookmark || !process.mas) return
+  try {
+    const stop = app.startAccessingSecurityScopedResource(bookmark)
+    releaseReceiveDirAccess = stop as () => void
+  } catch {
+    // 书签解析失败(目录被删/改名/换机器)。不特殊处理——目录判定那一步会发现
+    // 写不进去,照 C 组退回默认并告知,与"目录没了"走同一条路。
+  }
+}
+
+/** 待定的复验(spec receive-dir C12);非空表示已经排了一次,别重复排 */
+let recheckTimer: NodeJS.Timeout | null = null
+/** 已经连着探不到几次。计数只对**当前**这个目录有意义,目录一变就得清零 */
+let recheckAttempts = 0
+
+/**
+ * 目录被用户改动 → 取消待定的复验并清零计数。
+ *
+ * 不清的话,那些计数是冲着**旧目录**攒的,会让新目录的第一次探测失败就逼近阈值。
+ */
+function cancelReceiveDirRecheck(): void {
+  if (recheckTimer) clearTimeout(recheckTimer)
+  recheckTimer = null
+  recheckAttempts = 0
+}
+
+/**
+ * 复验:连着 RECHECK_ATTEMPTS 次都探不到,才判失效、退回默认并告知。
+ *
+ * 探不到时不当场下结论,是因为「退回即忘」让退回不可逆——瞬时抖动会永久吃掉用户的选择。
+ */
+function scheduleReceiveDirRecheck(): void {
+  if (recheckTimer) return
+  recheckTimer = setTimeout(() => {
+    recheckTimer = null
+    if (!settings) return
+    const state = settings.getReceiveDir()
+    // 目录已经不是自定义的了(用户自己改了/别处已退回)→ 这轮计数作废
+    if (state.chosen === null) {
+      recheckAttempts = 0
+      return
+    }
+    if (isDirWritable(state.chosen)) {
+      recheckAttempts = 0 // 恢复了,前面攒的次数一笔勾销
+      return
+    }
+    recheckAttempts += 1
+    if (recheckAttempts < RECHECK_ATTEMPTS) {
+      scheduleReceiveDirRecheck() // 还没到阈值,再等一轮
+      return
+    }
+    recheckAttempts = 0
+    const r = resolveReceiveDir(state, app.getPath('downloads'), isDirWritable)
+    if (!r.next) return
+    settings.setReceiveDir(r.next) // 不传书签 = 一并清掉,那个目录已经用不了了
+    acquireReceiveDirAccess(null) // 连同沙盒授权一起释放
+  }, RECHECK_DELAY_MS)
+  recheckTimer.unref?.() // 别因为这个定时器拖住退出
+}
+
+/**
+ * 本次该往哪儿落(spec receive-dir C 组)。
+ *
+ * **每次取用都重新判定**——目录可能在两次接收之间被删掉、改名,或所在磁盘被拔走。
+ * 探不到时这一次先给默认目录(文件不能等),但**不在这里下"失效"的结论**:
+ * 那个判定交给复验(C12),于是一次瞬时抖动不会永久吃掉用户的选择。
+ */
+function currentReceiveDir(): string {
+  const defaultDir = app.getPath('downloads')
+  const state = settings!.getReceiveDir()
+  if (state.chosen !== null) {
+    if (isDirWritable(state.chosen)) return state.chosen
+    // 探不到 → 只安排复验,**这里绝不改状态**。
+    // 早先这里还留着一条"就地退回"的旁路,它绕过复验直接清掉用户的选择——
+    // 正是 C12 要禁止的那件事。状态变更集中在复验一处,这条不变量才守得住。
+    scheduleReceiveDirRecheck()
+  }
+  // C10:默认目录自己也可能不在(用户把 ~/Downloads 删了)。建一次试试;
+  // **兜底链到此为止**——建不出来就让接收走既有失败路径报错,不静默改落别处。
+  if (!existsSync(defaultDir)) {
+    try {
+      mkdirSync(defaultDir, { recursive: true })
+    } catch {
+      // 交给接收侧按"目录不可写"报错,那里有对用户可见的失败反馈
+    }
+  }
+  return defaultDir
+}
+
+/**
+ * 设置页「存储」分区要的三项。
+ *
+ * 取目录不改状态(见 currentReceiveDir),所以这里读设置的先后无所谓——
+ * 界面看到的失效告知总是**上一次复验**下的结论,不是这一刻探测的结果。
+ */
+function receiveDirInfo(): ReceiveDirInfo {
+  const dir = currentReceiveDir()
+  const s = settings!.getReceiveDir()
+  return { path: displayPath(dir), isDefault: s.chosen === null, notice: s.notice }
 }
 
 const PRELOAD = join(__dirname, '../preload/index.cjs')
@@ -269,13 +398,69 @@ function registerIpc(): void {
   ipcMain.handle(CMD.setAutoAccept, (_e, s: Partial<AutoAcceptSettings>): AutoAcceptSettings => {
     return settings!.setAutoAccept(s).autoAccept
   })
-  // 取存储目录路径(设置页"存储"分区展示):接收文件的下载目录(收发文件/图片都落这)。
-  ipcMain.handle(CMD.getStorageDirs, (): StorageDirs => ({
-    downloads: app.getPath('downloads')
-  }))
-  // 打开接收文件的下载目录。
-  ipcMain.handle(CMD.openDownloadsDir, async (): Promise<void> => {
-    await shell.openPath(app.getPath('downloads'))
+  // ── 接收文件夹 ──
+  // 三个写操作都**立即生效**,不跟随该页的「保存」——与同页的语言、离线设备保留一致
+  // (那两个也是选完即生效;跟随保存的只有自动接收开关与大小上限)。
+  ipcMain.handle(CMD.getReceiveDir, (): ReceiveDirInfo => receiveDirInfo())
+
+  ipcMain.handle(CMD.openReceiveDir, async (): Promise<void> => {
+    await shell.openPath(currentReceiveDir())
+  })
+
+  ipcMain.handle(CMD.pickReceiveDir, async (): Promise<PickReceiveDirResult> => {
+    const unchanged = (): PickReceiveDirResult => ({ info: receiveDirInfo(), changed: false })
+    if (!mainWindow) return unchanged()
+    const r = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: currentReceiveDir(),
+      // 沙盒版靠它换取对选定目录的持久访问权(A8)。文档标注 darwin,mas 两个平台。
+      securityScopedBookmarks: true
+    })
+    if (r.canceled || !r.filePaths[0]) return unchanged() // A1:取消 → 什么都不变
+    // 选中的目录解一次符号链接再存:用户可能选到一个软链,存解析后的真身才与展示一致
+    const picked = displayPath(r.filePaths[0])
+    // A3:当场拒绝写不进去的目录。用系统消息框而不是设置页里的一行红字——用户此刻
+    // 刚从模态选择器返回,注意力在对话框那个位置。
+    if (!isDirWritable(picked)) {
+      // 不传 buttons,用系统默认的确认按钮
+      await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        message: t('main.dialog.receiveDirNotWritableTitle'),
+        detail: t('main.dialog.receiveDirNotWritableBody', { dir: picked })
+      })
+      return unchanged()
+    }
+    // 两边都得是解过符号链接的,否则比不出"选中的就是默认目录"(spec A5)。
+    // 沙盒下 getPath('downloads') 返回容器内路径,而用户在选择器里选到的是真实的
+    // ~/Downloads —— 只解一边的话这两个字符串永不相等,A5 在 MAS 版就静默失效了。
+    const { state, changed } = chooseDir(
+      picked,
+      displayPath(app.getPath('downloads')),
+      settings!.getReceiveDir()
+    )
+    // 选中的正好是默认目录时 state.chosen 为 null —— 那书签也不该留(normalize 会强制清,
+    // 这里显式传 null 只是让读代码的人不必去翻 normalize 才知道结果)。
+    const bookmark = state.chosen === null ? null : (r.bookmarks?.[0] ?? null)
+    settings!.setReceiveDir(state, bookmark)
+    acquireReceiveDirAccess(bookmark)
+    cancelReceiveDirRecheck() // 目录换了,冲旧目录攒的复验计数作废
+    return { info: receiveDirInfo(), changed }
+  })
+
+  ipcMain.handle(CMD.resetReceiveDir, (): ReceiveDirInfo => {
+    settings!.setReceiveDir({ chosen: null, notice: false })
+    acquireReceiveDirAccess(null)
+    cancelReceiveDirRecheck()
+    return receiveDirInfo()
+  })
+
+  ipcMain.handle(CMD.dismissReceiveDirNotice, (): ReceiveDirInfo => {
+    // 只清告知,不动目录也不动授权 —— 故把当前书签原样传回去
+    settings!.setReceiveDir(
+      { ...settings!.getReceiveDir(), notice: false },
+      settings!.getReceiveDirBookmark()
+    )
+    return receiveDirInfo()
   })
   // 主题偏好:存 main 侧(避开 file:// 下 localStorage 慢)
   ipcMain.handle(CMD.getTheme, (): ThemePref => settings!.getTheme())
@@ -362,10 +547,17 @@ app.whenReady().then(async () => {
   }
   store = new MessageStore(join(userData, 'messages.db'))
 
+  // 先取回沙盒授权,再判定 —— 顺序不能反:没有授权时那个目录一定探测为不可写,
+  // 判定会当场把它退回默认,于是 MAS 版每次重启都丢掉用户的设置。
+  acquireReceiveDirAccess(settings.getReceiveDirBookmark())
+  // 启动时判定一次(spec receive-dir C1-C4)。只在收文件前判不够——那样用户要等到
+  // 下次有人发东西过来才知道自己选的文件夹早已不在,而设置页会一直显示那个失效路径。
+  currentReceiveDir()
+
   core = new AppCore({
     identity,
     platform: process.platform,
-    receiveDir: app.getPath('downloads'),
+    receiveDir: currentReceiveDir,
     httpPort: portOverride,
     store,
     settings,
@@ -458,6 +650,11 @@ app.on('before-quit', (e) => {
   if (quitting) return // 已在清理,放行第二次 quit
   e.preventDefault()
   quitting = true
+
+  // 释放沙盒授权。同步、放在最前:它不依赖任何异步清理,而下面那条 3s 超时的强杀路径
+  // 会跳过 async 块里的一切——放进去就等于在卡住时漏释放。
+  releaseReceiveDirAccess?.()
+  releaseReceiveDirAccess = null
 
   // 兜底:清理最多等 3s,超时也强制退出。
   // 关键——core.stop 里 fastify server.close() 会等所有活动连接关闭,若有挂起连接可能永不 resolve,
