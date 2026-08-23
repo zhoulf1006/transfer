@@ -230,7 +230,12 @@ function currentReceiveDir(): string {
   return defaultDir
 }
 
-/** 设置页「存储」分区要的三项。必须在 currentReceiveDir 之后读设置——它可能刚改过状态。 */
+/**
+ * 设置页「存储」分区要的三项。
+ *
+ * 取目录不改状态(见 currentReceiveDir),所以这里读设置的先后无所谓——
+ * 界面看到的失效告知总是**上一次复验**下的结论,不是这一刻探测的结果。
+ */
 function receiveDirInfo(): ReceiveDirInfo {
   const dir = currentReceiveDir()
   const s = settings!.getReceiveDir()

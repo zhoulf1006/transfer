@@ -375,3 +375,25 @@ test('C12 抖动→恢复→再抖动:计数不跨抖动累积,不会被攒够�
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('目录探不到时,取接收目录仍是毫秒级返回 —— 复验不阻塞接收', async () => {
+  // 收文件路径上取目录是同步契约。若复验做成同步等待,每收一个文件都要卡满整个
+  // 重试窗口(默认 15 秒),而发送方只会看到传输莫名其妙地慢。
+  // 这里**故意用产品默认间隔**(不注入小值):要验的正是"等待时长与返回速度无关"。
+  const l = await launch({ receiveDir: '/Volumes/NoSuchDisk/收件', receiveDirNotice: false }, 5000)
+  try {
+    const page = await l.app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+
+    // getReceiveDir 走的就是收文件那条取目录的代码路径
+    const t0 = Date.now()
+    await page.getByTestId('btn-settings').click()
+    await page.getByTestId('btn-open-receive-dir').waitFor()
+    const took = Date.now() - t0
+
+    // 阈值取 3 秒:远低于一次复验间隔(5 秒),又宽到不会因界面渲染波动而假红
+    expect(took).toBeLessThan(3000)
+  } finally {
+    await close(l)
+  }
+})
