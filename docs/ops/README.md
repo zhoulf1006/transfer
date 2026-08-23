@@ -12,6 +12,7 @@
 |---|---|
 | [mac-signing.md](mac-signing.md) | 证书导出、GitHub Secrets 语义、本地签名命令、CI 三档逻辑 |
 | [dmg-notarization-pipeline.md](dmg-notarization-pipeline.md) | 逐 DMG 公证与验证命令序列、失败判读、tag 形态与发布门禁 |
+| [mas-submission.md](mas-submission.md) | Mac App Store 线:与 DMG 线的差异对照、凭据、打包与六项产物验收、上传工具现状、沙盒行为该在哪验 |
 | [pages-deploy-guide.md](pages-deploy-guide.md) | Cloudflare Pages 配置(Root directory=`site`、输出目录、Node 版本)与常见坑 |
 | [cn-mirror-deploy.md](cn-mirror-deploy.md) | 国内镜像 `transfer.aloongplanet.com.cn`:部署命令、服务器形态、备案号注入、CORS 验证与排查 |
 | [r2-setup-guide.md](r2-setup-guide.md) | R2 开通、Token 最小权限、四个 secret 的语义 |
