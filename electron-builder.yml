@@ -76,6 +76,31 @@ mac:
   # 里(挂载 DMG 后对内部 .app 跑 stapler validate),漏配凭据会在那里失败。
   # 预发布档走 `pnpm dist:mac`,用 -c.mac.notarize=false 显式关掉(只签名不公证)。
   notarize: true
+  # ⚠️ **extendInfo 必须写在 mac 下。写进 mas 块不生效,且不报错、无警告。**
+  # app-builder-lib 26.15.3 的 macPackager 在同一个函数里:版本号读的是合并过 config.mas 的
+  # activeOpts,而 extendInfo 读的是**未合并**的 platformSpecificBuildOptions(即 config.mac)。
+  # 实测(2026-08-23):配在 mas 下时 NSLocalNetworkUsageDescription 从未出现在任何产物的
+  # Info.plist 里(mas 与 mas-dev 都没有);而同一块里的 ElectronTeamID 看着"生效"其实是
+  # mas 目标自动写的,与 extendInfo 无关 —— 这个巧合正是它长期没被发现的原因。
+  extendInfo:
+    # macOS 15+ 本地网络隐私:访问局域网前系统据此向用户说明用途。
+    # **两条发布线都要**:本地网络权限与分发方式无关,而局域网发现是本 app 的核心功能。
+    NSLocalNetworkUsageDescription: Transfer 需要访问本地网络来发现同一局域网内的设备并直接传输文件。
+    # 沙盒只放行以 Team ID 打头的 Mach 服务名,Electron 靠这个键给 rendezvous server 命名。
+    # mas 目标下 electron-builder 会自动写同名键;显式声明是为了不依赖那个自动行为。
+    ElectronTeamID: RHQ28XS7D9
+    # 出口合规(美国 EAR Category 5 Part 2)的预先声明。不写它的话,每传一个 build 都要在
+    # App Store Connect 手填一次问卷,期间 build 卡在 Missing Compliance 进不了 TestFlight。
+    #
+    # false 的含义不是"没用加密",而是"用到的加密都属于豁免类别"。本 app 的加密面:
+    #   - TLS(node tls/https,来自 app 自带的运行时而非 Apple Security.framework)
+    #   - SHA-256(证书指纹 pinning + 文件完整性校验)
+    #   - X.509 自签证书(selfsigned → @peculiar/x509 + pkijs)
+    # 三者都是国际标准组织(IETF/NIST/ITU-T)的标准算法,全库无自研加解密实现;
+    # 加密只用于保护传输通道,不是产品功能本身。
+    #
+    # 若日后引入非豁免的加密用途,改成 true 并准备 ERN/CCATS 文档。
+    ITSAppUsesNonExemptEncryption: false
 
 # Mac App Store —— 与上面的 Developer ID/DMG 线并行,两套产物互不影响。
 # 继承 mac 的 category/icon/electronLanguages;下面只写必须覆盖的部分。
@@ -101,11 +126,7 @@ mas:
   provisioningProfile: build/embedded.provisionprofile
   # 加固运行时是 Developer ID 公证那条线的要求,MAS 走沙盒,不启用。
   hardenedRuntime: false
-  extendInfo:
-    # macOS 15+ 本地网络隐私:访问局域网前系统会据此向用户说明用途。
-    NSLocalNetworkUsageDescription: Transfer 需要访问本地网络来发现同一局域网内的设备并直接传输文件。
-    # 沙盒只放行以 Team ID 打头的 Mach 服务名,Electron 靠这个键给 rendezvous server 命名。
-    ElectronTeamID: RHQ28XS7D9
+  # ⚠️ 这里**没有** extendInfo —— 它写在上面的 mac 块里,写在这儿不生效。原因见那里的注释。
 
 masDev:
   # 继承 mas,只换成开发用 profile(本机测沙盒行为,不上传)
