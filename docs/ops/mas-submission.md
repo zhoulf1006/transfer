@@ -113,6 +113,23 @@ grep -ac "<某个本次新增的标识符>" "$APP/Contents/Resources/app.asar"
 > **未实测**:本文档写作时本机没装 Transporter,上传的具体交互步骤与失败提示的判读**没有走过一遍**。
 > 下一个真正上传的人请把实际步骤与遇到的报错补进本节,并删掉这条注记。
 
+### ⚠️ 不要为了测试去安装这个 .pkg
+
+`make-mas-pkg.cjs` 把安装位置定为 `/Applications`,装进去的名字是 `Transfer.app` ——
+**与 DMG 版路径完全相同**(bundle id 不同故 TCC 授权分开,但文件会被覆盖)。
+而且覆盖完也跑不起来(见下节),等于白搭进去一个能用的 app。
+
+### 出口合规(Export Compliance)
+
+上传后 ASC 会问加密相关问题,**没回答的 build 会卡在那里进不了 TestFlight**。
+可以在 `electron-builder.yml` 的 `extendInfo` 里加 `ITSAppUsesNonExemptEncryption`
+让它不再每次都问。
+
+> **本项目当前没有配置这个键**,也就是每次上传都要在网页上手填一次。
+> 要不要配、配成什么值,是**合规判断而非技术判断**:这个 app 用 TLS 保护传输、
+> 自签证书并做指纹 pinning,是否落在 Apple 的豁免类别里需要发布者自己确认。
+> 本手册不给结论。
+
 ### 版本号
 
 App Store Connect 不接受重复的 version + build 组合。上传前先到 ASC 看上一次提交用的是什么版本,
@@ -125,16 +142,54 @@ App Store Connect 不接受重复的 version + build 组合。上传前先到 AS
 distribution 描述文件**没有 `ProvisionedDevices`** —— 它授权的是"从 App Store 安装的副本",
 不是某台开发机。所以 `pnpm dist:mas` 出来的 `.app` 双击不会启动,这是**设计如此,不是打包出错**。
 
+实测过(2026-08-23),`open` 它会得到:
+
+```text
+The application cannot be opened for an unexpected reason,
+error=Error Domain=RBSRequestErrorDomain Code=5 "Launch failed."
+NSUnderlyingError=... NSPOSIXErrorDomain Code=163 "Launchd job spawn failed"
+```
+
+**看到 `Code=163` 就是预期结果**,不必回头怀疑签名或打包步骤 —— 这一条写在这里,
+就是为了让下一个人不去排查一个根本不存在的问题。
+
 于是"在正式包上验一遍沙盒行为"这个要求是**不可执行的**。真要验沙盒相关的行为,只有两条路:
 
 1. **`pnpm dist:mas:dev`** —— 同样开沙盒、同样的容器,但用 development 签名与 profile,
    可以本机运行。**日常验沙盒行为都走这条**。
    启动必须用 `open`:直接执行 `Contents/MacOS/Transfer` 会绕过沙盒容器,测出来的是假绿。
-2. **TestFlight** —— 提交之后走 TestFlight 分发,在真实安装的副本上验。
-   这是唯一能验到 distribution 签名下真实行为的途径。
+2. **TestFlight** —— 唯一能验到 distribution 签名下真实行为的途径,且**不需要过正式审核**。
+   流程见下节。
 
 两者的差别不只是签名:development profile 会登记设备、entitlement 的实际授予也可能不同,
 所以 `mas-dev` 上的绿**不能直接外推**到正式包。涉及权限边界的结论要在 TestFlight 上复核。
+
+## 用 TestFlight 测正式版
+
+**没有"上传到 TestFlight"这个动作**:build 传到 App Store Connect 之后,自动出现在
+该 app 的 TestFlight 标签页里。
+
+| 测试类型 | 人数 | 要不要审核 |
+|---|---|---|
+| **内部**(Internal) | 100 | **不需要**。build 处理完就能装 |
+| 外部(External) | 10000 | 需要 Beta App Review(比正式审核轻,但仍是一道) |
+
+内部测试员**必须先在 ASC 的 Users and Access 里是团队成员**。
+发布者本人天然满足,所以自测不用拉任何人进来。
+
+步骤:
+
+1. Transporter 上传 `.pkg`(先 Verify 再 Deliver)
+2. 等 ASC 处理(几分钟到几十分钟)
+3. 回答出口合规(见上节;不答会卡住)
+4. TestFlight 标签页 → 加内部测试员
+5. 测试机装 **TestFlight.app**(Mac App Store,需 macOS 12+)
+6. 从 TestFlight.app 里安装 Transfer
+
+build 有效期 **90 天**。
+
+> **未实测**:以上是公开流程,本手册写作时没有走过一遍。第一个真正走通的人请补上
+> 每步的实际耗时、卡点与报错文案,并删掉这条注记。
 
 ## 已知的坑
 
