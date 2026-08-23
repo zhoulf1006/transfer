@@ -61,6 +61,18 @@ function settingsOnDisk(userData: string): Record<string, unknown> {
   return JSON.parse(readFileSync(f, 'utf8'))
 }
 
+/**
+ * 只取接收文件夹相关的三项。
+ *
+ * 不拿整份 settings.json 比对:文件里还有自动接收、主题、语言等无关字段,
+ * 而首次写盘会把 seed 的部分字段**归一化补全**成完整结构——那种变化与
+ * 接收目录无关,却会让"什么都没变"的断言假红。
+ */
+function recvDirOnDisk(userData: string): string {
+  const s = settingsOnDisk(userData)
+  return JSON.stringify([s.receiveDir ?? null, s.receiveDirNotice ?? false, s.receiveDirBookmark ?? null])
+}
+
 async function openSettings(l: Launched): Promise<void> {
   const page = await l.app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
@@ -204,12 +216,12 @@ test('取消选择器 → 什么都不变(A1)', async () => {
     // 断言的对象是"前后没变化"本身,不是某个具体取值:
     // 只断 receiveDir 为 null 的话,一个全新 profile 上它本来就是 null,
     // 那条断言在"取消根本没被处理"时照样绿。
-    const before = JSON.stringify(settingsOnDisk(l.userData))
+    const before = recvDirOnDisk(l.userData)
     await page.getByTestId('btn-change-receive-dir').click()
     // 仍是默认态:「恢复默认」不该冒出来,也不该提示"旧文件仍在原处"
     await expect(page.getByTestId('btn-reset-receive-dir')).toHaveCount(0)
     await expect(page.getByTestId('receive-dir-moved')).toHaveCount(0)
-    expect(JSON.stringify(settingsOnDisk(l.userData))).toBe(before)
+    expect(recvDirOnDisk(l.userData)).toBe(before)
   } finally {
     await close(l)
   }
@@ -393,6 +405,35 @@ test('目录探不到时,取接收目录仍是毫秒级返回 —— 复验不�
 
     // 阈值取 3 秒:远低于一次复验间隔(5 秒),又宽到不会因界面渲染波动而假红
     expect(took).toBeLessThan(3000)
+  } finally {
+    await close(l)
+  }
+})
+
+test('取目录不改状态:复验窗口内反复取,设置一动不动', async () => {
+  // 守的是一条**不变量**而不是某个行为:取目录的调用点有五处(启动、每次接收、
+  // 设置页读取、「打开文件夹」、选择器起始位置),任何一处顺手"就地退回"都会绕过复验。
+  // 上面那些用例只在启动后读一次,抓不住"第 N 次调用才退回"这类写法。
+  const RECHECK = 5000 // 用大间隔:整段断言都落在第一次复验之前
+  const l = await launch({ receiveDir: '/Volumes/NoSuchDisk/收件', receiveDirNotice: false }, RECHECK)
+  try {
+    const page = await l.app.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+    const before = recvDirOnDisk(l.userData)
+
+    // 反复触发取目录:开设置页(getReceiveDir)、点打开文件夹(openReceiveDir)、再开关几轮
+    await l.app.evaluate(({ shell }) => {
+      shell.openPath = async () => ''
+    })
+    for (let i = 0; i < 3; i++) {
+      await page.getByTestId('btn-settings').click()
+      await page.getByTestId('btn-open-receive-dir').click()
+      await page.mouse.click(5, 5)
+      await expect(page.getByTestId('btn-open-receive-dir')).toHaveCount(0)
+    }
+
+    // 复验还没到点,接收目录的三项必须原封不动
+    expect(recvDirOnDisk(l.userData)).toBe(before)
   } finally {
     await close(l)
   }
