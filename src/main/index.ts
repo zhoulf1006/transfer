@@ -211,25 +211,23 @@ function scheduleReceiveDirRecheck(): void {
 function currentReceiveDir(): string {
   const defaultDir = app.getPath('downloads')
   const state = settings!.getReceiveDir()
-  if (state.chosen !== null && !isDirWritable(state.chosen)) {
+  if (state.chosen !== null) {
+    if (isDirWritable(state.chosen)) return state.chosen
+    // 探不到 → 只安排复验,**这里绝不改状态**。
+    // 早先这里还留着一条"就地退回"的旁路,它绕过复验直接清掉用户的选择——
+    // 正是 C12 要禁止的那件事。状态变更集中在复验一处,这条不变量才守得住。
     scheduleReceiveDirRecheck()
-    return defaultDir
-  }
-  const r = resolveReceiveDir(state, defaultDir, isDirWritable)
-  if (r.next) {
-    settings!.setReceiveDir(r.next)
-    acquireReceiveDirAccess(null)
   }
   // C10:默认目录自己也可能不在(用户把 ~/Downloads 删了)。建一次试试;
   // **兜底链到此为止**——建不出来就让接收走既有失败路径报错,不静默改落别处。
-  if (r.dir === defaultDir && !existsSync(defaultDir)) {
+  if (!existsSync(defaultDir)) {
     try {
       mkdirSync(defaultDir, { recursive: true })
     } catch {
       // 交给接收侧按"目录不可写"报错,那里有对用户可见的失败反馈
     }
   }
-  return r.dir
+  return defaultDir
 }
 
 /** 设置页「存储」分区要的三项。必须在 currentReceiveDir 之后读设置——它可能刚改过状态。 */
