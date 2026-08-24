@@ -246,6 +246,59 @@ mv /Applications/Transfer.app ~/Desktop/Transfer-DMG备份.app
 
 两者 bundle id 不同(TCC 授权分开),测完挪回来不影响原有权限。
 
+## 提交审核
+
+入口在 **Distribution** 标签页,不是 TestFlight。两者是不同的流程,TestFlight 通过
+与审核通过没有关系(见上节)。
+
+### 版本号必须与 build 的 CFBundleShortVersionString 相等
+
+**这是最容易卡住的一条**:ASC 的 Build 区只列出 `CFBundleShortVersionString` 等于
+该版本记录版本号的 build。版本记录写着 1.0.0 而 build 是 1.2.1 时,Build 区里
+**根本看不到那个 build**,而 ASC 不会解释为什么。
+
+### 被拒的版本:没有"新建版本"入口,直接改版本号
+
+一个版本被 Rejected 之后,左侧只有 `Add Platform`(那是加 iOS/tvOS 等新平台),
+**没有"加版本"的按钮** —— ASC 不允许同时存在两个未发布版本。
+
+做法是**在那个被拒的版本记录上改版本号**:版本页面往下滚找 Version 字段,
+改成新 build 的版本号,Save 之后 Build 区就能选到了。
+
+### 提交前的清单
+
+| 项 | 位置 | 备注 |
+|---|---|---|
+| Version 改成 build 的版本号 | 版本页面的 Version 字段 | 不改就选不到 build |
+| What's New | 版本页面 | 必填,面向用户的更新说明 |
+| Build | Build 区的 `+` | 版本号对上了才出现 |
+| **App Review Information → Notes** | 版本页面靠下,**或**左侧 General → App Review | 见下 |
+| Sign-in required | 同上 | 本 app **没有账号系统,不要勾** —— 勾了会要求提供测试账号,而审核员照着找不到登录界面 |
+| 出口合规 | 提交流程中 | 见上文的出口合规一节 |
+
+**左侧 App Review 那一项带红色感叹号 = 有必填项没填完**,不清掉提交按钮多半是灰的。
+
+### Notes 写什么
+
+如果本次是**针对某条驳回的重新提交**,Notes 里直接回应那一条,能省一轮来回。
+有效的写法是**先陈述事实层,再说改了什么**,而不是只说"已修复":
+
+- 审核意见基于审核员看到的现象,而现象与根因常常不是一回事
+  (本项目的 2.4.5(i):文件其实一直落在用户的下载目录,容器里那个是符号链接,
+  被判"存进容器"的其实是**展示的路径字符串**)
+- 附一句"How to verify",指出打开哪个界面、看哪一行 —— 审核员照着看一眼就能确认
+
+### 本项目的驳回记录
+
+| 版本 | 结果 | 条款 |
+|---|---|---|
+| 1.0.0 | Rejected | `2.4.5 Performance: Hardware Compatibility (macOS)`(即 2.4.5(i),两条意见) |
+
+事实层的调查与两条意见的回应见 `docs/.workings/mas-review/`。
+
+> **未实测**:改版本号后 Build 区是否真的能选到、`Update Review` 提交后的行为,
+> 本文档写作时尚未走完。下一个提交的人补上实际表现与遇到的报错。
+
 ## 已知的坑
 
 - **`mas-dev` 包没有 QUIET 开关**,一启动就往局域网多播 announce,会在同网设备的列表里
