@@ -110,8 +110,28 @@ grep -ac "<某个本次新增的标识符>" "$APP/Contents/Resources/app.asar"
 几分钟出结果,能在提审前挡掉结构性问题(缺 entitlement、架构不对、版本号撞车之类),
 比等一轮审核快得多。
 
-> **未实测**:本文档写作时本机没装 Transporter,上传的具体交互步骤与失败提示的判读**没有走过一遍**。
-> 下一个真正上传的人请把实际步骤与遇到的报错补进本节,并删掉这条注记。
+**实测走通(2026-08-23)**:拖入 `.pkg` → Deliver,几分钟后界面显示
+
+```text
+✅ DELIVERED ON AUG 23, 2026 AT 21:54
+🕐 THE APP HAS FINISHED PROCESSING.
+```
+
+两行都出现才算完;只有 DELIVERED 说明还在 ASC 侧处理,TestFlight 标签页里还看不到这个 build。
+
+> 仍未实测:**Verify** 按钮的行为(那次直接 Deliver 了)。它是上传前的格式校验,
+> 理论上能提前挡掉版本号撞车、架构不对之类的问题。下一个用它的人补上实际表现。
+
+### 版本号与 build 号
+
+ASC 不接受重复的 **version + build** 组合。
+
+electron-builder 默认让 `buildVersion` 等于 `version`,所以上传的 build 显示成
+`1.2.1 (1.2.1)` —— 括号里那个是 build 号。**同一个 version 要重传(比如验出问题改了代码),
+version 可以不变,但 build 号必须递增**,否则 ASC 拒收。
+
+本项目当前没有独立的 `buildVersion` 配置,要重传就得在 `electron-builder.yml` 里加,
+或用 CLI 覆盖(`-c.buildVersion=…`)。**这一条尚未实测**,第一个遇到重传的人补。
 
 ### ⚠️ 不要为了测试去安装这个 .pkg
 
@@ -130,12 +150,7 @@ grep -ac "<某个本次新增的标识符>" "$APP/Contents/Resources/app.asar"
 > 自签证书并做指纹 pinning,是否落在 Apple 的豁免类别里需要发布者自己确认。
 > 本手册不给结论。
 
-### 版本号
-
-App Store Connect 不接受重复的 version + build 组合。上传前先到 ASC 看上一次提交用的是什么版本,
-撞了就得先升 `package.json` 的 version。
-
-> 注意:master 配了分支保护,版本号变更也要走 PR(见 [github-ops 的发版流程](../../CLAUDE.md))。
+> 升 `package.json` 的 version 时注意:master 配了分支保护,版本号变更也要走 PR。
 
 ## 为什么正式包跑不起来,以及沙盒行为该怎么验
 
@@ -169,27 +184,67 @@ NSUnderlyingError=... NSPOSIXErrorDomain Code=163 "Launchd job spawn failed"
 **没有"上传到 TestFlight"这个动作**:build 传到 App Store Connect 之后,自动出现在
 该 app 的 TestFlight 标签页里。
 
-| 测试类型 | 人数 | 要不要审核 |
-|---|---|---|
-| **内部**(Internal) | 100 | **不需要**。build 处理完就能装 |
-| 外部(External) | 10000 | 需要 Beta App Review(比正式审核轻,但仍是一道) |
+| 测试类型 | 人数 | 要不要审核 | 谁能当 |
+|---|---|---|---|
+| **内部**(Internal) | 100 | **不需要**,build 处理完就能装 | **只能是 App Store Connect 团队成员** |
+| 外部(External) | 10000 | 需要 Beta App Review | 任何人 |
 
-内部测试员**必须先在 ASC 的 Users and Access 里是团队成员**。
-发布者本人天然满足,所以自测不用拉任何人进来。
+**这张表里最容易踩的是最后一列。** 把一个非团队成员加进 Internal 组时,ASC 只报
+"An error has occurred. Try again later." —— 不说真正的原因。
 
-步骤:
+### 关键前提:你要用哪个 Apple ID 测
+
+TestFlight 用的是本机**「媒体与购买项目」**登录的 Apple ID(不是 iCloud 账号,两者可能不同;
+用 `open -a "App Store"` 看左下角)。**这个账号必须是 ASC 的团队成员**,否则:
+
+- 加进 Internal 组会报上面那个错
+- 只能作为外部测试员,而外部要等 Beta App Review 通过才能装
+
+如果本机登的账号不在团队里(常见情形:开发者账号用邮箱 A 注册,而这台机器登的是邮箱 B),
+**不要去折腾切换系统账号,把 B 加进团队更省事**:
+
+1. 先去 TestFlight → All Testers,**删掉** B 已有的测试员记录
+   (同一邮箱既是外部测试员又要变团队成员会冲突,那个 "An error has occurred" 多半来自这里)
+2. https://appstoreconnect.apple.com/access/users → `+` 邀请 B
+   - Role 选 **Developer**(能做内部测试员的最小角色)
+   - Apps 勾上本 app
+   - ⚠️ 这个页面是**账号级**的,不在任何单个 app 里面 —— 在 app 页面里找不到它
+3. 去 B 的邮箱收 **App Store Connect 团队邀请**并接受(与 TestFlight 邀请是两封不同的邮件)
+4. 回 TestFlight → Internal Testing → 组 → 这时才加得进去
+
+### 步骤
 
 1. Transporter 上传 `.pkg`(先 Verify 再 Deliver)
-2. 等 ASC 处理(几分钟到几十分钟)
-3. 回答出口合规(见上节;不答会卡住)
-4. TestFlight 标签页 → 加内部测试员
-5. 测试机装 **TestFlight.app**(Mac App Store,需 macOS 12+)
-6. 从 TestFlight.app 里安装 Transfer
+2. 等 ASC 处理(几分钟到几十分钟),状态变 `THE APP HAS FINISHED PROCESSING`
+3. 回答出口合规(见上节)。**没答的 build 显示 `Missing Compliance`,进不了测试**
+4. 确认测试账号是团队成员(见上)
+5. TestFlight 标签页 → 建 Internal 组 → 加测试员 → **把 build 加到该组**
+   (只建组、只加人而不加 build,TestFlight 里照样是空的)
+6. 测试员状态会变 `Invited` —— **邀请要接受**,不是自动生效:
+   去邮箱点 "View in TestFlight",或直接用同一 Apple ID 登录 TestFlight
+7. 测试机装 **TestFlight.app**(Mac App Store,需 macOS 12+),安装本 app
 
 build 有效期 **90 天**。
 
-> **未实测**:以上是公开流程,本手册写作时没有走过一遍。第一个真正走通的人请补上
-> 每步的实际耗时、卡点与报错文案,并删掉这条注记。
+### 别让 build 误入审核队列
+
+内部测试**不需要任何审核**。若 build 页面右上角出现 **Remove from Review**、
+或状态是 `Waiting for Review`,说明它被提交进了 **Beta App Review**(外部测试的流程),
+正占着审核队列。内部测试用不到它,点 **Remove from Review** 撤回即可。
+
+**Beta App Review 与正式 App Review 是两回事**:前者只看"能不能跑、有无明显违规",
+**不会检查 2.4.5(i) 那类具体条款**。想验证某条驳回是否修好,只能自己装上看,
+等 Beta 审核通过对那个目的没有帮助。
+
+### 装之前:挪开 DMG 版
+
+TestFlight 装的 app 同样叫 `Transfer.app`、同样进 `/Applications`,**与 DMG 版同路径**。
+
+```bash
+mv /Applications/Transfer.app ~/Desktop/Transfer-DMG备份.app
+```
+
+两者 bundle id 不同(TCC 授权分开),测完挪回来不影响原有权限。
 
 ## 已知的坑
 
