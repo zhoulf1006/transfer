@@ -294,7 +294,14 @@ mv /Applications/Transfer.app ~/Desktop/Transfer-DMG备份.app
 |---|---|---|
 | 1.0.0 | Rejected | `2.4.5 Performance: Hardware Compatibility (macOS)`(即 2.4.5(i),两条意见) |
 
-事实层的调查与两条意见的回应见 `docs/.workings/mas-review/`。
+两条意见与回应:
+
+| 意见 | 事实层 | 回应 |
+|---|---|---|
+| 用户数据存进了 app 容器 | 沙盒下 `app.getPath('downloads')` 返回容器内路径,但容器里的 `Downloads` 是指向 `~/Downloads` 的符号链接,文件一直落在用户的下载目录 | 设置页展示的路径过一次 `realpath`,显示 `/Users/<me>/Downloads`;落盘路径不变 |
+| `files.downloads.read-write` 没有对应功能 | 审核侧没看出该权限的用途 | 接收文件夹改为可由用户选定(`files.user-selected.read-write` + security-scoped bookmark),`files.downloads.read-write` 是默认目录的依据 |
+
+决策与边界见 [ADR-0022](../adr/0022-receive-dir-user-selectable.md) 与 [receive-dir spec](../specs/receive-dir.md)。
 
 > **未实测**:改版本号后 Build 区是否真的能选到、`Update Review` 提交后的行为,
 > 本文档写作时尚未走完。下一个提交的人补上实际表现与遇到的报错。
