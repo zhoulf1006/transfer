@@ -1,6 +1,6 @@
 # ADR-0012: 正式版 macOS 发布公证门禁 fail-closed;预发布只签名
 
-- 状态: 已接受(v0.9.1 落地)
+- 状态: Superseded by ADR-0023
 
 ## 背景与问题
 

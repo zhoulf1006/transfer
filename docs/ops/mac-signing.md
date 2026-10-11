@@ -1,9 +1,9 @@
 # macOS 签名、公证与发布
 
-> - 正式版干净 tag(如 `v0.9.1`):内部 App 使用 Developer ID 签名,最终三个 DMG 分别公证并 staple,发布到 GitHub Latest 和 Cloudflare R2。
-> - 预发布 tag(`-beta`、`-rc`、`-alpha`、`-dev`):只签名、不公证,只发布到 GitHub Pre-release,不同步 R2。
-> - 手动运行 workflow:默认生成普通 Actions artifact;选择 `verify_formal_macos=true` 时执行完整签名/公证门禁。两者都不创建 GitHub Release,也不同步 R2。
-> - 正式版缺凭据或任一架构验证失败时 fail-closed,不发布任何 macOS DMG。
+> - Formal tag (e.g. `v0.9.1`) and prerelease tag (`-beta`, `-rc`, `-alpha`, `-dev`): identical packaging — each `.app` and each DMG is signed with Developer ID, notarized and stapled, and passes the full gate. A formal tag publishes to GitHub Latest and syncs R2; a prerelease publishes to GitHub Pre-release only.
+> - Manual workflow run: with `verify_formal_macos=true` it runs the release packaging and gate; without it, local packaging (signed, not notarized). Neither creates a GitHub Release or touches R2.
+> - No Developer ID certificate → every packaging command and every CI tier fails; there is no unsigned macOS build. A release missing an Apple credential, or any architecture failing the gate, publishes nothing (fail-closed).
+> - The commands each environment runs are declared in `capabilities.toml` (`macos-distribution.profiles`); the requirements and boundaries are in [specs/mac-distribution.md](../specs/mac-distribution.md), the decision in ADR-0023.
 
 详细设计和失败路径见 [dmg-notarization-pipeline.md](./dmg-notarization-pipeline.md)。
 
@@ -18,35 +18,48 @@
 
 **为什么两处都要钉**:ticket 按被装订的那个文件走。只钉 DMG 的话,用户把 App 拖进「应用程序」之后 DMG 连同票据一起被丢掉,App 身上没有票据 → 首次启动 Gatekeeper 只能联网查,断网即判「无法验证是否包含恶意软件」。只钉 App 的话,DMG 自身没票据 → 双击打开 DMG 时 `spctl --type open` 判 rejected。**App 的票据管「拖出来之后」,DMG 的票据管「打开 DMG 时」。**
 
-顺序固定为:
+The release order is fixed; each step is its own script, and the two entry commands compose them:
+
+| Step script | Does |
+|---|---|
+| `mac:sign` | checks for the certificate (keychain identity, or `CSC_LINK` in CI); builds every configured arch's `.app` with `--mac dir` and notarization off; confirms each app is signed by Developer ID Application and passes `codesign --verify --deep --strict` |
+| `mac:notarize-app` | zips each app (`ditto --keepParent`), submits it, checks the Accepted log, keeps it as `Transfer-<v>-mac-<arch>.app.notary-log.json`, then staples and validates the app |
+| `mac:dmg` | builds each DMG from its app with `--prepackaged` (no re-signing), then checks the DMG's signature itself — DMG signing writes no log line |
+| `mac:notarize-dmg` | `build/notarize-dmgs.cjs`: the per-DMG gate below |
+
+- `dist:mac:local` = `mac:sign` → `mac:dmg`
+- `dist:mac:release` = `mac:sign` → `mac:notarize-app` → `mac:dmg` → `mac:notarize-dmg`
 
 ```text
-签名 Transfer.app
-→ 提交 .app 给 notarytool 并等待 Accepted,staple 到 .app
-   (electron-builder 内置公证,mac.notarize: true,发生在 DMG 创建之前)
-→ 生成 arm64 / x64 / universal DMG(此时 DMG 内的 App 已自带票据)
-→ 使用 Developer ID Application 签名每个 DMG
-→ 提交每个 DMG 给 notarytool 并等待 Accepted
-→ staple DMG
-→ 验证最终 DMG,并断言 DMG 内 App 自带 stapled ticket
-→ 上传 GitHub Release
-→ 正式版同步 R2
+sign Transfer.app (each arch)
+→ notarize and staple each .app          ← before any DMG exists
+→ build each DMG from its stapled .app (not re-signed)
+→ sign each DMG
+→ notarize, staple and gate each DMG (including the app inside it)
+→ upload to GitHub Release
+→ formal release only: sync R2
 ```
+
+The architecture set (`arm64`, `x64`, `universal`) is read from `mac.target` in `electron-builder.yml`. The steps locate each built app by its binary's architectures, not by directory name: `--x64` writes `release/<v>/mac/`, the others `mac-<arch>/`. A missing, duplicated or leftover app or DMG fails the step.
 
 任何签名或公证都必须发生在最终上传之前;staple 后不能再修改 DMG 字节。
 
 ## GitHub Actions 分档
 
-`.github/workflows/build.yml` 的 macOS job 使用以下状态:
+The macOS job in `.github/workflows/build.yml` uses three job-level values:
 
-- `HAS_CSC`:是否有 `CSC_LINK`。
-- `HAS_APPLE`:`APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID` 是否全部存在。
-- `IS_PRERELEASE`:tag 是否以 `-beta`、`-rc`、`-alpha` 或 `-dev` 结尾。
-- `IS_RELEASE`:是否为干净正式版 tag,或手动运行时选择了 `verify_formal_macos=true`。
+- `HAS_CSC`: whether `CSC_LINK` is set.
+- `HAS_APPLE`: whether `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` are all set.
+- `MAC_PROFILE`: `release` for any tag push and for a manual run with `verify_formal_macos=true`; `local` for a manual run without it.
 
-正式版和手动正式验证先检查 `HAS_CSC` 与 `HAS_APPLE`;缺任一项直接失败,不能落入仅签名或未签名分支。预发布和普通手动运行保留有证书时签名、无证书时生成未签名 artifact 的既有行为。
+| Trigger | Packaging | Published |
+|---|---|---|
+| clean `v*` tag | `dist:mac:release` | GitHub Latest + R2 |
+| prerelease `v*` tag | `dist:mac:release` | GitHub Pre-release |
+| manual, `verify_formal_macos=true` | `dist:mac:release` | Actions artifact only |
+| manual, without it | `dist:mac:local` | Actions artifact only |
 
-公证步骤位于 DMG 打包与 `actions/upload-artifact` 之间,因此公证、staple、Gatekeeper 或内部 App 验证失败都会阻止 GitHub Release 上传。R2 `sync` job 依赖两个平台构建成功,并且只对干净正式版 tag 运行。
+A missing `CSC_LINK` fails the job in every tier before packaging; a `release` run missing an Apple credential fails before packaging too. The local step is given no Apple credential. Packaging (including every notarization and gate) runs before `actions/upload-artifact`, so any failure blocks the upload and the Release. Publishing is decided by the tag event on the publish steps, never by `MAC_PROFILE`; the R2 `sync` job needs both platform jobs and runs only on a clean tag.
 
 ## GitHub Secrets
 
@@ -108,23 +121,20 @@ git push origin v0.9.1-beta
    APPLE_TEAM_ID=RHQ28XS7D9
    ```
 
-本地生成正式版等价产物:
+Local packaging (signed with Developer ID, never submitted to Apple — only prerequisite 1 is needed):
+
+```bash
+pnpm run dist:mac:local
+```
+
+Release packaging on this machine, the same artifacts as the CI release path (all three prerequisites):
 
 ```bash
 set -a; source .env.local; set +a
-pnpm run dist:mac:sign
+pnpm run dist:mac:release
 ```
 
-该命令等价于:
-
-```bash
-pnpm run dist:mac:package-signed
-pnpm run notarize:mac:dmgs
-```
-
-`dist:mac:package-signed` **不关闭**内置公证(`electron-builder.yml` 的 `mac.notarize: true`),因此它会在**打 DMG 之前**把票据 staple 到 `.app` 上——这是用户把 app 拖出 DMG 后仍能离线通过 Gatekeeper 的前提;`dmg.sign=true` 使用同一 Developer ID Application 身份签名最终 DMG;`notarize:mac:dmgs` 对这三个已签名 DMG 执行完整门禁,并断言 DMG 内的 App 自带票据。
-
-预发布档走 `pnpm dist:mac`,它才传 `-c.mac.notarize=false`(只签名不公证)。
+Built-in notarization is off in `electron-builder.yml` (`mac.notarize: false`) and every builder call also passes `-c.mac.notarize=false`, so loaded Apple credentials never make a local packaging submit anything. Without credentials, `dist:mac:release` signs the apps and then stops at `mac:notarize-app` with the missing names; nothing is notarized or turned into a DMG. Rebuilding removes the notarization logs left by an earlier run, so a local DMG never sits next to a log claiming it was notarized.
 
 ## 每个 DMG 的验证门禁
 
@@ -191,4 +201,4 @@ Transfer-<version>-mac-universal.dmg
 
 ## 验证边界
 
-单元测试通过 fake command runner 验证命令顺序、失败传播和卸载清理,不会假装访问过 Apple。真实端到端结果以正式版 tag,或手动 `verify_formal_macos=true` 的 macOS GitHub Actions 为准;CI 中三个 DMG 的签名身份/时间戳、Accepted 日志、stapled ticket 和 Gatekeeper 全部通过后,才算线上公证验证完成。
+Unit tests use a fake command runner: they check command order, failure propagation and cleanup, and never contact Apple. A real end-to-end result comes only from a `v*` tag (formal or prerelease), a manual run with `verify_formal_macos=true`, or a local `dist:mac:release`; notarization counts as verified only once every app and DMG has passed signature identity and timestamp, the Accepted log, stapled tickets and Gatekeeper.

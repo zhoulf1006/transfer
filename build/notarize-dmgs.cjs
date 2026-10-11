@@ -16,16 +16,16 @@ function artifactStem(file) {
   return path.basename(file).replace(/-mac-(arm64|x64|universal)\.dmg$/, '')
 }
 
-function selectDmgArtifacts(paths) {
+function selectDmgArtifacts(paths, arches = ARCH_ORDER) {
   const dmgPaths = paths.filter((file) => file.endsWith('.dmg'))
   const unsupported = dmgPaths.find((file) => artifactArch(file) === null)
   if (unsupported) throw new Error(`发现不支持的 DMG 产物: ${path.basename(unsupported)}`)
 
   const selected = dmgPaths
-    .sort((left, right) => ARCH_ORDER.indexOf(artifactArch(left)) - ARCH_ORDER.indexOf(artifactArch(right)))
+    .sort((left, right) => arches.indexOf(artifactArch(left)) - arches.indexOf(artifactArch(right)))
 
-  if (selected.length !== ARCH_ORDER.length || selected.some((file, index) => artifactArch(file) !== ARCH_ORDER[index])) {
-    throw new Error('DMG 产物必须恰好包含 arm64、x64、universal')
+  if (selected.length !== arches.length || selected.some((file, index) => artifactArch(file) !== arches[index])) {
+    throw new Error(`DMG 产物必须恰好包含 ${arches.join('、')}`)
   }
   if (new Set(selected.map(artifactStem)).size !== 1) {
     throw new Error('三个 DMG 必须属于同一产品版本')
@@ -33,8 +33,8 @@ function selectDmgArtifacts(paths) {
   return selected
 }
 
-function notarizeAll(paths, notarizeOne) {
-  return selectDmgArtifacts(paths).map((file) => notarizeOne(file))
+function notarizeAll(paths, notarizeOne, arches = ARCH_ORDER) {
+  return selectDmgArtifacts(paths, arches).map((file) => notarizeOne(file))
 }
 
 function parseAcceptedSubmission(stdout) {
@@ -118,20 +118,11 @@ function findTransferApp(mountPoint) {
   return appPath
 }
 
-function notarizeDmg(file, options) {
-  const {
-    credentials,
-    findApp,
-    makeMountPoint,
-    removeMountPoint,
-    run,
-    writeError = console.error,
-    writeNotaryLog = (logFile, contents) => fs.writeFileSync(logFile, contents)
-  } = options
-  run('hdiutil', ['verify', file])
-  run('codesign', ['--verify', '--verbose=4', file])
-  const signature = run('codesign', ['--display', '--verbose=4', file])
-  assertDmgSignature([signature.stdout, signature.stderr].filter(Boolean).join('\n'), credentials.teamId)
+/**
+ * Submits one file to Apple and waits; returns the submission id and its Accepted log (raw JSON). A rejection
+ * fetches the log for diagnosis, but a failure to fetch it never replaces the original error.
+ */
+function submitForNotarization(file, { credentials, run, writeError }) {
   const submission = run('xcrun', [
     'notarytool', 'submit', file,
     '--apple-id', credentials.appleId,
@@ -175,7 +166,25 @@ function notarizeDmg(file, options) {
     '--output-format', 'json'
   ])
   parseAcceptedLog(acceptedLog.stdout, submissionId)
-  writeNotaryLog(`${file}.notary-log.json`, acceptedLog.stdout)
+  return { submissionId, log: acceptedLog.stdout }
+}
+
+function notarizeDmg(file, options) {
+  const {
+    credentials,
+    findApp,
+    makeMountPoint,
+    removeMountPoint,
+    run,
+    writeError = console.error,
+    writeNotaryLog = (logFile, contents) => fs.writeFileSync(logFile, contents)
+  } = options
+  run('hdiutil', ['verify', file])
+  run('codesign', ['--verify', '--verbose=4', file])
+  const signature = run('codesign', ['--display', '--verbose=4', file])
+  assertDmgSignature([signature.stdout, signature.stderr].filter(Boolean).join('\n'), credentials.teamId)
+  const { submissionId, log } = submitForNotarization(file, { credentials, run, writeError })
+  writeNotaryLog(`${file}.notary-log.json`, log)
 
   run('xcrun', ['stapler', 'staple', file])
   run('xcrun', ['stapler', 'validate', file])
@@ -229,9 +238,23 @@ function notarizeDmg(file, options) {
   return submissionId
 }
 
-function main(argv, env = process.env) {
+/**
+ * mac:notarize-dmg — gates every DMG in the current version's output directory. The expected set comes from
+ * the builder config, and listing the whole directory (not a glob across versions) lets a leftover DMG fail
+ * the set check instead of slipping past it.
+ */
+function main(env = process.env) {
   const credentials = readCredentials(env)
-  const ids = notarizeAll(argv, (file) => {
+  // Loaded here, not at the top: mac-packaging.cjs requires this module
+  const { resolveLayout } = require('./mac-packaging.cjs')
+  const root = path.join(__dirname, '..')
+  const layout = resolveLayout(
+    fs.readFileSync(path.join(root, 'electron-builder.yml'), 'utf8'),
+    fs.readFileSync(path.join(root, 'package.json'), 'utf8')
+  )
+  const outputDir = path.join(root, layout.outputDir)
+  const dmgs = fs.readdirSync(outputDir).filter((name) => name.endsWith('.dmg')).map((name) => path.join(outputDir, name))
+  const ids = notarizeAll(dmgs, (file) => {
     console.log(`[notarize-dmgs] 开始: ${file}`)
     const id = notarizeDmg(file, {
       credentials,
@@ -243,8 +266,8 @@ function main(argv, env = process.env) {
     })
     console.log(`[notarize-dmgs] 通过: ${file} (submission: ${id})`)
     return id
-  })
-  console.log(`[notarize-dmgs] 三个架构全部通过: ${ids.join(', ')}`)
+  }, layout.arches)
+  console.log(`[notarize-dmgs] all ${layout.arches.join(', ')} DMGs passed: ${ids.join(', ')}`)
   return ids
 }
 
@@ -258,12 +281,13 @@ module.exports = {
   parseAcceptedSubmission,
   readCredentials,
   runCommand,
-  selectDmgArtifacts
+  selectDmgArtifacts,
+  submitForNotarization
 }
 
 if (require.main === module) {
   try {
-    main(process.argv.slice(2))
+    main()
   } catch (error) {
     console.error(`[notarize-dmgs] ${error instanceof Error ? error.message : String(error)}`)
     process.exitCode = 1

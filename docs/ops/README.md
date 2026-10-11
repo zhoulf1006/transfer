@@ -10,7 +10,7 @@
 
 | 手册 | 覆盖 |
 |---|---|
-| [mac-signing.md](mac-signing.md) | 证书导出、GitHub Secrets 语义、本地签名命令、CI 三档逻辑 |
+| [mac-signing.md](mac-signing.md) | 证书导出、GitHub Secrets 语义、签名与公证的步骤脚本和两条入口命令、CI 四档 |
 | [dmg-notarization-pipeline.md](dmg-notarization-pipeline.md) | 逐 DMG 公证与验证命令序列、失败判读、tag 形态与发布门禁 |
 | [mas-submission.md](mas-submission.md) | Mac App Store 线:与 DMG 线的差异对照、凭据、打包与六项产物验收、上传工具现状、沙盒行为该在哪验 |
 | [pages-deploy-guide.md](pages-deploy-guide.md) | Cloudflare Pages 配置(Root directory=`site`、输出目录、Node 版本)与常见坑 |

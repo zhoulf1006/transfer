@@ -75,13 +75,13 @@ jobs:
     permissions:
       contents: write
     env:
-      # 把 secret 提升到 job env,供下面 step 的 if 条件判断(比在 if 里直接读 secrets 更稳、跨版本都支持)。
-      HAS_CSC: ${{ secrets.CSC_LINK != '' }}                              # 有签名证书
-      HAS_APPLE: ${{ secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}  # 三项公证凭据齐全
-      # 预发布(迭代版):tag 以 -beta/-rc/-alpha/-dev 结尾 → 只签名不公证。
-      # 干净 tag 或手动 verify_formal_macos=true → 完整签名/公证；手动验证因不是 tag，不发布 Release/R2。
-      IS_PRERELEASE: ${{ endsWith(github.ref, '-beta') || endsWith(github.ref, '-rc') || endsWith(github.ref, '-alpha') || endsWith(github.ref, '-dev') }}
-      IS_RELEASE: ${{ (startsWith(github.ref, 'refs/tags/') && !(endsWith(github.ref, '-beta') || endsWith(github.ref, '-rc') || endsWith(github.ref, '-alpha') || endsWith(github.ref, '-dev'))) || (github.event_name == 'workflow_dispatch' && inputs.verify_formal_macos) }}
+      # Secrets cannot appear in a step's `if`, so they are turned into booleans here first.
+      HAS_CSC: ${{ secrets.CSC_LINK != '' }}
+      HAS_APPLE: ${{ secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
+      # docs/specs/mac-distribution.md: every v* tag (formal or prerelease) and a manual run with the
+      # verification switch take the release path; a manual run without it is local packaging (signed only).
+      # This picks the packaging only — publishing is decided by the tag event on the publish steps below.
+      MAC_PROFILE: ${{ (startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.verify_formal_macos)) && 'release' || 'local' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -98,27 +98,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # mac 打包分三档互斥(见 docs/ops/mac-signing.md):
-      #  ① 预发布/手动运行且无证书:生成未签名 artifact；正式版禁止进入此路径。
-      #  ② 预发布/手动运行且有证书:只签名，不公证。
-      #  ③ 正式版:凭据必须齐全；签名 App → 生成 DMG → 公证/staple/验证最终 DMG。
-      #     任一步失败都不上传；正式版不允许降级为仅签名或未签名。
-
-      # ③ 正式版:先验证凭据，再生成并公证最终 DMG。
-      - name: Verify formal macOS release credentials
-        if: env.IS_RELEASE == 'true'
+      # There is no unsigned macOS build in any tier. CSC_LINK must never be passed empty: electron-builder
+      # would read the empty string as a certificate path.
+      - name: Require the Developer ID certificate
+        if: env.HAS_CSC != 'true'
         run: |
-          if [[ "$HAS_CSC" != "true" || "$HAS_APPLE" != "true" ]]; then
-            echo "::error::正式版 macOS 发布缺少 Developer ID 证书或 Apple 公证凭据(APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID)"
-            exit 1
-          fi
+          echo "::error::The CSC_LINK secret (Developer ID Application certificate, base64 .p12) is not configured. Every macOS package is signed; configure the secret and rerun."
+          exit 1
 
-      # 内置公证跑在**这一步**(签完 .app、打 DMG 之前),所以公证凭据必须在这里就位:
-      # 缺了 electron-builder 只 warn 后静默跳过,产出的 app 没有 stapled 票据而 CI 照样绿。
-      # 兜底断言在下面的 notarize 步骤(挂载 DMG 后验内部 .app 的票据)。
-      - name: Package formal macOS dmgs (signed + notarized app)
-        if: env.IS_RELEASE == 'true'
-        run: pnpm run dist:mac:package-signed
+      - name: Require the Apple notarization credentials
+        if: env.MAC_PROFILE == 'release' && env.HAS_APPLE != 'true'
+        run: |
+          echo "::error::Release packaging notarizes every app and DMG, but APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID is missing."
+          exit 1
+
+      # Signs and notarizes each app, builds and signs each DMG, then notarizes and gates each DMG. Any
+      # failure stops the job before anything is uploaded.
+      - name: Package and notarize macOS DMGs (release)
+        if: env.MAC_PROFILE == 'release'
+        run: pnpm run dist:mac:release
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -126,28 +124,13 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-      # ② 预发布/手动运行:有证书则只签名。
-      - name: Package macOS dmg (signed only)
-        if: env.IS_RELEASE != 'true' && env.HAS_CSC == 'true'
-        run: pnpm run dist:mac
+      # Signed with Developer ID, never submitted to Apple: the Apple credentials are deliberately not given.
+      - name: Package macOS DMGs (local, signed only)
+        if: env.MAC_PROFILE == 'local'
+        run: pnpm run dist:mac:local
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-
-      # ① 预发布/手动运行:无证书时保留未签名 artifact。
-      - name: Package macOS dmg (unsigned, no cert secret)
-        if: env.IS_RELEASE != 'true' && env.HAS_CSC != 'true'
-        run: pnpm run dist:mac
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-
-      - name: Notarize and validate macOS dmgs
-        if: env.IS_RELEASE == 'true'
-        run: pnpm run notarize:mac:dmgs
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Upload dmg (artifact)
         uses: actions/upload-artifact@v4

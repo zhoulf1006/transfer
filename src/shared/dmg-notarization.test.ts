@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
 import { describe, expect, test } from 'vitest'
+import YAML from 'yaml'
 
 const require = createRequire(import.meta.url)
 interface CommandResult {
@@ -32,7 +33,7 @@ const { assertDmgSignature, findTransferApp, notarizeAll, notarizeDmg, parseAcce
   parseAcceptedLog: (stdout: string, submissionId: string) => { issues: unknown[] }
   parseAcceptedSubmission: (stdout: string) => string
   readCredentials: (env: Record<string, string | undefined>) => { appleId: string; password: string; teamId: string }
-  selectDmgArtifacts: (paths: string[]) => string[]
+  selectDmgArtifacts: (paths: string[], arches?: string[]) => string[]
 }
 
 describe('DMG 容器签名门禁', () => {
@@ -100,6 +101,28 @@ describe('DMG 公证产物门禁', () => {
       '/release/Transfer-0.9.1-mac-x64.dmg',
       '/release/Transfer-0.9.1-mac-universal.dmg'
     ])).toThrow('三个 DMG 必须属于同一产品版本')
+  })
+
+  test('the expected set and its order come from the configured arches', () => {
+    expect(selectDmgArtifacts([
+      '/release/Transfer-0.9.1-mac-x64.dmg',
+      '/release/Transfer-0.9.1-mac-universal.dmg',
+      '/release/Transfer-0.9.1-mac-arm64.dmg'
+    ], ['universal', 'arm64', 'x64'])).toEqual([
+      '/release/Transfer-0.9.1-mac-universal.dmg',
+      '/release/Transfer-0.9.1-mac-arm64.dmg',
+      '/release/Transfer-0.9.1-mac-x64.dmg'
+    ])
+  })
+
+  test('a config with fewer arches expects exactly those', () => {
+    expect(selectDmgArtifacts(['/release/Transfer-0.9.1-mac-arm64.dmg'], ['arm64'])).toEqual([
+      '/release/Transfer-0.9.1-mac-arm64.dmg'
+    ])
+    expect(() => selectDmgArtifacts([
+      '/release/Transfer-0.9.1-mac-arm64.dmg',
+      '/release/Transfer-0.9.1-mac-x64.dmg'
+    ], ['arm64'])).toThrow('DMG 产物必须恰好包含 arm64')
   })
 
   test('三个架构全部成功后才返回完整 submission 清单', () => {
@@ -402,14 +425,16 @@ describe('GitHub Actions 发布门禁', () => {
   })
 
   test('正式版在上传 artifact 和 GitHub Release 之前公证最终 DMG', () => {
-    const workflow = readFileSync(new URL('../../.github/workflows/build.yml', import.meta.url), 'utf8')
-    const notarize = workflow.indexOf('name: Notarize and validate macOS dmgs')
-    const uploadArtifact = workflow.indexOf('name: Upload dmg (artifact)')
-    const publishRelease = workflow.indexOf('name: Publish to Release', uploadArtifact)
+    const steps = (YAML.parse(readFileSync(new URL('../../.github/workflows/build.yml', import.meta.url), 'utf8')) as {
+      jobs: { 'build-mac': { steps: Array<{ name?: string }> } }
+    }).jobs['build-mac'].steps.map((step) => step.name)
+    const release = steps.indexOf('Package and notarize macOS DMGs (release)')
+    const uploadArtifact = steps.indexOf('Upload dmg (artifact)')
+    const publishRelease = steps.indexOf('Publish to Release')
 
-    expect(notarize).toBeGreaterThan(0)
-    expect(notarize).toBeLessThan(uploadArtifact)
-    expect(notarize).toBeLessThan(publishRelease)
+    expect(release).toBeGreaterThan(0)
+    expect(release).toBeLessThan(uploadArtifact)
+    expect(uploadArtifact).toBeLessThan(publishRelease)
   })
 
   test('Actions artifact 保留每个正式版 DMG 的 Apple 公证日志', () => {
@@ -429,33 +454,57 @@ describe('GitHub Actions 发布门禁', () => {
     expect(syncBlock).toContain("if: startsWith(github.ref, 'refs/tags/') && !(endsWith(github.ref, '-beta') || endsWith(github.ref, '-rc') || endsWith(github.ref, '-alpha') || endsWith(github.ref, '-dev'))")
   })
 
-  // 两个入口的公证契约相反,别写成"统一关闭":
-  // 正式版必须开着内置公证 —— 它在签完 .app、打 DMG 之前把票据 staple 到 .app 上,
-  // 而 staple 到 DMG 的票据会随 DMG 一起被用户丢掉(拖进「应用程序」之后 app 身上没票据,
-  // 首次启动 Gatekeeper 只能联网查,断网即判"无法验证")。预发布档只签名不公证,必须显式关。
-  test('预发布入口关闭内置公证,正式版入口保持开启', () => {
-    const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
-      scripts: Record<string, string>
-    }
+  // The macOS job's tiers (docs/specs/mac-distribution.md), read through the YAML parser
+  const macJob = () => (YAML.parse(readFileSync(new URL('../../.github/workflows/build.yml', import.meta.url), 'utf8')) as {
+    jobs: { 'build-mac': { env: Record<string, string>; steps: Array<{ name?: string; if?: string; run?: string; env?: Record<string, string> }> } }
+  }).jobs['build-mac']
+  const stepNamed = (name: string) => {
+    const step = macJob().steps.find((entry) => entry.name === name)
+    if (!step) throw new Error(`no step named ${name}`)
+    return step
+  }
+  const indexOfStep = (name: string) => macJob().steps.findIndex((entry) => entry.name === name)
+  const APPLE = ['APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID']
 
-    expect(pkg.scripts['dist:mac']).toContain('-c.mac.notarize=false')
-    expect(pkg.scripts['dist:mac:package-signed']).not.toContain('-c.mac.notarize=false')
+  test('any v* tag, and a manual run with the verification switch, select the release profile; anything else local', () => {
+    expect(macJob().env.MAC_PROFILE).toBe(
+      "${{ (startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.verify_formal_macos)) && 'release' || 'local' }}"
+    )
   })
 
-  // electron-builder 在凭据缺失时只 warn 后静默跳过公证,不报错。凭据必须注入到**打包那一步**
-  // (内置公证跑在它里面),只给后面的 notarize 步骤是不够的 —— 那样产出的 app 没有票据而 CI 全绿。
-  test('正式版打包步骤注入了公证凭据,且 electron-builder 配置开启内置公证', () => {
-    const workflow = readFileSync(new URL('../../.github/workflows/build.yml', import.meta.url), 'utf8')
-    const packageStep = workflow.slice(
-      workflow.indexOf('run: pnpm run dist:mac:package-signed'),
-      workflow.indexOf('# ② 预发布/手动运行:有证书则只签名。')
-    )
+  test('a missing certificate secret fails the job in every tier, before packaging', () => {
+    const step = stepNamed('Require the Developer ID certificate')
+    expect(step.if).toBe("env.HAS_CSC != 'true'")
+    expect(step.run).toMatch(/exit 1\s*$/)
+    expect(indexOfStep('Require the Developer ID certificate')).toBeLessThan(indexOfStep('Package macOS DMGs (local, signed only)'))
+    expect(indexOfStep('Require the Developer ID certificate')).toBeLessThan(indexOfStep('Package and notarize macOS DMGs (release)'))
+  })
 
-    expect(packageStep).toContain('APPLE_ID:')
-    expect(packageStep).toContain('APPLE_APP_SPECIFIC_PASSWORD:')
-    expect(packageStep).toContain('APPLE_TEAM_ID:')
+  test('a release-tier run missing an Apple credential fails before packaging', () => {
+    const step = stepNamed('Require the Apple notarization credentials')
+    expect(step.if).toBe("env.MAC_PROFILE == 'release' && env.HAS_APPLE != 'true'")
+    expect(step.run).toMatch(/exit 1\s*$/)
+    expect(indexOfStep('Require the Apple notarization credentials')).toBeLessThan(indexOfStep('Package and notarize macOS DMGs (release)'))
+  })
 
-    const builderConfig = readFileSync(new URL('../../electron-builder.yml', import.meta.url), 'utf8')
-    expect(builderConfig).toMatch(/^\s{2}notarize:\s*true\s*$/m)
+  test('the release tier runs the release command with the certificate and every Apple credential', () => {
+    const step = stepNamed('Package and notarize macOS DMGs (release)')
+    expect(step.if).toBe("env.MAC_PROFILE == 'release'")
+    expect(step.run).toBe('pnpm run dist:mac:release')
+    expect(Object.keys(step.env ?? {}).sort()).toEqual(['CSC_KEY_PASSWORD', 'CSC_LINK', ...APPLE].sort())
+  })
+
+  test('the local tier runs the local command and is given no Apple credential', () => {
+    const step = stepNamed('Package macOS DMGs (local, signed only)')
+    expect(step.if).toBe("env.MAC_PROFILE == 'local'")
+    expect(step.run).toBe('pnpm run dist:mac:local')
+    expect(Object.keys(step.env ?? {}).sort()).toEqual(['CSC_KEY_PASSWORD', 'CSC_LINK'])
+  })
+
+  test('no macOS step builds unsigned', () => {
+    for (const step of macJob().steps) {
+      expect(step.env?.CSC_IDENTITY_AUTO_DISCOVERY, step.name).toBeUndefined()
+      expect(step.run ?? '', step.name).not.toMatch(/electron-builder/)
+    }
   })
 })

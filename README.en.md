@@ -86,14 +86,14 @@ pnpm build        # build
 ## Packaging
 
 ```bash
-pnpm dist:mac         # macOS (universal: single arm64 + x64 dmg)
-pnpm dist:mac:sign    # macOS sign + notarize (local, requires Developer ID)
-pnpm dist:win         # Windows (NSIS installer + portable)
+pnpm dist:mac:local    # macOS local packaging: arm64 / x64 / universal DMGs, Developer ID signed, not notarized
+pnpm dist:mac:release  # macOS release packaging: signed, and each .app and DMG notarized (needs Developer ID and Apple credentials)
+pnpm dist:win          # Windows (NSIS installer + portable)
 ```
 
-CI (GitHub Actions, `.github/workflows/build.yml`) builds macOS / Windows artifacts when a tag is pushed (or manually triggered). A clean macOS tag gets notarized into a release build.
+macOS packaging needs the Developer ID certificate and fails without it; there is no unsigned macOS build. CI (GitHub Actions, `.github/workflows/build.yml`) builds macOS / Windows artifacts when a tag is pushed (or manually triggered); formal and prerelease tags are both notarized. Details: [docs/ops/mac-signing.md](docs/ops/mac-signing.md).
 
-> Unsigned builds show a one-time system security prompt on first open on another machine — this is normal.
+> Windows builds are unsigned and show a one-time system security prompt on first open on another machine — this is normal. A locally packaged macOS build is not notarized, so once it reaches another machine by a route that sets the quarantine attribute (a download, AirDrop), Gatekeeper blocks its first launch; use the release packaging to distribute.
 
 ## Project status
 

@@ -81,7 +81,7 @@ _Avoid_: "每次打开重新加载"——错误假设,曾因此出 bug。
 
 **构建与发布**
 
-- **签名后禁改产物**:签名把框架内文件哈希封进 CodeResources;裁剪(locale/架构)**必须在签名前由 electron-builder 完成**,禁 post-build 删文件、禁事后 `lipo` 抽薄、禁 `codesign --deep` 补签。顺序恒定:裁剪 → 签名 → DMG → 公证 staple。
+- **签名后禁改产物**:签名把框架内文件哈希封进 CodeResources;裁剪(locale/架构)**必须在签名前由 electron-builder 完成**,禁 post-build 删文件、禁事后 `lipo` 抽薄、禁 `codesign --deep` 补签。顺序恒定:裁剪 → 签名 .app → 公证并 staple .app → 由它打 DMG(不重签)→ 签名 DMG → 公证并 staple DMG;本地打包止于签名 DMG,不公证(见 ADR-0023)。
 - **安装包只能放 R2,不能进 Pages**:Cloudflare Pages 单文件上限 25 MiB,安装包 81–177 MiB;落地页在 Pages、安装包在 R2,二者不可合并。
 - **两个下载源永远都显示**,只调默认高亮,**不做地区强制重定向**(`navigator.language`/时区判地区不可靠,VPN 会干扰)。
 
