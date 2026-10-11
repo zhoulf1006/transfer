@@ -95,12 +95,13 @@ describe('DMG 公证产物门禁', () => {
     ])).toThrow('发现不支持的 DMG 产物: Transfer-0.9.1-mac-legacy.dmg')
   })
 
-  test('三个架构必须属于同一版本', () => {
+  test('所有架构的 DMG 必须属于同一版本', () => {
+    // Exact text: the arch set comes from the config, so the message must not state a count
     expect(() => selectDmgArtifacts([
       '/release/Transfer-0.9.0-mac-arm64.dmg',
       '/release/Transfer-0.9.1-mac-x64.dmg',
       '/release/Transfer-0.9.1-mac-universal.dmg'
-    ])).toThrow('三个 DMG 必须属于同一产品版本')
+    ])).toThrow(/^DMG 必须属于同一产品版本$/)
   })
 
   test('the expected set and its order come from the configured arches', () => {

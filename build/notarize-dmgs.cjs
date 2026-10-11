@@ -28,7 +28,7 @@ function selectDmgArtifacts(paths, arches = ARCH_ORDER) {
     throw new Error(`DMG 产物必须恰好包含 ${arches.join('、')}`)
   }
   if (new Set(selected.map(artifactStem)).size !== 1) {
-    throw new Error('三个 DMG 必须属于同一产品版本')
+    throw new Error('DMG 必须属于同一产品版本')
   }
   return selected
 }

@@ -30,6 +30,7 @@ interface StepOptions {
 interface NotarizeOptions extends StepOptions {
   writeError: (message: string) => void
   writeNotaryLog: (file: string, contents: string) => void
+  log?: (message: string) => void
 }
 
 const { buildDmgs, certificateSource, configuredArches, findBuiltApps, notarizeApps, resolveLayout, signApps } = require('../../build/mac-packaging.cjs') as {
@@ -339,6 +340,28 @@ describe('mac:notarize-app', () => {
     }))
     expect(logs.map((entry) => entry.file)).toEqual(ARCHES.map((arch) => join(outputDir, `Transfer-1.2.1-mac-${arch}.app.notary-log.json`)))
     expect(JSON.parse(logs[0].contents)).toEqual({ jobId: 'id-Transfer-universal-zip', status: 'Accepted', issues: [] })
+  })
+
+  test('reports each app as it starts and when Apple accepts it, so a long wait is visible', () => {
+    const outputDir = buildOutput(['mac', 'mac-arm64', 'mac-universal'])
+    const { run } = notaryRunner()
+    const progress: string[] = []
+
+    notarizeApps({
+      env: APPLE_ENV, run, outputDir, productName: 'Transfer', version: '1.2.1', arches: ['universal', 'arm64', 'x64'],
+      writeError: () => undefined, writeNotaryLog: () => undefined,
+      log: (message) => progress.push(message)
+    })
+
+    const app = (subdir: string) => join(outputDir, subdir, 'Transfer.app')
+    expect(progress).toEqual([
+      `[mac] notarizing universal: ${app('mac-universal')}`,
+      '[mac] accepted universal (submission: id-Transfer-universal-zip)',
+      `[mac] notarizing arm64: ${app('mac-arm64')}`,
+      '[mac] accepted arm64 (submission: id-Transfer-arm64-zip)',
+      `[mac] notarizing x64: ${app('mac')}`,
+      '[mac] accepted x64 (submission: id-Transfer-x64-zip)'
+    ])
   })
 
   test('refuses to run without every Apple credential, before touching anything', () => {

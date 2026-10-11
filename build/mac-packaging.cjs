@@ -129,7 +129,7 @@ function appNotaryLogFile(outputDir, productName, version, arch) {
  * mac:notarize-app — notarize and staple each signed app before any DMG is built: a DMG made from an app
  * without its own ticket cannot get one afterwards, and the app is what users drag out of the DMG.
  */
-function notarizeApps({ env, run, outputDir, productName, version, arches, writeError, writeNotaryLog }) {
+function notarizeApps({ env, run, outputDir, productName, version, arches, writeError, writeNotaryLog, log = () => {} }) {
   const credentials = readCredentials(env)
   const apps = findBuiltApps({ outputDir, productName, arches, run })
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-notarize-app-'))
@@ -137,9 +137,12 @@ function notarizeApps({ env, run, outputDir, productName, version, arches, write
     return apps.map(({ arch, app }) => {
       // notarytool takes an archive, not a bundle; --keepParent keeps Transfer.app as the archive's root
       const zip = path.join(workDir, `${productName}-${arch}.zip`)
+      // Each submission waits on Apple for minutes; say which app is being waited on
+      log(`[mac] notarizing ${arch}: ${app}`)
       run('ditto', ['-c', '-k', '--keepParent', app, zip])
-      const { submissionId, log } = submitForNotarization(zip, { credentials, run, writeError })
-      writeNotaryLog(appNotaryLogFile(outputDir, productName, version, arch), log)
+      const { submissionId, log: notaryLog } = submitForNotarization(zip, { credentials, run, writeError })
+      writeNotaryLog(appNotaryLogFile(outputDir, productName, version, arch), notaryLog)
+      log(`[mac] accepted ${arch} (submission: ${submissionId})`)
       run('xcrun', ['stapler', 'staple', app])
       run('xcrun', ['stapler', 'validate', app])
       return submissionId
@@ -217,7 +220,8 @@ const STEPS = {
   'notarize-app': (options) => notarizeApps({
     ...options,
     writeError: (message) => console.error(`[mac] Apple log:\n${message}`),
-    writeNotaryLog: (file, contents) => fs.writeFileSync(file, contents)
+    writeNotaryLog: (file, contents) => fs.writeFileSync(file, contents),
+    log: (message) => console.log(message)
   }),
   dmg: (options) => buildDmgs(options)
 }
