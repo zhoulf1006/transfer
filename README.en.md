@@ -76,7 +76,7 @@ pnpm install
 
 pnpm dev          # dev mode (HMR)
 pnpm typecheck    # type check
-pnpm test         # run tests (vitest)
+pnpm test         # run tests (vitest, plus the packaging script's own node:test tests)
 pnpm e2e          # end-to-end tests (Playwright drives a real Electron; does not disturb a running instance)
 pnpm build        # build
 ```

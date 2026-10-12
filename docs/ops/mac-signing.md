@@ -21,7 +21,7 @@
 The release order is fixed. Each packaging is one electron-builder call (`build/mac-packaging.cjs`); the release call adds the same script as the builder's afterSign hook, and the DMG gate runs after the build:
 
 - `dist:mac:local` = `node build/mac-packaging.cjs local`: certificate check → one build of every configured arch's `.app` and DMG, signed, notarization off → signature checks on every app and DMG.
-- `dist:mac:release` = `node build/mac-packaging.cjs release` → `mac:notarize-dmg` (`build/notarize-dmgs.cjs`, the per-DMG gate below). The release build also checks the three Apple credentials first, and its afterSign hook notarizes each `.app` as the builder signs it: zip (`ditto --keepParent`), submit, check the Accepted log, keep it as `Transfer-<v>-mac-<arch>.app.notary-log.json`, staple, validate. After the build every app must carry its stapled ticket.
+- `dist:mac:release` = `node build/mac-packaging.cjs release` → `node build/mac-packaging.cjs notarize-dmg` (the per-DMG gate below). The release build also checks the three Apple credentials first, and its afterSign hook notarizes each `.app` as the builder signs it: zip (`ditto --keepParent`), submit, check the Accepted log, keep it as `Transfer-<v>-mac-<arch>.app.notary-log.json`, staple, validate. After the build every app must carry its stapled ticket.
 
 ```text
 build and sign Transfer.app (each arch)
@@ -35,6 +35,8 @@ build and sign Transfer.app (each arch)
 Staying on the builder's ordinary single-call path keeps what it does only inside one build — it writes `Contents/Resources/app-update.yml` into each app only when the same call also builds a DMG or zip. Transfer has no auto-updater, so nothing reads that file today.
 
 The architecture set (`arm64`, `x64`, `universal`) is read from `mac.target` in `electron-builder.yml`. Packaging locates each built app by its binary's architectures, not by directory name: x64 builds into `release/<v>/mac/`, the others into `mac-<arch>/`. This build's earlier output (`mac*/` directories, DMGs, logs) is cleared before the build, so a leftover never reaches Apple; a missing or extra app or DMG fails the packaging.
+
+`build/mac-packaging.cjs` and its tests `build/mac-packaging.test.cjs` are the electron-scaffold skill's asset (`assets/` in zhoulf1006/skillshed), copied here unchanged; `pnpm test` runs the tests with `node --test`. Do not edit the copies: change the asset, then copy both files again. The script requires `dmg.artifactName: ${productName}-${version}-mac-${arch}.dmg` in `electron-builder.yml` and checks it on every run.
 
 任何签名或公证都必须发生在最终上传之前;staple 后不能再修改 DMG 字节。
 
@@ -132,7 +134,7 @@ Built-in notarization is off in `electron-builder.yml` (`mac.notarize: false`) a
 
 ## 每个 DMG 的验证门禁
 
-`build/notarize-dmgs.cjs` 严格要求同一产品版本的 arm64、x64、universal 三个 DMG。每个文件依次执行:
+The DMG gate (`node build/mac-packaging.cjs notarize-dmg`) requires exactly one DMG per configured architecture (arm64, x64, universal), named `Transfer-<version>-mac-<arch>.dmg` for the current version; a missing DMG, or any other `.dmg` in the version directory, fails before anything is submitted. Each file then goes through:
 
 ```bash
 hdiutil verify "$DMG"

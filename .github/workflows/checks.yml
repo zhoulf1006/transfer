@@ -40,6 +40,7 @@ jobs:
         run: pnpm typecheck
 
       # 根 vitest 的 include 覆盖 src/** 与 site/src/**,两侧测试一次跑完。
+      # pnpm test also runs the macOS packaging script's own tests (node --test build/mac-packaging.test.cjs), before vitest.
       - name: Test
         run: pnpm test
 

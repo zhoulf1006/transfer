@@ -85,7 +85,7 @@ Before upload, each DMG passes: the expected-set check; image verification, sign
 
 ### mac-distribution::CON-001 Command names (direct acceptance)
 
-Applies to: `package.json` scripts. The entry commands are `dist:mac:local` (local packaging) and `dist:mac:release` (release packaging, then `mac:notarize-dmg`, the DMG gate). The previous names (`dist:mac`, `dist:mac:package-signed`, `notarize:mac:dmgs`, `dist:mac:sign`) are removed without aliases.
+Applies to: `package.json` scripts. The entry commands are `dist:mac:local` (local packaging) and `dist:mac:release` (release packaging, then the DMG gate). The previous names (`dist:mac`, `dist:mac:package-signed`, `notarize:mac:dmgs`, `dist:mac:sign`, `mac:notarize-dmg`) are removed without aliases.
 
 ### mac-distribution::CON-002 Built-in notarization is off (direct acceptance)
 
@@ -139,12 +139,14 @@ Applies to: the Windows job, the Mac App Store scripts and dev mode. Windows pac
 - Before building, the packaging script checks for a certificate source — a valid Developer ID Application identity in the keychain, or the `CSC_LINK` secret in CI, which the builder imports itself — and, in release, for all three Apple credentials; it then clears this build's earlier output.
 - The release profile adds the packaging script as the builder's afterSign hook. The builder calls it once per final app, after signing and before that architecture's DMG; it submits the app as a zip archive, applies the same Accepted-submission and log checks as the DMG gate, keeps the log, staples the app and validates the staple. A universal build's per-architecture intermediates are built unsigned, so they never reach the hook.
 - After the build, the script locates each app by its binary's architectures (not by guessing directory names: `--x64` and the other architectures build into differently named directories), asserts its signature authority and strict deep verification, in release its stapled ticket, and checks each DMG's signature content against the app's team, because DMG signing writes no log line.
-- `mac:notarize-dmg` is the existing DMG gate, driven by the configured architecture set.
+- The DMG gate is a subcommand of the same packaging script, driven by the configured architecture set; the release entry runs it after the build. It expects exactly one DMG per architecture, named after the product, version and architecture, and the script refuses a builder config whose DMG name pattern says otherwise.
+- The packaging script and its tests are the electron-scaffold skill's asset, copied into the project unchanged; Transfer keeps no fork of it. A change the project needs goes into the asset first and is then copied back.
 - The CI macOS job chooses the release command for any `v*` tag and for a manual run with the verification switch, and the local command otherwise; a missing certificate secret fails the job in every tier.
 
 ## Testing Decisions
 
-- Good tests assert behaviour through an injected command runner: which commands run in which order, what fails and with which message, and that cleanup happens — never that Apple was reached. The unit seam is the build scripts' exported functions, following the existing DMG gate tests, which already use this pattern.
+- Good tests assert behaviour through an injected command runner: which commands run in which order, what fails and with which message, and that cleanup happens — never that Apple was reached. The unit seam is the packaging script's exported functions; those tests ship with the script as part of the same asset and run under Node's test runner in the project's test command.
+- The project's own tests cover only what is Transfer's: that its builder config satisfies the packaging script, and what the package scripts run.
 - The workflow and `package.json` are covered by static tests as a regression guard; they do not replace a real run.
 - The certificate checks, signature assertions and both entry commands are verified by real runs: `dist:mac:local` with and without an identity, and the release path once (locally with the credentials, or a manual CI run with the verification switch).
 - Unit tests that use a fake runner say in the test file that they never contacted Apple.

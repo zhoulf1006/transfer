@@ -70,7 +70,7 @@
 
 ## 实现边界
 
-- `build/notarize-dmgs.cjs` 负责 DMG 发现、状态解析、命令编排与清理,不引入新 npm 依赖。
+- The packaging script (`build/mac-packaging.cjs`, the electron-scaffold asset) does DMG discovery, result parsing, command sequencing and cleanup, with no npm dependency of its own: it reads `electron-builder.yml` with the js-yaml that electron-builder already depends on.
 - 可测试的纯逻辑与命令执行 seam 分离;单测覆盖集合校验、Accepted/Invalid/畸形 JSON、失败传播、含空格路径和卸载清理。
 - GitHub Actions 只负责 tag 分类、凭据门禁、调用脚本和上传顺序。
 - 不修改应用运行时代码、Windows 打包器或下载页版本机制。
