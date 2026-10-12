@@ -18,29 +18,23 @@
 
 **为什么两处都要钉**:ticket 按被装订的那个文件走。只钉 DMG 的话,用户把 App 拖进「应用程序」之后 DMG 连同票据一起被丢掉,App 身上没有票据 → 首次启动 Gatekeeper 只能联网查,断网即判「无法验证是否包含恶意软件」。只钉 App 的话,DMG 自身没票据 → 双击打开 DMG 时 `spctl --type open` 判 rejected。**App 的票据管「拖出来之后」,DMG 的票据管「打开 DMG 时」。**
 
-The release order is fixed; each step is its own script, and the two entry commands compose them:
+The release order is fixed. Each packaging is one electron-builder call (`build/mac-packaging.cjs`); the release call adds the same script as the builder's afterSign hook, and the DMG gate runs after the build:
 
-| Step script | Does |
-|---|---|
-| `mac:sign` | checks for the certificate (keychain identity, or `CSC_LINK` in CI); builds every configured arch's `.app` with `--mac dir` and notarization off; confirms each app is signed by Developer ID Application and passes `codesign --verify --deep --strict` |
-| `mac:notarize-app` | zips each app (`ditto --keepParent`), submits it, checks the Accepted log, keeps it as `Transfer-<v>-mac-<arch>.app.notary-log.json`, then staples and validates the app |
-| `mac:dmg` | builds each DMG from its app with `--prepackaged` (no re-signing), then checks the DMG's signature itself — DMG signing writes no log line |
-| `mac:notarize-dmg` | `build/notarize-dmgs.cjs`: the per-DMG gate below |
-
-- `dist:mac:local` = `mac:sign` → `mac:dmg`
-- `dist:mac:release` = `mac:sign` → `mac:notarize-app` → `mac:dmg` → `mac:notarize-dmg`
+- `dist:mac:local` = `node build/mac-packaging.cjs local`: certificate check → one build of every configured arch's `.app` and DMG, signed, notarization off → signature checks on every app and DMG.
+- `dist:mac:release` = `node build/mac-packaging.cjs release` → `mac:notarize-dmg` (`build/notarize-dmgs.cjs`, the per-DMG gate below). The release build also checks the three Apple credentials first, and its afterSign hook notarizes each `.app` as the builder signs it: zip (`ditto --keepParent`), submit, check the Accepted log, keep it as `Transfer-<v>-mac-<arch>.app.notary-log.json`, staple, validate. After the build every app must carry its stapled ticket.
 
 ```text
-sign Transfer.app (each arch)
-→ notarize and staple each .app          ← before any DMG exists
-→ build each DMG from its stapled .app (not re-signed)
-→ sign each DMG
-→ notarize, staple and gate each DMG (including the app inside it)
+build and sign Transfer.app (each arch)
+→ afterSign hook: notarize and staple that .app   ← before its DMG exists (release only)
+→ build and sign its DMG from that .app (same builder call, not re-signed)
+→ notarize, staple and gate each DMG, including the app inside it (release only)
 → upload to GitHub Release
 → formal release only: sync R2
 ```
 
-The architecture set (`arm64`, `x64`, `universal`) is read from `mac.target` in `electron-builder.yml`. The steps locate each built app by its binary's architectures, not by directory name: `--x64` writes `release/<v>/mac/`, the others `mac-<arch>/`. A missing, duplicated or leftover app or DMG fails the step.
+Staying on the builder's ordinary single-call path keeps what it does only inside one build — it writes `Contents/Resources/app-update.yml` into each app only when the same call also builds a DMG or zip. Transfer has no auto-updater, so nothing reads that file today.
+
+The architecture set (`arm64`, `x64`, `universal`) is read from `mac.target` in `electron-builder.yml`. Packaging locates each built app by its binary's architectures, not by directory name: x64 builds into `release/<v>/mac/`, the others into `mac-<arch>/`. This build's earlier output (`mac*/` directories, DMGs, logs) is cleared before the build, so a leftover never reaches Apple; a missing or extra app or DMG fails the packaging.
 
 任何签名或公证都必须发生在最终上传之前;staple 后不能再修改 DMG 字节。
 
@@ -134,7 +128,7 @@ set -a; source .env.local; set +a
 pnpm run dist:mac:release
 ```
 
-Built-in notarization is off in `electron-builder.yml` (`mac.notarize: false`) and every builder call also passes `-c.mac.notarize=false`, so loaded Apple credentials never make a local packaging submit anything. Without credentials, `dist:mac:release` signs the apps and then stops at `mac:notarize-app` with the missing names; nothing is notarized or turned into a DMG. Rebuilding removes the notarization logs left by an earlier run, so a local DMG never sits next to a log claiming it was notarized.
+Built-in notarization is off in `electron-builder.yml` (`mac.notarize: false`) and every builder call also passes `-c.mac.notarize=false`, so loaded Apple credentials never make a local packaging submit anything. Without credentials, `dist:mac:release` stops before building, with the missing names. Rebuilding removes the notarization logs left by an earlier run, so a local DMG never sits next to a log claiming it was notarized.
 
 ## 每个 DMG 的验证门禁
 

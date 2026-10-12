@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-// The macOS packaging steps (docs/specs/mac-distribution.md): mac:sign, mac:notarize-app and mac:dmg;
-// mac:notarize-dmg is build/notarize-dmgs.cjs. Run them through the package scripts (pnpm run mac:sign, ...):
-// the build steps call electron-vite and electron-builder by name, which resolve from node_modules/.bin only there.
+// macOS packaging (docs/specs/mac-distribution.md): one electron-builder call builds and signs every configured
+// arch's .app and DMG. The release profile adds this file as the afterSign hook, which notarizes and staples each
+// .app before its DMG is built; the DMGs are then gated by build/notarize-dmgs.cjs (mac:notarize-dmg).
+// Run through the package scripts (pnpm run dist:mac:local / dist:mac:release): the build calls electron-vite and
+// electron-builder by name, which resolve from node_modules/.bin only there.
 
 const fs = require('node:fs')
 const os = require('node:os')
@@ -60,12 +62,17 @@ function archFromLipo(output) {
   throw new Error(`unexpected binary architectures: ${output.trim() || '(none)'}`)
 }
 
+/** The arch of one built app, read from its main binary */
+function appArch(app, productName, run) {
+  return archFromLipo(run('lipo', ['-archs', path.join(app, 'Contents', 'MacOS', productName)]).stdout)
+}
+
 /**
  * The built `<productName>.app` for every configured arch, in config order.
  *
- * Located from the build output rather than from guessed paths: `--dir` writes x64 to `mac/` and the other
- * architectures to `mac-<arch>/`. Each app's arch is read from its main binary, and the set must match the
- * config exactly, so a missing, duplicated or leftover app fails here instead of being packaged.
+ * Located from the build output rather than from guessed paths: x64 builds into `mac/` and the other
+ * architectures into `mac-<arch>/`. Each app's arch is read from its main binary, and the set must match the
+ * config exactly, so a missing, duplicated or leftover app fails here instead of being shipped.
  */
 function findBuiltApps({ outputDir, productName, arches, run }) {
   const candidates = fs.existsSync(outputDir)
@@ -75,18 +82,18 @@ function findBuiltApps({ outputDir, productName, arches, run }) {
       .filter((app) => fs.existsSync(app))
     : []
   if (candidates.length === 0) {
-    throw new Error(`no built ${productName}.app under ${outputDir}; run mac:sign first`)
+    throw new Error(`no built ${productName}.app under ${outputDir}; the build produced nothing`)
   }
 
   const byArch = new Map()
   for (const app of candidates) {
-    const arch = archFromLipo(run('lipo', ['-archs', path.join(app, 'Contents', 'MacOS', productName)]).stdout)
+    const arch = appArch(app, productName, run)
     if (!arches.includes(arch)) throw new Error(`built app for an arch the config does not list (${arch}): ${app}`)
     if (byArch.has(arch)) throw new Error(`two built apps for ${arch}: ${byArch.get(arch)} and ${app}`)
     byArch.set(arch, app)
   }
   const missing = arches.filter((arch) => !byArch.has(arch))
-  if (missing.length > 0) throw new Error(`no built app for ${missing.join(', ')} under ${outputDir}; run mac:sign first`)
+  if (missing.length > 0) throw new Error(`no built app for ${missing.join(', ')} under ${outputDir}`)
   return arches.map((arch) => ({ arch, app: byArch.get(arch) }))
 }
 
@@ -101,23 +108,10 @@ function assertDeveloperIdSigned(output, app) {
   }
 }
 
-/**
- * mac:sign — check the certificate source, build and sign every configured arch's .app (no DMG, built-in
- * notarization off), then confirm each app's signature on the result.
- */
-function signApps({ env, run, outputDir, productName, version, arches }) {
-  certificateSource(env, run)
-  // Logs from an earlier run would describe apps this run is about to replace
-  for (const arch of arches) fs.rmSync(appNotaryLogFile(outputDir, productName, version, arch), { force: true })
-  run('electron-vite', ['build'])
-  run('electron-builder', ['--mac', 'dir', ...arches.map((arch) => `--${arch}`), '--publish', 'never', '-c.mac.notarize=false'])
-  const apps = findBuiltApps({ outputDir, productName, arches, run })
-  for (const { app } of apps) {
-    const display = run('codesign', ['--display', '--verbose=4', app])
-    assertDeveloperIdSigned([display.stdout, display.stderr].join('\n'), app)
-    run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', app])
-  }
-  return apps
+/** The TeamIdentifier field of `codesign --display` output */
+function teamIdentifier(output) {
+  const line = output.split(/\r?\n/).find((entry) => entry.startsWith('TeamIdentifier='))
+  return line ? line.slice('TeamIdentifier='.length).trim() : null
 }
 
 /** The notarization log kept next to the version's artifacts for one arch's app */
@@ -125,71 +119,110 @@ function appNotaryLogFile(outputDir, productName, version, arch) {
   return path.join(outputDir, `${productName}-${version}-mac-${arch}.app.notary-log.json`)
 }
 
-/**
- * mac:notarize-app — notarize and staple each signed app before any DMG is built: a DMG made from an app
- * without its own ticket cannot get one afterwards, and the app is what users drag out of the DMG.
- */
-function notarizeApps({ env, run, outputDir, productName, version, arches, writeError, writeNotaryLog, log = () => {} }) {
-  const credentials = readCredentials(env)
-  const apps = findBuiltApps({ outputDir, productName, arches, run })
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-notarize-app-'))
-  try {
-    return apps.map(({ arch, app }) => {
-      // notarytool takes an archive, not a bundle; --keepParent keeps Transfer.app as the archive's root
-      const zip = path.join(workDir, `${productName}-${arch}.zip`)
-      // Each submission waits on Apple for minutes; say which app is being waited on
-      log(`[mac] notarizing ${arch}: ${app}`)
-      run('ditto', ['-c', '-k', '--keepParent', app, zip])
-      const { submissionId, log: notaryLog } = submitForNotarization(zip, { credentials, run, writeError })
-      writeNotaryLog(appNotaryLogFile(outputDir, productName, version, arch), notaryLog)
-      log(`[mac] accepted ${arch} (submission: ${submissionId})`)
-      run('xcrun', ['stapler', 'staple', app])
-      run('xcrun', ['stapler', 'validate', app])
-      return submissionId
-    })
-  } finally {
-    fs.rmSync(workDir, { recursive: true, force: true })
-  }
-}
-
 /** The DMG electron-builder writes for one arch (dmg.artifactName in electron-builder.yml) */
 function dmgFile(outputDir, productName, version, arch) {
   return path.join(outputDir, `${productName}-${version}-mac-${arch}.dmg`)
 }
 
-/** The TeamIdentifier field of `codesign --display` output */
-function teamIdentifier(output) {
-  const line = output.split(/\r?\n/).find((entry) => entry.startsWith('TeamIdentifier='))
-  return line ? line.slice('TeamIdentifier='.length).trim() : null
-}
+// Passed as -c.afterSign in the release profile; electron-builder takes this module's `afterSign` export
+const HOOK = 'build/mac-packaging.cjs'
 
 /**
- * mac:dmg — build each arch's DMG from its existing app. --prepackaged skips packing and therefore signing
- * and built-in notarization, so a stapled app keeps its signature and ticket. DMG signing writes no log line,
- * so each DMG's signature is checked here against the team that signed the app inside it.
+ * One electron-builder call builds and signs every configured arch's .app and DMG, the way the builder is meant to
+ * be used, so everything it does inside a single build (app-update.yml, for one) still happens. Built-in
+ * notarization stays off; the release profile notarizes each .app through the afterSign hook instead, after signing
+ * and before that arch's DMG is built. Signatures, and in release the stapled tickets, are confirmed on the result.
  */
-function buildDmgs({ run, outputDir, productName, version, arches }) {
-  const apps = findBuiltApps({ outputDir, productName, arches, run })
-  // A DMG or log left by an earlier run must not pass for this run's output: the builder could fail to
-  // write a DMG without an error, and a local DMG must never sit next to a log claiming it was notarized
-  for (const { arch } of apps) {
+function packageMac({ profile, env, run, outputDir, productName, version, arches }) {
+  if (profile !== 'local' && profile !== 'release') throw new Error(`unknown profile: ${profile}`)
+  const release = profile === 'release'
+  // Both checks come before the build: the hook would otherwise fail only after minutes of packing
+  if (release) readCredentials(env)
+  certificateSource(env, run)
+
+  // Anything an earlier run left must not pass for this run's output: the builder could fail to write a DMG
+  // without an error, a local package must never sit next to a log claiming it was notarized, and a leftover
+  // app (a crashed universal build leaves <outDir>-<arch>-temp) must be gone before the hook submits anything.
+  // Only this build's own mac/ and mac-*/ outputs are cleared; Mac App Store output (mas-*) is left alone
+  if (fs.existsSync(outputDir)) {
+    for (const entry of fs.readdirSync(outputDir, { withFileTypes: true })) {
+      if (entry.isDirectory() && (entry.name === 'mac' || entry.name.startsWith('mac-'))) {
+        fs.rmSync(path.join(outputDir, entry.name), { recursive: true, force: true })
+      }
+    }
+  }
+  for (const arch of arches) {
     const dmg = dmgFile(outputDir, productName, version, arch)
+    fs.rmSync(appNotaryLogFile(outputDir, productName, version, arch), { force: true })
     fs.rmSync(dmg, { force: true })
     fs.rmSync(`${dmg}.notary-log.json`, { force: true })
   }
+
+  run('electron-vite', ['build'])
+  run('electron-builder', [
+    '--mac', '--publish', 'never', '-c.mac.notarize=false',
+    ...(release ? [`-c.afterSign=${HOOK}`] : [])
+  ])
+
+  const apps = findBuiltApps({ outputDir, productName, arches, run })
+  const teams = new Map()
   for (const { arch, app } of apps) {
-    run('electron-builder', ['--mac', 'dmg', `--${arch}`, '--prepackaged', app, '--publish', 'never', '-c.mac.notarize=false'])
+    const display = run('codesign', ['--display', '--verbose=4', app])
+    const output = [display.stdout, display.stderr].join('\n')
+    assertDeveloperIdSigned(output, app)
+    teams.set(arch, teamIdentifier(output))
+    run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', app])
+    // In release every app must leave the build stapled; a hook that never ran would leave it bare
+    if (release) run('xcrun', ['stapler', 'validate', app])
   }
-  return apps.map(({ arch, app }) => {
+
+  // DMG signing writes no log line, so each DMG's signature is checked against the team of the app inside it
+  const dmgs = arches.map((arch) => {
     const dmg = dmgFile(outputDir, productName, version, arch)
     if (!fs.existsSync(dmg)) throw new Error(`no DMG for ${arch} after the build: ${dmg}`)
-    const appDisplay = run('codesign', ['--display', '--verbose=4', app])
-    const team = teamIdentifier([appDisplay.stdout, appDisplay.stderr].join('\n'))
     run('codesign', ['--verify', '--verbose=4', dmg])
-    const dmgDisplay = run('codesign', ['--display', '--verbose=4', dmg])
-    assertDmgSignature([dmgDisplay.stdout, dmgDisplay.stderr].join('\n'), team)
+    const display = run('codesign', ['--display', '--verbose=4', dmg])
+    assertDmgSignature([display.stdout, display.stderr].join('\n'), teams.get(arch))
     return dmg
   })
+  return { apps, dmgs }
+}
+
+/**
+ * The afterSign hook: notarize and staple the .app electron-builder has just signed, before its DMG is built — a
+ * DMG made from an app without its own ticket cannot get one afterwards, and the app is what users drag out.
+ * Mac App Store builds are not notarized here. Missing credentials fail the build rather than skip.
+ */
+async function afterSign(context, deps = {}) {
+  if (context.electronPlatformName !== 'darwin') return undefined
+  const {
+    env = process.env,
+    run = runCommand,
+    writeError = (message) => console.error(`[mac] Apple log:\n${message}`),
+    writeNotaryLog = (file, contents) => fs.writeFileSync(file, contents),
+    log = (message) => console.log(message)
+  } = deps
+  const credentials = readCredentials(env)
+  const { productFilename, version } = context.packager.appInfo
+  const app = path.join(context.appOutDir, `${productFilename}.app`)
+  const arch = appArch(app, productFilename, run)
+
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'transfer-notarize-app-'))
+  try {
+    // Each submission waits on Apple for minutes; say which app is being waited on
+    log(`[mac] notarizing ${arch}: ${app}`)
+    // notarytool takes an archive, not a bundle; --keepParent keeps the .app as the archive's root
+    const zip = path.join(workDir, `${productFilename}-${arch}.zip`)
+    run('ditto', ['-c', '-k', '--keepParent', app, zip])
+    const { submissionId, log: notaryLog } = submitForNotarization(zip, { credentials, run, writeError })
+    writeNotaryLog(appNotaryLogFile(context.outDir, productFilename, version, arch), notaryLog)
+    run('xcrun', ['stapler', 'staple', app])
+    run('xcrun', ['stapler', 'validate', app])
+    log(`[mac] accepted ${arch} (submission: ${submissionId})`)
+    return submissionId
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true })
+  }
 }
 
 /** Product name, version, versioned output directory and arches, from electron-builder.yml and package.json */
@@ -215,38 +248,26 @@ function runStep(command, args) {
   return { stdout: '', stderr: '' }
 }
 
-const STEPS = {
-  sign: (options) => signApps(options),
-  'notarize-app': (options) => notarizeApps({
-    ...options,
-    writeError: (message) => console.error(`[mac] Apple log:\n${message}`),
-    writeNotaryLog: (file, contents) => fs.writeFileSync(file, contents),
-    log: (message) => console.log(message)
-  }),
-  dmg: (options) => buildDmgs(options)
-}
-
 function main(argv, env = process.env) {
-  const step = STEPS[argv[0]]
-  if (!step) throw new Error(`usage: node build/mac-packaging.cjs <${Object.keys(STEPS).join('|')}>`)
+  const profile = argv[0]
+  if (profile !== 'local' && profile !== 'release') throw new Error('usage: node build/mac-packaging.cjs <local|release>')
   const root = path.join(__dirname, '..')
   const layout = resolveLayout(
     fs.readFileSync(path.join(root, 'electron-builder.yml'), 'utf8'),
     fs.readFileSync(path.join(root, 'package.json'), 'utf8')
   )
-  const result = step({ env, run: runStep, ...layout, outputDir: path.join(root, layout.outputDir) })
-  console.log(`[mac] ${argv[0]} done for ${layout.arches.join(', ')}`)
+  const result = packageMac({ profile, env, run: runStep, ...layout, outputDir: path.join(root, layout.outputDir) })
+  console.log(`[mac] ${profile} packaging done for ${layout.arches.join(', ')}`)
   return result
 }
 
 module.exports = {
-  buildDmgs,
+  afterSign,
   certificateSource,
   configuredArches,
   findBuiltApps,
-  notarizeApps,
-  resolveLayout,
-  signApps
+  packageMac,
+  resolveLayout
 }
 
 if (require.main === module) {

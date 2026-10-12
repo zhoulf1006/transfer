@@ -12,7 +12,7 @@
 | [transfer-chat.md](transfer-chat.md) | 传输与聊天的需求全景:协商/传输/落盘/失败分类/文本/速度与耗时/表结构演进/持久化八组边界穷举、测试决策、明确不做的与已知缺口 |
 | [landing-page-deploy.md](landing-page-deploy.md) | 落地页一份代码两处部署:备案号的注入与渲染边界、与下载/统计的回归点、部署约束 |
 | [receive-dir.md](receive-dir.md) | 接收文件夹可由用户选定:选择/恢复默认/失效退回/告知/路径展示七组边界,含沙盒容器路径展示与 App Store 2.4.5(i) 的由来 |
-| [mac-distribution.md](mac-distribution.md) | macOS Developer ID / DMG distribution: which builds are signed and notarized, the step scripts and two entry commands, the CI tiers, the no-certificate failure and the release gate |
+| [mac-distribution.md](mac-distribution.md) | macOS Developer ID / DMG distribution: which builds are signed and notarized, the two entry commands and the in-build notarization hook, the CI tiers, the no-certificate failure and the release gate |
 
 ## 不变量
 

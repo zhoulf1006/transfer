@@ -8,7 +8,7 @@ Transfer ships three macOS DMGs (arm64, x64, universal) outside the App Store. A
 
 ## Solution
 
-Every packaged macOS build is signed with Developer ID; without the certificate, packaging fails instead of producing anything. Builds that are published — formal releases and prereleases alike — notarize and staple both each `.app` and each DMG and pass the full gate before upload. Local packaging signs only, with notarization switched off explicitly. Signing and notarization are separate step scripts, and two entry commands named after their environment compose them. Dev mode neither signs nor notarizes.
+Every packaged macOS build is signed with Developer ID; without the certificate, packaging fails instead of producing anything. Builds that are published — formal releases and prereleases alike — notarize and staple both each `.app` and each DMG and pass the full gate before upload. Local packaging signs only, with notarization switched off explicitly. Two entry commands named after their environment run one builder call each; the release one notarizes each `.app` from a hook inside that call and gates the DMGs after it. Dev mode neither signs nor notarizes.
 
 ## User Stories
 
@@ -61,16 +61,16 @@ Packaging without the Developer ID certificate fails instead of producing an uns
 
 - mac-distribution::REQ-001/AC-01: Locally, when the keychain holds no valid Developer ID Application identity, `dist:mac:local` and `dist:mac:release` fail before building, and the message says to install the certificate and how to list identities that are present but untrusted.
 - mac-distribution::REQ-001/AC-02: In CI, when the `CSC_LINK` secret is missing, the macOS job fails in every tier (tag, manual verification, manual packaging) with a message to configure the secret; no unsigned artifact is produced or uploaded.
-- mac-distribution::REQ-001/AC-03: Whatever the certificate source, signing is confirmed on the built apps, not assumed from the build: a build whose app is not signed by a Developer ID Application identity fails before any DMG is made.
+- mac-distribution::REQ-001/AC-03: Whatever the certificate source, signing is confirmed on the built apps and DMGs, not assumed from the build: a build whose app is not signed by a Developer ID Application identity fails the packaging command, so nothing from it is uploaded.
 
 ### mac-distribution::REQ-002 Release requires every Apple credential
 
 - mac-distribution::REQ-002/AC-01: In CI, a release-tier run (tag or manual verification) missing any of `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` or `APPLE_TEAM_ID` fails before packaging starts.
-- mac-distribution::REQ-002/AC-02: The app and DMG notarization steps refuse to run without all three credentials and fail with the missing names; they never skip.
+- mac-distribution::REQ-002/AC-02: The release packaging checks all three credentials before it builds, and the app notarization hook and the DMG gate refuse to run without them, failing with the missing names; nothing ever skips.
 
 ### mac-distribution::REQ-003 The architecture set comes from the builder config (direct acceptance)
 
-Every step works on exactly the architectures listed for the macOS DMG target in the builder config. A missing architecture, an extra one, or a leftover from another version fails the step before anything is submitted to Apple.
+Packaging works on exactly the architectures listed for the macOS DMG target in the builder config. Build output left by an earlier run is cleared before the build, so a leftover app never reaches Apple; a missing or extra architecture in this build's output fails the packaging, and nothing is uploaded.
 
 ### mac-distribution::REQ-004 Notarization logs belong to the artifacts they describe
 
@@ -85,11 +85,11 @@ Before upload, each DMG passes: the expected-set check; image verification, sign
 
 ### mac-distribution::CON-001 Command names (direct acceptance)
 
-Applies to: `package.json` scripts. The entry commands are `dist:mac:local` and `dist:mac:release`; the step scripts are `mac:sign`, `mac:notarize-app`, `mac:dmg` and `mac:notarize-dmg`. `dist:mac:local` runs `mac:sign` then `mac:dmg`; `dist:mac:release` runs `mac:sign`, `mac:notarize-app`, `mac:dmg`, `mac:notarize-dmg` in that order. The previous names (`dist:mac`, `dist:mac:package-signed`, `notarize:mac:dmgs`, `dist:mac:sign`) are removed without aliases.
+Applies to: `package.json` scripts. The entry commands are `dist:mac:local` (local packaging) and `dist:mac:release` (release packaging, then `mac:notarize-dmg`, the DMG gate). The previous names (`dist:mac`, `dist:mac:package-signed`, `notarize:mac:dmgs`, `dist:mac:sign`) are removed without aliases.
 
 ### mac-distribution::CON-002 Built-in notarization is off (direct acceptance)
 
-Applies to: the builder config and every builder invocation in the step scripts. The builder config sets macOS notarization off permanently, so loaded Apple credentials never trigger a submission; every invocation also passes the off switch on the command line, so the local path stays safe even if the config is edited.
+Applies to: the builder config and every builder invocation in the packaging script. The builder config sets macOS notarization off permanently, so loaded Apple credentials never trigger a submission; every invocation also passes the off switch on the command line, so the local path stays safe even if the config is edited.
 
 ### mac-distribution::CON-003 Fixed order, no change after staple (direct acceptance)
 
@@ -110,14 +110,14 @@ Applies to: the Windows job, the Mac App Store scripts and dev mode. Windows pac
 - No valid Developer ID identity in the keychain: fails before building (mac-distribution::REQ-001/AC-01). An identity that is present but untrusted (for example a missing intermediate certificate) counts as missing; the message shows how to list it.
 - The build silently signs nothing or signs with another identity: caught on the built apps before any DMG (mac-distribution::REQ-001/AC-03).
 - Apple credentials loaded in the shell while running `dist:mac:local`: still nothing is submitted (mac-distribution::US-005/AC-02, mac-distribution::CON-002).
-- `mac:dmg` run without a prior `mac:sign` for this version, or with an architecture missing or extra: fails before building any DMG (mac-distribution::REQ-003).
+- A leftover from an earlier or crashed run (an app in a stale `mac-*` directory, a DMG, a log): cleared before the build; an architecture missing or extra in this build's output fails the packaging (mac-distribution::REQ-003).
 - `dist:mac:local` run after a release run of the same version: the DMGs are rebuilt unnotarized and the earlier logs for them are removed (mac-distribution::REQ-004/AC-02).
 - Interrupted run (Ctrl-C, crash) leaves a partial version directory: the next run rebuilds every app and DMG; a leftover file outside the expected set fails the gate rather than being published.
 
 ### Publisher, release packaging (CI or local)
 
-- A release-tier CI run missing a credential: fails before packaging (mac-distribution::REQ-002/AC-01). Run locally without the credentials: the app notarization step fails with the missing names before submitting (mac-distribution::REQ-002/AC-02); no DMG is built.
-- Apple rejects an app: the step fetches the log for diagnosis and fails with the original rejection; no DMG is built for any architecture.
+- A release-tier CI run missing a credential: fails before packaging (mac-distribution::REQ-002/AC-01). Run locally without the credentials: `dist:mac:release` fails with the missing names before building (mac-distribution::REQ-002/AC-02).
+- Apple rejects an app: the hook fetches the log for diagnosis and fails the build with the original rejection; that architecture's DMG is never built and nothing is uploaded.
 - One architecture's app or DMG fails after another succeeded: the whole run fails and nothing is uploaded; the accepted submissions remain only as Apple-side records.
 - Apple network error or timeout during submission: the step fails; rerunning the workflow repeats the whole release path.
 - DMG-level failures (signature content, submission, log, staple, Gatekeeper, mounted app): as in mac-distribution::REQ-005; nothing is uploaded.
@@ -135,10 +135,10 @@ Applies to: the Windows job, the Mac App Store scripts and dev mode. Windows pac
 
 ## Implementation Decisions
 
-- Four step scripts share one architecture source (the builder config's macOS DMG target) and locate each built app from the build output by inspecting its binary's architectures, not by guessing directory names; `--x64` and the other architectures write to differently named directories.
-- `mac:sign` checks for a certificate source first — a valid Developer ID Application identity in the keychain, or the `CSC_LINK` secret in CI, which the builder imports itself — then builds every architecture's app with the `dir` target and notarization off, and finally asserts each app's signature authority and strict deep verification.
-- `mac:notarize-app` submits each app as a zip archive, applies the same Accepted-submission and log checks as the DMG gate, staples the app and validates the staple.
-- `mac:dmg` builds each DMG from its app with the prepackaged option, which skips signing and built-in notarization, then checks the DMG's signature content itself, because DMG signing writes no log line.
+- One builder call per packaging builds and signs every configured architecture's app and DMG — the builder's ordinary path, so everything it does inside a single build still happens (it writes `app-update.yml` into each app only when the same call also builds a DMG or zip). Built-in notarization stays off in both profiles (ADR-0023).
+- Before building, the packaging script checks for a certificate source — a valid Developer ID Application identity in the keychain, or the `CSC_LINK` secret in CI, which the builder imports itself — and, in release, for all three Apple credentials; it then clears this build's earlier output.
+- The release profile adds the packaging script as the builder's afterSign hook. The builder calls it once per final app, after signing and before that architecture's DMG; it submits the app as a zip archive, applies the same Accepted-submission and log checks as the DMG gate, keeps the log, staples the app and validates the staple. A universal build's per-architecture intermediates are built unsigned, so they never reach the hook.
+- After the build, the script locates each app by its binary's architectures (not by guessing directory names: `--x64` and the other architectures build into differently named directories), asserts its signature authority and strict deep verification, in release its stapled ticket, and checks each DMG's signature content against the app's team, because DMG signing writes no log line.
 - `mac:notarize-dmg` is the existing DMG gate, driven by the configured architecture set.
 - The CI macOS job chooses the release command for any `v*` tag and for a manual run with the verification switch, and the local command otherwise; a missing certificate secret fails the job in every tier.
 

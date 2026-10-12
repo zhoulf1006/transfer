@@ -18,7 +18,7 @@
 ### 正式版
 
 1. Before packaging, the job fails if `CSC_LINK` is missing (every tier) or, on the release path, if any of the three Apple credentials is missing.
-2. `dist:mac:release` signs each app with Developer ID (`mac:sign`, built-in notarization off), notarizes and staples each app with notarytool (`mac:notarize-app`), then builds and signs each DMG from its stapled app without re-signing it (`mac:dmg`). The notarization steps refuse to run without all three credentials; the last check of step 4 still asserts the app inside each DMG carries its ticket.
+2. `dist:mac:release` runs one electron-builder call with built-in notarization off: each app is signed with Developer ID, notarized and stapled by the afterSign hook (notarytool, our own checks), and its DMG is then built from it and signed in the same call. The release build and the hook refuse to run without all three credentials; the last check of step 4 still asserts the app inside each DMG carries its ticket.
 3. 公证脚本严格识别同一产品版本的三个预期 DMG,缺失、重复或出现未知架构均失败。
 4. 每个 DMG 串行执行:
    - `hdiutil verify`

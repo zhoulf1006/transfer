@@ -61,16 +61,16 @@ mac:
   electronLanguages: [en, en_GB, zh_CN]
   icon: build/icon.icns       # 应用图标(紫底 + 白色纸飞机,主色 #8a67ab)
   # Hardened runtime + entitlements (applied when signing; required by Electron/V8 under the hardened runtime).
-  # Every macOS package is signed with Developer ID: the step scripts fail when there is no certificate
+  # Every macOS package is signed with Developer ID: packaging fails when there is no certificate
   # (docs/specs/mac-distribution.md), so there is no unsigned build for these fields to be inert on.
   hardenedRuntime: true                       # 公证前提:启用加固运行时
   gatekeeperAssess: false                      # 打包时不本地跑 Gatekeeper 评估(交给公证)
   entitlements: build/entitlements.mac.plist   # Electron/V8 加固运行时必需
   entitlementsInherit: build/entitlements.mac.plist
-  # Built-in notarization stays off. The .app is notarized and stapled by our own step (mac:notarize-app)
-  # before its DMG is built — the app's ticket is what lets it start offline once dragged out of the DMG, and
-  # it cannot be added after the DMG exists. Left on, electron-builder would submit whenever Apple credentials
-  # are loaded, including during local packaging. The step scripts also pass -c.mac.notarize=false.
+  # Built-in notarization stays off. In release packaging the .app is notarized and stapled by our own code in the
+  # afterSign hook (build/mac-packaging.cjs), before its DMG is built in the same call. Left on, electron-builder
+  # would submit whenever Apple credentials are loaded, including during local packaging, and would only warn when
+  # they are missing. The packaging script also passes -c.mac.notarize=false.
   notarize: false
   # ⚠️ **extendInfo 必须写在 mac 下。写进 mas 块不生效,且不报错、无警告。**
   # app-builder-lib 26.15.3 的 macPackager 在同一个函数里:版本号读的是合并过 config.mas 的
