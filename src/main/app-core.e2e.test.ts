@@ -43,7 +43,9 @@ async function makeIdentity(alias: string): Promise<{
 // 端到端:两个 AppCore 实例走 发现 → chat 发送 → 自动接收/确认 → 落盘+入库 全链路。
 // 验证装配层(app-core + chat-service)。用非默认端口避免与系统冲突。
 
-function waitFor<T>(fn: () => T | undefined, timeoutMs = 5000): Promise<T> {
+// Bounds a hang, not a speed: discovery starts on freshly created multicast sockets, whose first datagram was measured
+// arriving up to ~3 s late under heavy machine load. The tests that discover a peer carry a 30 s timeout.
+function waitFor<T>(fn: () => T | undefined, timeoutMs = 15_000): Promise<T> {
   return new Promise((resolve, reject) => {
     const start = Date.now()
     const tick = (): void => {
@@ -172,7 +174,7 @@ describe('AppCore 端到端(聊天)', () => {
     expect(recvProg[recvProg.length - 1]).toBe(total)
     for (let i = 1; i < sendProg.length; i++) expect(sendProg[i]).toBeGreaterThanOrEqual(sendProg[i - 1])
     for (let i = 1; i < recvProg.length; i++) expect(recvProg[i]).toBeGreaterThanOrEqual(recvProg[i - 1])
-  })
+  }, 30_000)
 
   test('文本消息端到端:A 发文本 → B 入流(done),不落文件', async () => {
     const a = await mkCore('A2', 56319, false)
@@ -197,7 +199,7 @@ describe('AppCore 端到端(聊天)', () => {
     // A 侧:sent 文本 done
     const aText = a.messages().find((m) => m.direction === 'sent' && m.type === 'text')
     expect(aText?.status).toBe('done')
-  })
+  }, 30_000)
 
   test('离线对端:发送失败标 failed(offline)', async () => {
     const a = await mkCore('A3', 56321, false)

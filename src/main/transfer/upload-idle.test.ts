@@ -44,10 +44,18 @@ async function receiver(opts: {
   })
   const rate = opts.bytesPerSec ?? Number.POSITIVE_INFINITY
   const srv = https.createServer({ key: pems.private, cert: pems.cert }, (req, res) => {
+    // Paced against the clock, not chunk by chunk: a chunk is released when the bytes received so far are due at
+    // `rate`. Per-chunk delays add each timer's lateness to the next, so under load the effective rate drifted well
+    // below `rate` (measured: an upload of ~1.3 s on an idle machine took ~6 s under load), stretching the gaps
+    // between progress touches toward the idle threshold
+    let startedAt = 0
+    let received = 0
     const sink = new Writable({
       write(chunk: Buffer, _enc, cb) {
         if (!Number.isFinite(rate)) return void cb()
-        setTimeout(cb, (chunk.length / rate) * 1000)
+        if (startedAt === 0) startedAt = Date.now()
+        received += chunk.length
+        setTimeout(cb, Math.max(0, startedAt + (received / rate) * 1000 - Date.now()))
       }
     })
     req.pipe(sink)
