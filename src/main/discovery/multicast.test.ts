@@ -21,7 +21,9 @@ function announcementFactory(alias: string, fingerprint: string) {
   })
 }
 
-function waitFor<T>(fn: () => T | undefined, timeoutMs = 3000): Promise<T> {
+// Bounds a hang, not a speed: under heavy machine load the first datagram on a freshly created socket was measured
+// arriving up to ~3 s late (nothing lost), so a few seconds is not enough. Tests that wait carry a 30 s timeout.
+function waitFor<T>(fn: () => T | undefined, timeoutMs = 15_000): Promise<T> {
   return new Promise((resolve, reject) => {
     const start = Date.now()
     const tick = () => {
@@ -76,14 +78,15 @@ describe('MulticastDiscovery(集成)', () => {
     // 防自发现:A 不应发现 FP_A,B 不应发现 FP_B(尽管 loopback 默认开)
     expect(seenByA).not.toContain('FP_A')
     expect(seenByB).not.toContain('FP_B')
-  })
+  }, 30_000)
 
   test('收到 announce=true 触发 onRespond(用于 HTTP 定向回应);announce=false 不触发', async () => {
     const responded: { fp: string; addr: string }[] = []
+    const seen: string[] = []
     const a = new MulticastDiscovery({
       selfFingerprint: 'FP_A',
       buildAnnouncement: announcementFactory('Device-A', 'FP_A'),
-      onDevice: () => {},
+      onDevice: (info) => seen.push(info.fingerprint),
       onRespond: (info, address) => responded.push({ fp: info.fingerprint, addr: address }),
       port: TEST_PORT,
       multicastAddr: TEST_ADDR,
@@ -109,21 +112,24 @@ describe('MulticastDiscovery(集成)', () => {
       TEST_PORT,
       TEST_ADDR
     )
-    await new Promise((r) => setTimeout(r, 200))
+    // Wait until the reply has been handled (onDevice runs before the onRespond decision), so the check below
+    // looks at a handled datagram rather than one that has not arrived yet
+    await waitFor(() => (seen.includes('FP_REPLY') ? true : undefined))
     s.close()
 
     expect(responded.some((r) => r.fp === 'FP_PEER')).toBe(true)
     expect(responded.some((r) => r.fp === 'FP_REPLY')).toBe(false)
-  })
+  }, 30_000)
 
   // 广播兜底:announce 时应对真实网卡的子网广播地址也发一份。
   // 用一个 bind 到测试端口的接收 socket 监听广播;discovery 不传 interfaceAddr(算真实广播目标)。
   // 无真实 LAN 网卡的环境(如某些 CI)自动跳过。
-  test('announce 会对子网广播地址发包(广播兜底)', async () => {
+  test('announce 会对子网广播地址发包(广播兜底)', async (ctx) => {
     const { networkInterfaces } = await import('node:os')
     const { pickBroadcastTargets } = await import('./pick-interface')
     const targets = pickBroadcastTargets(networkInterfaces())
-    if (targets.length === 0) return // 无真实网卡,跳过(不算失败)
+    // Reported as skipped, not passed: a bare return would show this test green without having sent anything
+    if (targets.length === 0) return ctx.skip()
 
     const { createSocket } = await import('node:dgram')
     const rx = createSocket({ type: 'udp4', reuseAddr: true })
@@ -149,9 +155,9 @@ describe('MulticastDiscovery(集成)', () => {
     running.push(d)
     await d.start() // start 内 announce(true) 会发多播 + 子网广播
 
-    await waitFor(() => (gotBroadcast.length > 0 ? true : undefined), 3000).finally(() => rx.close())
+    await waitFor(() => (gotBroadcast.length > 0 ? true : undefined)).finally(() => rx.close())
     expect(gotBroadcast.length).toBeGreaterThan(0)
-  })
+  }, 30_000)
 
   // 防自发现强证:loopback 默认开,本实例发出的 announce 自己会收到;
   // 若 fingerprint 过滤失效,onDevice 会被自己的广播触发。用"另一个 socket 冒充
@@ -190,7 +196,7 @@ describe('MulticastDiscovery(集成)', () => {
     // FP_OTHER 收到了(证明 socket 在正常收包);FP_SELF 一个都不能有(被过滤)
     expect(seen).toContain('FP_OTHER')
     expect(seen).not.toContain('FP_SELF')
-  })
+  }, 30_000)
 
   test('非法报文不会导致 onDevice 触发或崩溃', async () => {
     const seen: string[] = []
@@ -211,9 +217,12 @@ describe('MulticastDiscovery(集成)', () => {
     await new Promise<void>((r) => s.bind(() => r()))
     s.send(Buffer.from('not json'), TEST_PORT, TEST_ADDR)
     s.send(Buffer.from(JSON.stringify({ hello: 'world' })), TEST_PORT, TEST_ADDR)
-    await new Promise((r) => setTimeout(r, 200))
+    // A valid datagram sent after them from the same socket: once it has been handled, the two before it have had
+    // their chance, so an empty result means they were dropped rather than not yet delivered
+    s.send(Buffer.from(JSON.stringify(announcementFactory('Witness', 'FP_WITNESS')(false))), TEST_PORT, TEST_ADDR)
+    await waitFor(() => (seen.includes('FP_WITNESS') ? true : undefined))
     s.close()
 
-    expect(seen).toHaveLength(0)
-  })
+    expect(seen).toEqual(['FP_WITNESS'])
+  }, 30_000)
 })
