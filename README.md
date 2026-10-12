@@ -84,14 +84,14 @@ pnpm build        # 构建
 ## 打包
 
 ```bash
-pnpm dist:mac         # macOS(universal:arm64 + x64 单个 dmg)
-pnpm dist:mac:sign    # macOS 签名 + 公证(本地,需 Developer ID)
-pnpm dist:win         # Windows(NSIS 安装版 + portable 免安装版)
+pnpm dist:mac:local    # macOS 本地打包:arm64 / x64 / universal 三个 dmg,Developer ID 签名,不公证
+pnpm dist:mac:release  # macOS 发布打包:签名 + .app 与 dmg 各自公证(需 Developer ID 与 Apple 凭据)
+pnpm dist:win          # Windows(NSIS 安装版 + portable 免安装版)
 ```
 
-CI(GitHub Actions,`.github/workflows/build.yml`)在打 tag(或手动触发)时构建 macOS / Windows 产物。macOS 干净 tag 会公证成正式版。
+macOS 打包必须有 Developer ID 证书,没有就直接报错,不产出未签名的包。CI(GitHub Actions,`.github/workflows/build.yml`)在打 tag(或手动触发)时构建 macOS / Windows 产物;正式版与预发布 tag 都会公证。细节见 [docs/ops/mac-signing.md](docs/ops/mac-signing.md)。
 
-> 未签名的构建在对方机器上首次打开会有一次性系统安全提示,属正常。
+> Windows 包未签名,在对方机器上首次打开会有一次性系统安全提示,属正常。本地打的 macOS 包未公证,经下载、AirDrop 等带隔离属性的途径传到别的机器后,首次打开会被 Gatekeeper 拦下;要分发请用发布打包。
 
 ## 项目状态
 

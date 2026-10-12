@@ -2,8 +2,7 @@
 
 ## 目标
 
-- 正式版干净 tag(例如 `v0.9.1`)只发布通过 Apple 公证、staple 和 Gatekeeper 验证的三个 DMG。
-- 预发布 tag(`-beta`、`-rc`、`-alpha`、`-dev`)保持只签名、不公证,只发布到 GitHub Release。
+- Formal tags (e.g. `v0.9.1`) and prerelease tags (`-beta`, `-rc`, `-alpha`, `-dev`) both publish only DMGs that passed Apple notarization, stapling and Gatekeeper, with the app inside each carrying its own ticket (ADR-0023). Prereleases go to GitHub Pre-release only.
 - 只有正式版同步 GitHub Release 产物到 Cloudflare R2;预发布不更新 R2 安装包和 `latest.json`。
 - Windows 发布行为不变。
 
@@ -18,8 +17,8 @@
 
 ### 正式版
 
-1. 在互斥打包分支之前校验签名证书和三项 Apple 公证凭据;`HAS_APPLE` 同时检查 Apple ID、App 专用密码和 Team ID,缺任一项则 macOS job 失败。
-2. electron-builder 使用 Developer ID 签名 App,**开启内置公证**(`mac.notarize: true`)把票据 staple 到 `.app` 上,再生成 arm64/x64/universal 三个 DMG(内部 App 已带票据),并用同一 Developer ID Application 身份签名每个 DMG。内置公证跑在打包步骤内,因此三项 Apple 凭据必须注入该步骤;凭据缺失时 electron-builder 只 warn 后静默跳过、不报错,兜底断言见第 4 步的最后一条。预发布档走 `pnpm dist:mac`,以 `-c.mac.notarize=false` 显式关闭。
+1. Before packaging, the job fails if `CSC_LINK` is missing (every tier) or, on the release path, if any of the three Apple credentials is missing.
+2. `dist:mac:release` runs one electron-builder call with built-in notarization off: each app is signed with Developer ID, notarized and stapled by the afterSign hook (notarytool, our own checks), and its DMG is then built from it and signed in the same call. The release build and the hook refuse to run without all three credentials; the last check of step 4 still asserts the app inside each DMG carries its ticket.
 3. 公证脚本严格识别同一产品版本的三个预期 DMG,缺失、重复或出现未知架构均失败。
 4. 每个 DMG 串行执行:
    - `hdiutil verify`
@@ -32,17 +31,17 @@
    - 再次 `hdiutil verify`,验证 staple 后的最终文件
    - `spctl --assess --type open --context context:primary-signature`
    - 只读挂载,检查 `Transfer.app` 并执行 `codesign --verify --deep --strict`
-   - 对挂载点内的 `Transfer.app` 执行 `xcrun stapler validate`,断言它**自带**公证票据。这是第 2 步内置公证的验收点:凭据漏配、内置公证被误关、`@electron/notarize` 静默失败,都只能在这里被发现——`spctl --assess` 联网时会在线查票成功,分辨不出票据有没有装订上
+   - 对挂载点内的 `Transfer.app` 执行 `xcrun stapler validate`,断言它**自带**公证票据。This is the acceptance check for step 2's app notarization: a DMG built from an app that was never stapled (the step skipped, or the DMG built from a different app) is caught only here — `spctl --assess` succeeds online by looking the ticket up, so it cannot tell whether one is stapled
    - 验证失败时仍卸载本轮镜像;普通卸载失败则用 `-force` 兜底,清理错误不覆盖原始验证错误
 5. 三个 DMG 全部通过后,才上传 Actions artifact 和 GitHub Release。
 6. `sync` job 仅对正式版执行,下载 Windows/macOS artifact,生成 `latest.json` 并上传 R2。
 
-### 预发布与手动运行
+### Prerelease and manual runs
 
-1. 有 Developer ID 证书时仅签名并生成三个 DMG;无证书时保留现有未签名 artifact 行为。
-2. 普通手动运行不运行公证脚本;`verify_formal_macos=true` 的手动运行使用正式版凭据和完整公证门禁。
-3. tag 预发布上传 Actions artifact 和 GitHub Pre-release;两种手动运行都只保留 Actions artifact,不创建 Release。
-4. `sync` job 不运行,因此不上传 R2、不覆盖 `latest.json`。
+1. A prerelease tag runs the same steps 1–5 as a formal release, then publishes to GitHub Pre-release.
+2. A manual run with `verify_formal_macos=true` runs the same steps 1–4 and keeps only an Actions artifact.
+3. A manual run without it runs `dist:mac:local`: signed with Developer ID, nothing submitted to Apple, Actions artifact only. A missing certificate still fails it.
+4. None of these runs the `sync` job, so R2 and `latest.json` are untouched.
 
 ## 用户操作序列与失败模式
 
@@ -59,10 +58,10 @@
 - GitHub artifact/Release 上传失败:macOS job 失败;R2 `sync` 因 `needs` 不运行。
 - R2 上传失败:GitHub Release 已存在;安装包先于 `latest.json` 上传,重跑 `sync` 可恢复。
 
-### 发布者推预发布 tag
+### Publisher pushes a prerelease tag
 
-- 不等待 Apple 公证,仍发布 GitHub Pre-release。
-- `sync` job 条件为 false,不下载 artifact、不生成或上传 R2 `latest.json`。
+- Waits for Apple like a formal release and fails the same way (all cases above); a passing run publishes to GitHub Pre-release.
+- The `sync` job's condition is false: no artifact download, no R2 upload, no `latest.json`.
 
 ### 用户下载安装
 

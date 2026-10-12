@@ -14,10 +14,9 @@
     "test": "NODE_OPTIONS=\"--experimental-sqlite --no-warnings\" vitest run",
     "test:watch": "NODE_OPTIONS=\"--experimental-sqlite --no-warnings\" vitest",
     "e2e": "electron-vite build && playwright test",
-    "dist:mac": "electron-vite build && electron-builder --mac --publish never -c.mac.notarize=false",
-    "dist:mac:package-signed": "electron-vite build && electron-builder --mac --publish never",
-    "notarize:mac:dmgs": "node build/notarize-dmgs.cjs release/*/*.dmg",
-    "dist:mac:sign": "pnpm run dist:mac:package-signed && pnpm run notarize:mac:dmgs",
+    "mac:notarize-dmg": "node build/notarize-dmgs.cjs",
+    "dist:mac:local": "node build/mac-packaging.cjs local",
+    "dist:mac:release": "node build/mac-packaging.cjs release && pnpm run mac:notarize-dmg",
     "dist:win": "electron-vite build && electron-builder --win --publish never",
     "dist:mas:dev": "electron-vite build && electron-builder --mac mas-dev --publish never",
     "dist:mas": "electron-vite build && electron-builder --mac mas --universal --publish never",
@@ -35,7 +34,8 @@
     "electron-vite": "^2.3.0",
     "typescript": "^5.7.2",
     "vite": "^5.4.11",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "yaml": "^2.9.1"
   },
   "dependencies": {
     "fastify": "^5.1.0",

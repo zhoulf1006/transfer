@@ -21,7 +21,7 @@
 | [0009](0009-overlay-persistent-not-recreated.md) | overlay 常驻复用,不重建 | 已接受 |
 | [0010](0010-mac-three-arch-plus-locale-prune.md) | mac 三架构全打 + locale 裁剪 | 已接受 |
 | [0011](0011-remove-gitee-mirror.md) | 移除 Gitee,下载源 R2 主 + GitHub 兜底 | 已接受 |
-| [0012](0012-notarization-gate-fail-closed.md) | 正式版公证门禁 fail-closed | 已接受 |
+| [0012](0012-notarization-gate-fail-closed.md) | 正式版公证门禁 fail-closed | Superseded by [ADR-0023](0023-notarize-every-published-mac-build.md) |
 | [0013](0013-docs-lifecycle-by-rot-risk.md) | 文档体系按腐烂速度分类(本体系的元决策) | 已接受(第 3 项经 [ADR-0017](0017-spec-is-persistent-not-scratch.md)、[ADR-0019](0019-workings-replace-scratch.md) 两次修订) |
 | [0014](0014-prototypes-as-persistent-asset.md) | 原型目录 docs/prototypes/ 作为持久资产保留 | 已接受 |
 | [0015](0015-ops-runbooks-as-fifth-doc-class.md) | 运维手册作为第五类文档,就地更新 | 已接受 |
@@ -32,3 +32,4 @@
 | [0020](0020-upload-idle-timeout-not-total.md) | 传输超时改空闲语义(不限总时长)+ 流式 sha256,解掉能传多大受内存与带宽限制的问题 | 已接受 |
 | [0021](0021-schema-migration-by-declared-columns.md) | 表结构迁移用列声明单一事实源 + 按需补列,不引版本号;新增列必须可空 | 已接受 |
 | [0022](0022-receive-dir-user-selectable.md) | 接收文件夹可由用户选定;失效时自动退回默认且**不保留原路径**;展示路径解符号链接、落盘不解 | 已接受 |
+| [0023](0023-notarize-every-published-mac-build.md) | Notarize every published macOS build (prereleases included); local packages are signed only; no certificate, no package | Accepted |

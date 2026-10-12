@@ -60,22 +60,18 @@ mac:
   # locale 码按磁盘 .lproj 名写(下划线,如 zh_CN 非 zh-CN),否则匹配不上被误删。三个架构对称裁剪,不破坏 universal 合并。
   electronLanguages: [en, en_GB, zh_CN]
   icon: build/icon.icns       # 应用图标(紫底 + 白色纸飞机,主色 #8a67ab)
-  # 加固运行时 + entitlements(签名时生效;Electron/V8 加固运行时必需)。
-  # CI:mac job 用 CSC_IDENTITY_AUTO_DISCOVERY:false → 无签名身份 → electron-builder 跳过签名,
-  # 这些字段对未签名构建无副作用。本地 pnpm dist:mac:钥匙串有 Developer ID → 自动签名。
+  # Hardened runtime + entitlements (applied when signing; required by Electron/V8 under the hardened runtime).
+  # Every macOS package is signed with Developer ID: packaging fails when there is no certificate
+  # (docs/specs/mac-distribution.md), so there is no unsigned build for these fields to be inert on.
   hardenedRuntime: true                       # 公证前提:启用加固运行时
   gatekeeperAssess: false                      # 打包时不本地跑 Gatekeeper 评估(交给公证)
   entitlements: build/entitlements.mac.plist   # Electron/V8 加固运行时必需
   entitlementsInherit: build/entitlements.mac.plist
-  # 内置公证:签完 .app、**打 DMG 之前**提交 Apple 并 `stapler staple` 到 .app 上
-  # (app-builder-lib 的 notarizeIfProvided → @electron/notarize)。
-  # 这一步不能省成"只公证最终 DMG":staple 到 DMG 的票据随 DMG 一起被丢掉,用户把 app 拖进
-  # 「应用程序」后它身上没有票据,首次启动 Gatekeeper 只能联网查,断网即判"无法验证"。
-  # 两处都要钉:app 的票据管"拖出来之后",DMG 的票据(build/notarize-dmgs.cjs)管"打开 DMG 时"。
-  # 凭据缺失时 electron-builder 只 warn 后静默跳过,不报错 —— 兜底断言在 notarize-dmgs.cjs
-  # 里(挂载 DMG 后对内部 .app 跑 stapler validate),漏配凭据会在那里失败。
-  # 预发布档走 `pnpm dist:mac`,用 -c.mac.notarize=false 显式关掉(只签名不公证)。
-  notarize: true
+  # Built-in notarization stays off. In release packaging the .app is notarized and stapled by our own code in the
+  # afterSign hook (build/mac-packaging.cjs), before its DMG is built in the same call. Left on, electron-builder
+  # would submit whenever Apple credentials are loaded, including during local packaging, and would only warn when
+  # they are missing. The packaging script also passes -c.mac.notarize=false.
+  notarize: false
   # ⚠️ **extendInfo 必须写在 mac 下。写进 mas 块不生效,且不报错、无警告。**
   # app-builder-lib 26.15.3 的 macPackager 在同一个函数里:版本号读的是合并过 config.mas 的
   # activeOpts,而 extendInfo 读的是**未合并**的 platformSpecificBuildOptions(即 config.mac)。
