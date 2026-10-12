@@ -56,7 +56,7 @@ mac:
       arch: [universal, arm64, x64]
   # 裁掉 Chromium 自带的多余 locale.pak(55 个语系→只留这 3 个,省 ~40M)。裁的是浏览器 UI 串
   # (右键菜单/文件对话框),与用户输入/传输的日文法文内容无关(那些走 icudtl.dat+系统字体,均保留)。
-  # 版本门槛:electron-builder <26 在 mac 上此选项静默失效(#9774);本项目 26.15.3 已含修复。
+  # 版本门槛:electron-builder <26 在 mac 上此选项静默失效(#9774);本项目用 26.x(见 package.json),已含修复。
   # locale 码按磁盘 .lproj 名写(下划线,如 zh_CN 非 zh-CN),否则匹配不上被误删。三个架构对称裁剪,不破坏 universal 合并。
   electronLanguages: [en, en_GB, zh_CN]
   icon: build/icon.icns       # 应用图标(紫底 + 白色纸飞机,主色 #8a67ab)
