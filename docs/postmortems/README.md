@@ -38,3 +38,5 @@
 | [scroll-anchored-button.md](scroll-anchored-button.md) | 浮动按钮三连坑:absolute 在滚动容器里跟着内容滚、flex column 把它压成椭圆、React 简写/长写混用清空边框 |
 | [cdp-verification-false-greens.md](cdp-verification-false-greens.md) | 用 CDP 验证渲染行为的四种假绿:窗口被遮挡不派发 scroll、合成事件不触发 :hover、过渡期读到旧值、拿"元素存在"冒充"看得见" |
 | [test-timing-under-load.md](test-timing-under-load.md) | Tests red only under full-suite load: fresh multicast sockets' first datagram arrives late, CPU-bound tests outgrow the 5 s default, per-chunk `setTimeout` throttles drift; includes the measurement method and two refuted hypotheses |
+| [exif-orientation-ignored.md](exif-orientation-ignored.md) | Phone photos showed sideways in thumbnails: nativeImage ignores the EXIF orientation that the full-size view's `<img>` applies; how to measure it, and why `sips -g orientation` is no check |
+| [playwright-contextmenu-no-coordinates.md](playwright-contextmenu-no-coordinates.md) | Playwright's `dispatchEvent('contextmenu')` makes a plain Event without clientX/Y, so a menu opens at no position while every position-blind test stays green |

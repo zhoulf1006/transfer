@@ -76,6 +76,7 @@ _Avoid_: "每次打开重新加载"——错误假设,曾因此出 bug。
   ⚠️ 别指望 SQLite 替你把关:实测"NOT NULL 且无默认值"**只在有数据的表上才被拒绝**,空表照样能加 —— 开发时用新建库永远碰不到,只有老用户升级才炸。
 - **传输耗时的起点只在内存,不落库**:从"开始"到"终态"必在同一次运行内(重启则传输中断,那条消息会被标 expired,根本走不到终态)。起点按方向取——发送方是消息创建时刻(点发送即开始,含发送前算摘要那段),接收方是转 accepted 那一刻(此前是用户自己在犹豫,不算传输)。**拿不到起点时耗时为 null,界面据此整个不显示**,不得退化成 0。
 - **消息的 `status` / `error_reason` 是无约束 TEXT 列**:`rowToMessage` 直接强转成联合类型,**联合外的值能真的到达消费端**(用户装过含新状态的版本、写了库,再降级回旧版)。故任何读 status/errorReason 的新代码都必须对联合外的值优雅降级:集合归属判断(终态/传输中/待用户决定)写成覆盖每个成员的 `Record` 查表并把结果收敛成布尔——落在联合外答"否";映射查表必须带兜底,否则返回 `undefined` 会让界面渲染成空白。**别用 `Set.has` 或 `===` 串联**:它们对未知成员一律答 false 且新增成员时照常编译,漏改不会被发现。
+- **nativeImage ignores the EXIF orientation; the renderer's `<img>` applies it.** A phone photo stored sideways with an orientation tag decodes sideways in the main process but shows upright in the full-size view. So every main-process path that shows or copies an image (thumbnail, copy to clipboard, anything new) must turn the decoded bitmap by the tag — through the orientation helpers next to the chat code — or it disagrees with the full-size view. Measured on macOS; see docs/postmortems/exif-orientation-ignored.md.
 - **`Infinity` 绝不进 settings.json**:`JSON.stringify(Infinity)` 得 `"null"` 会损坏持久化;`0 → Infinity` 的换算只存在于运行时。
 - **macOS 文件名大小写不敏感**:`transfer` 与 `Transfer` 同目录,故 dev 改名无缝、不需迁移;Win/Linux 大小写敏感,若遇到才需迁移。
 
@@ -99,6 +100,8 @@ _Avoid_: "每次打开重新加载"——错误假设,曾因此出 bug。
 - **多播 announce 是唯一会打扰旁人的启动动作,端口不是**:HTTP 端口有回退(53317 起向上试),两实例本就能并存;而 announce 会让本实例出现在同网所有设备的列表里。**判据不是"能不能跑起来",而是"用户实例正在运行时跑它,用户或同网的他人能否察觉"**——凡新增启动期动作,先按这条判一遍。
 - **临时 userData 起的实例带全新指纹**:身份随 userData 走,所以每次用新临时目录启动都是一台**陌生新设备**,不会与上一次合并;退出后按 `offlineKeepMinutes`(默认 60)滞留在别人列表里。推论:自动化若开着 announce 反复起停,会在用户设备列表里累积互不覆盖的幽灵条目——测试实例必须关断 announce。
 - **传输链路不依赖发现**:对端登记有定向 `POST /register` 一路(ADR-0005),知道 address:port 即可建立传输。故"关掉发现"不妨碍测收发,收发已在集成层覆盖;被挡住的只有多播发现自身,而它无法既测又不打扰。
+- **A quiet instance can still open a chat**: seed the message store, then send the renderer a device-list update from the main process on the product's own channel — the device only opens the chat, nothing talks to it, and nothing is announced on the LAN (`e2e/image-copy.spec.ts`).
+- **The quiet window takes no real pointer input, so mouse events are dispatched in the page — build them as `MouseEvent`s there.** Playwright's `dispatchEvent('contextmenu')` creates a plain `Event` without `clientX/clientY`; a menu then opens at no position while every position-blind assertion stays green (docs/postmortems/playwright-contextmenu-no-coordinates.md).
 - **窗口不显示 ≠ 取不到渲染**:QUIET 实例的窗口从不 `show()`,但 Playwright 仍能对它 `page.screenshot()` 拿到**真实渲染**——渲染由 renderer 进程完成,不依赖窗口是否上屏。故"改了外观要看渲染结果"(界面规范的验收要求)与"跑测试不打扰用户"两者不冲突,**不要为了截图去显示窗口**。反过来也要记住:`toBeVisible()` 判的是 CSS/布局可见性,不是"用户眼睛能看见",隐藏窗口下它照样为真。
 
 **仓库边界**
