@@ -1026,7 +1026,7 @@ function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
   // 拿不到缩略图 → 回退文件行
   if (thumb === null) {
     return (
-      <div style={S.fileLine}>
+      <div style={S.fileLine} data-testid="image-file-row">
         <div style={S.fileIcon}>{fileTypeIcon(msg.fileName)}</div>
         <div style={{ minWidth: 0 }}>
           <div style={S.fileName}>{msg.fileName}</div>

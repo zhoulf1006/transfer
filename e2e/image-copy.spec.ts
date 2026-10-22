@@ -94,14 +94,17 @@ async function setSentinel(s: string): Promise<void> {
   await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), s)
 }
 
-/** Lets a scroll finish before a menu opens: the scroll event that closes menus fires a frame later */
-async function afterScroll(): Promise<void> {
+/**
+ * Gives the renderer two animation frames: lets a scroll finish before a menu opens (the scroll event
+ * that closes menus fires a frame later), and lets anything a copy would show get rendered
+ */
+async function twoFrames(): Promise<void> {
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
 }
 
 async function scrollTo(alt: string, block: ScrollLogicalPosition): Promise<void> {
   await page.locator(`img[alt="${alt}"]`).evaluate((el, b) => el.scrollIntoView({ block: b }), block)
-  await afterScroll()
+  await twoFrames()
 }
 
 /** Right-click a thumbnail where a pointer would be, at its centre unless a position is given */
@@ -263,6 +266,8 @@ test.describe.serial('image copy', () => {
     expect(c.text, 'no text alongside the image').toBe('')
     expect(c.formats.length).toBeGreaterThan(0)
     expect(c.formats.filter((f) => !f.startsWith('image/')), 'image formats only, no file reference').toEqual([])
+    // after the renderer has had the chance to show something; text-free feedback would not be seen here
+    await twoFrames()
     expect(await page.evaluate(() => document.body.innerText), 'no message or toast appeared').toBe(before)
   })
 
@@ -382,9 +387,12 @@ test.describe.serial('image copy', () => {
   })
 
   test('an image whose file never decoded shows the file row and has no image menu', async () => {
-    const name = page.getByText('broken.png', { exact: true })
-    // the file row carries a file-type icon; the loading placeholder shows the name without one
-    await expect(page.locator('div', { has: name }).locator('svg').first()).toBeVisible()
+    // the image fallback's own file row (the loading placeholder shows the name too, in no such row)
+    const row = page.getByTestId('image-file-row').filter({ hasText: 'broken.png' })
+    await expect(row).toBeVisible()
+    const name = row.getByText('broken.png', { exact: true })
+    await expect(name).toBeVisible()
+    await expect(row.locator('svg'), 'its file-type icon').toHaveCount(1)
     await expect(page.locator('img[alt="broken.png"]')).toHaveCount(0)
     await name.evaluate((el) =>
       el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 50, clientY: 50 }))
