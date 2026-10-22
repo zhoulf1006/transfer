@@ -55,6 +55,8 @@ const api = {
   /** 图片另存为(弹对话框复制原图到选定位置),返回保存路径或 null(取消) */
   saveImageAs: (messageId: string): Promise<string | null> =>
     ipcRenderer.invoke(CMD.saveImageAs, messageId),
+  /** Copy the image to the clipboard (upright, pixels only); no result — copying gives no feedback */
+  copyImage: (messageId: string): Promise<void> => ipcRenderer.invoke(CMD.copyImage, messageId),
   /** 取原图 dataURL(居中弹层看大图);拿不到返回 null */
   getImageDataUrl: (messageId: string): Promise<string | null> =>
     ipcRenderer.invoke(CMD.getImageDataUrl, messageId),

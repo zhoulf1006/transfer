@@ -2,7 +2,18 @@ import { join, basename, extname } from 'node:path'
 import { copyFile, readFile } from 'node:fs/promises'
 import { existsSync, mkdirSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, nativeTheme, protocol } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  shell,
+  clipboard,
+  nativeImage,
+  nativeTheme,
+  protocol,
+  type NativeImage
+} from 'electron'
 import {
   CMD,
   EVT,
@@ -29,6 +40,7 @@ import { SettingsStore } from './settings'
 import { ScreenshotService, persistAndSend } from './screenshot-service'
 import { APP_HOST, registerAppProtocol } from './app-protocol'
 import { t, setMainLang, resolveSystemEffective } from './i18n'
+import { orientBitmap, readJpegOrientation } from './image-orientation'
 import {
   resolveReceiveDir,
   chooseDir,
@@ -100,6 +112,30 @@ function imageMime(path: string): string {
     '.svg': 'image/svg+xml'
   }
   return map[ext] ?? 'image/png'
+}
+
+/**
+ * Decodes an image file the way the full-size view shows it: a JPEG is turned by its EXIF orientation,
+ * which nativeImage ignores (see image-orientation.ts). Null when the file can't be read or decoded —
+ * nativeImage reads PNG and JPEG only.
+ * With `fitWidth`, the result is downscaled to that width — before turning, which keeps it cheap; a
+ * quarter turn (orientations 5–8) swaps the sides, so the stored image is fitted by its height.
+ */
+async function decodeUpright(path: string, fitWidth?: number): Promise<NativeImage | null> {
+  let bytes: Buffer
+  try {
+    bytes = await readFile(path)
+  } catch {
+    return null
+  }
+  let img = nativeImage.createFromBuffer(bytes)
+  if (img.isEmpty()) return null
+  const orientation = readJpegOrientation(bytes)
+  if (fitWidth) img = img.resize(orientation >= 5 ? { height: fitWidth } : { width: fitWidth })
+  if (orientation === 1) return img
+  const { width, height } = img.getSize()
+  const out = orientBitmap(img.toBitmap(), width, height, orientation)
+  return nativeImage.createFromBitmap(out.data, { width: out.width, height: out.height })
 }
 
 // 单实例锁:一次只运行一个实例,第二个实例聚焦已有窗后退出。
@@ -361,13 +397,13 @@ function registerIpc(): void {
     if (msg?.filePath) shell.showItemInFolder(msg.filePath)
   })
   // 图片缩略图:nativeImage 生成小图 dataURL(仅 PNG/JPEG 可靠;GIF/WEBP/非图片返回 null → UI 回退图标)
-  ipcMain.handle(CMD.getThumbnail, (_e, messageId: string): string | null => {
+  ipcMain.handle(CMD.getThumbnail, async (_e, messageId: string): Promise<string | null> => {
     const msg = store?.get(messageId)
     if (!msg?.filePath) return null
     try {
-      const img = nativeImage.createFromPath(msg.filePath)
-      if (img.isEmpty()) return null // 不支持的格式/读失败
-      return img.resize({ width: THUMB_WIDTH }).toDataURL()
+      // upright like the full-size view (spec REQ-001); null = unsupported format or unreadable
+      const img = await decodeUpright(msg.filePath, THUMB_WIDTH)
+      return img ? img.toDataURL() : null
     } catch {
       return null
     }
@@ -380,6 +416,14 @@ function registerIpc(): void {
     if (r.canceled || !r.filePath) return null
     await copyFile(msg.filePath, r.filePath)
     return r.filePath
+  })
+  // Copy an image to the clipboard as pixels only (no file reference), upright. A file that is gone or
+  // no longer decodes leaves the clipboard as it was; there is no feedback either way (spec US-001).
+  ipcMain.handle(CMD.copyImage, async (_e, messageId: string): Promise<void> => {
+    const msg = store?.get(messageId)
+    if (!msg?.filePath) return
+    const img = await decodeUpright(msg.filePath)
+    if (img) clipboard.writeImage(img)
   })
   // 取原图 dataURL(app 内居中弹层看大图):fs 读原文件按扩展名拼 mime,支持所有图片格式。
   ipcMain.handle(CMD.getImageDataUrl, async (_e, messageId: string): Promise<string | null> => {

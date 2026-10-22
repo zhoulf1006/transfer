@@ -77,7 +77,8 @@ const zh = {
   'downloads.from': '来自 {alias}',
 
   // image:图片消息 / 预览
-  'image.thumbTitle': '点击查看原图 · 右键保存',
+  'image.thumbTitle': '点击查看原图 · 右键复制或保存',
+  'image.copyImage': '复制图片',
   'image.saveImage': '保存图片',
   'image.openWithSystem': '用系统程序打开',
 
@@ -248,7 +249,8 @@ const en: Record<TKey, string> = {
   'downloads.empty': 'No files received yet.',
   'downloads.from': 'From {alias}',
 
-  'image.thumbTitle': 'Click to view · Right-click to save',
+  'image.thumbTitle': 'Click to view · Right-click to copy or save',
+  'image.copyImage': 'Copy Image',
   'image.saveImage': 'Save Image',
   'image.openWithSystem': 'Open with System App',
 
