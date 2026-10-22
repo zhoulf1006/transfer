@@ -1,0 +1,37 @@
+client-framework = "electron"
+working-language = "en"
+
+[i18n]
+enabled = true
+source = "src/shared/i18n"
+enforced-by = ["pnpm test"]
+
+[enumeration-wording-gate]
+enabled = false
+
+[lint]
+enabled = false
+
+[e2e-suite]
+enabled = true
+source = "playwright.config.ts"
+enforced-by = ["pnpm e2e"]
+
+[mutation-testing]
+enabled = false
+
+[theming]
+enabled = true
+source = ["src/renderer/src/theme.css", "site/src/styles/global.css"]
+enforced-by = []
+
+[macos-distribution]
+enabled = true
+source = "docs/ops/mac-signing.md"
+enforced-by = ["pnpm dist:mac:release"]
+
+[macos-distribution.profiles.local]
+command = "pnpm dist:mac:local"
+
+[macos-distribution.profiles.release]
+command = "pnpm dist:mac:release"
