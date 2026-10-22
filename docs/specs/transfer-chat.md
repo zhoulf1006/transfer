@@ -34,9 +34,35 @@
 - 作为任一方,我关掉 app 再打开,聊天记录还在。
 - 作为任一方,我传一个很大的文件,只要网络没断,它就应该传完——慢只是慢。
 
+### transfer-chat::US-001 Copy a chat image to paste it elsewhere
+
+As either party, I right-click an image in the conversation — one I received or one I sent — and copy it, so I can paste it into another app without saving it to a file first.
+
+- transfer-chat::US-001/AC-01: Right-clicking the thumbnail of an image message, received or sent, opens a menu whose items are, in this order: 复制图片 / 保存图片 / 用系统程序打开 (Copy Image / Save Image / Open with System App).
+- transfer-chat::US-001/AC-02: Choosing 复制图片 closes the menu and puts the image on the system clipboard as image pixels only, with no file reference; pasting into an app that accepts images inserts the image.
+- transfer-chat::US-001/AC-03: Copying shows no feedback, on success or on failure: the menu closes and nothing else appears.
+- transfer-chat::US-001/AC-04: When the original file can no longer be read or decoded at the moment of copying (deleted, moved, or replaced by something undecodable after its thumbnail appeared), the clipboard keeps its previous content untouched.
+- transfer-chat::US-001/AC-05: A JPEG whose EXIF orientation is one of the seven non-default values is copied rotated and/or mirrored as that value specifies, so it matches the full-size view; a JPEG with no orientation, the default one, an unrecognised value or unreadable EXIF, and every PNG, is copied as its pixels are stored.
+
+## Functional Requirements
+
+### transfer-chat::REQ-001 Thumbnails follow the EXIF orientation
+
+- transfer-chat::REQ-001/AC-01: A JPEG with a non-default EXIF orientation shows its thumbnail in the orientation the full-size view shows (it used to show as stored, e.g. sideways), generated at the same width as every other thumbnail — a photo turned upright by a quarter turn is not narrower than one that is not; every other image's thumbnail is unchanged.
+- transfer-chat::REQ-001/AC-02: Messages received before the upgrade get the corrected thumbnail the next time they are displayed; nothing is migrated or stored.
+
+### transfer-chat::REQ-002 The image menu stays inside the window
+
+- transfer-chat::REQ-002/AC-01: When the menu, opened at the pointer, would cross the window's right edge it opens to the left of the pointer instead; when it would cross the bottom edge it opens above the pointer.
+- transfer-chat::REQ-002/AC-02: Wherever the pointer is, the whole menu stays inside the window with a 4px margin, at its full width (no item wrapped or narrowed).
+
+### transfer-chat::REQ-003 Thumbnail tooltip (direct acceptance)
+
+The thumbnail's tooltip reads 点击查看原图 · 右键复制或保存 / Click to view · Right-click to copy or save.
+
 ## 失败模式与边界穷举
 
-标注约定:**〔测〕**=有自动化用例驱动;**〔门〕**=由门禁/护栏守住;**〔缺〕**=已知未覆盖,理由见「已知缺口」。
+标注约定:**〔测〕**=有自动化用例驱动;**〔门〕**=由门禁/护栏守住;**〔缺〕**=已知未覆盖,理由见「已知缺口」;**〔人工〕**=manual check with a reviewable record (screenshot or measurement).
 
 ### A. 会话协商
 
@@ -148,7 +174,49 @@
 | 状态是无约束文本列 | 读到**联合类型之外**的值(用户装过新版本写了库、再降级回旧版)必须优雅降级:集合归属写成覆盖每个成员的查表并收敛成布尔,映射查表要带兜底 | 〔测〕 |
 | 应用退出 | 挂起中的确认全部拒绝 + 库里待定消息标记过期,否则发送方要等到协议默认超时(以天计) | 〔测〕 |
 
+### I. Image context menu and copy
+
+| Boundary | Expected behaviour | Coverage |
+|---|---|---|
+| Original deleted or moved after its thumbnail appeared, then 复制图片 | The clipboard keeps its previous content; the menu closes; no message (transfer-chat::US-001/AC-04) | 〔测〕 |
+| Original replaced by something undecodable (another format, not an image) | Same as deleted: clipboard untouched (transfer-chat::US-001/AC-04) | 〔测〕 |
+| Original replaced by a different image at the same path | That image is copied: copying reads the file at the moment of copying, not the thumbnail on screen | 〔测〕 |
+| Sent image whose original the user later moved or deleted | Sent files point at the user's own path, so this is the deleted case above. Sent screenshots and pasted images point at the app's internal copy, which is kept, so they still copy | 〔测〕 |
+| Which images have the menu at all | Only those the platform image decoder reads, measured 2026-10-22 on macOS: PNG and JPEG. BMP, GIF, TIFF, HEIC and SVG are not decoded (WebP not sampled); such messages show the file row, which has no image menu, so copy is unreachable for them — unchanged | 〔人工〕 |
+| EXIF orientation 2–8 (mirror, 180°, 90° either way, transpose, transverse) | Copied and thumbnailed as the value specifies (transfer-chat::US-001/AC-05, transfer-chat::REQ-001/AC-01) | 〔测〕 |
+| No EXIF, orientation 1, 0 or above 8, truncated or malformed EXIF | Treated as stored; never an error | 〔测〕 |
+| Orientation recorded outside JPEG EXIF (XMP only, a PNG `eXIf` chunk) | Not honoured: copied and thumbnailed as stored. Rare in practice; if the full-size view honours it, copy and thumbnail differ from that view | 〔缺〕 |
+| Very large photo (tens of megapixels) | Copies completely; decoding and turning the full-resolution bitmap keeps the main process busy for up to a few hundred ms. Source: a cost stated in the orientation option the user chose, 2026-10-22; not confirmed separately | 〔人工〕 |
+| Upright portrait taller than 4:3 (e.g. 9:16) | The thumbnail is generated 180 wide and shown at most 240 high, scaled down narrower — the existing display limits | 〔人工〕 |
+| Image still waiting, transferring, rejected or failed | No thumbnail yet (the file row shows), so no image menu — unchanged | 〔人工〕 |
+| Right-click before the thumbnail has loaded | The loading placeholder has no menu — unchanged | 〔人工〕 |
+| Esc while the menu is open | Not handled: the menu stays until a click or a scroll — unchanged | 〔人工〕 |
+| The app quits after copying | The image stays on the clipboard: the platform clipboard holds the data, not the app | 〔人工〕 |
+| Image with transparency | Kept as far as the platform clipboard image allows; how the target app draws transparent areas is up to that app | 〔人工〕 |
+| Pointer near the window's right or bottom edge | The menu opens to the left of / above the pointer and stays whole inside the window (transfer-chat::REQ-002). The smallest window (640×600) is always larger than the menu | 〔测〕 |
+| Menu open, then the stream scrolls or the user clicks elsewhere | The menu closes — unchanged | 〔人工〕 |
+| Right-click another image while the menu is open, or the same image again | One menu stays open, at the new pointer: any right-click closes the open menu first. (Before 2026-10-22 a second image's right-click left two menus open; fixed with this feature at the user's decision) | 〔测〕 |
+| Language switched while the menu is open | Cannot happen: the language is changed in Settings, and the click that opens Settings closes the menu | — |
+| Window resized while the menu is open | The menu keeps its place; any click or scroll closes it — unchanged | 〔人工〕 |
+| Upgrading with earlier image messages | Their thumbnails are regenerated on display and show upright (transfer-chat::REQ-001/AC-02) | 〔人工〕 |
+| 保存图片 / 用系统程序打开 on a photo with an EXIF orientation | Unchanged: saving copies the original bytes (EXIF included), opening hands the file to the system | 〔人工〕 |
+| Right-click in the full-size view | Nothing happens — no menu there (see 明确不做的) | 〔人工〕 |
+
+## Implementation Decisions
+
+Image copy and orientation (transfer-chat::US-001, transfer-chat::REQ-001 to REQ-003):
+
+- **Copying runs in the main process behind a new command that takes a message id.** It looks up the stored file path, decodes the original with the platform image decoder — the same one the thumbnail uses, so every image that shows the menu decodes — and writes the result to the clipboard as an image only, through the same clipboard call as the screenshot's copy-to-clipboard exit. An empty decode returns before the clipboard is touched. The command returns nothing the interface uses: there is no feedback.
+- **The platform decoder ignores EXIF orientation** (measured 2026-10-22 on Electron 35: a 200×100 JPEG tagged orientation 6 decodes as 200×100, while the full-size view's `<img>` shows it 100×200). So the main process reads the orientation from the JPEG's EXIF itself and turns the decoded bitmap accordingly, using two pure functions: one that reads the orientation from the file bytes (both byte orders; anything unreadable counts as the default) and one that rotates or mirrors a raw bitmap. No new dependency.
+- **The thumbnail uses the same correction, applied after downscaling**, so its extra cost stays small. For the four orientations that turn the image a quarter turn, the stored image is downscaled to the thumbnail width along its height, so the upright result has the usual thumbnail width (transfer-chat::REQ-001/AC-01).
+- **The menu is placed by a pure function** of the pointer position, the menu's measured size and the window size: flip left / up when crossing the right / bottom edge, then clamp to a 4px margin. The menu is measured where its width is not constrained, so it never wraps before being placed.
+- **Copy text**: one new dictionary entry for the menu item and the reworded tooltip, each in zh and en.
+
 ## 测试决策
+
+- **Image copy is tested end to end in a real Electron instance, through the menu** (seam chosen by the user, 2026-10-22). Quiet test instances run no discovery, so the test opens a chat itself: the app runs on a temporary user-data directory whose message store is seeded with image messages pointing at fixture files the test generates (a PNG, and a JPEG whose EXIF is shaped like a real phone photo's but tagged with a non-default orientation), and the main process then sends the renderer a device-list update — the channel discovery uses in the product — naming the peer of those messages. The test opens that chat, right-clicks a thumbnail, chooses 复制图片 and reads the system clipboard back from the main process: the image's size and orientation for a successful copy, a sentinel written beforehand still in place for a failing one. The same setup checks the menu's items and order, the tooltip, the edge flip, and the thumbnail's orientation and width. The hidden test window takes no real pointer input, so right-clicks and clicks are dispatched as DOM events.
+  **Cost accepted by the user**: run on a developer's machine, these tests overwrite the real system clipboard.
+- **Pure functions get unit tests**, as the existing renderer and main-process pure modules do: every orientation value plus malformed and truncated EXIF, the bitmap turn for each orientation, and the menu placement (flip and clamp at each edge).
 
 - **协商与传输的边界一律用真实的 HTTPS 服务 + 真实的流来驱动**,不 mock 自有模块。理由:本模块的失效集中在"两端时序对不上"和"流没走完",两者在 mock 下都不存在。
 - **超时类边界用注入的小阈值 + 真实时钟**,不用假时钟。假时钟测不出背压与缓冲这类真实成因;而阈值是构造参数,缩小它不改变机制。**例外**是纯粹的计时器单元,那里用假时钟,因为它本来就只有时间这一个输入。
@@ -167,6 +235,9 @@
 - **多播报文伪造 / 放大攻击**:属发现层,不在本模块处理。
 - **总时长上限**:选了空闲语义就意味着放弃它;涓流可以让传输无限期挂着(ADR-0020 的代价节)。
 - **不为"传输中用时在走"与"速度的渲染"补端到端测试**(2026-08-22 用户裁定)。两者的计算逻辑有纯函数单测、显示形态有真机渲染核对过;补齐它们需要能驱动渲染层连续多帧的 e2e 基建,投入与收益不成比例。**这是决定,不是遗漏** —— 后来者不必再把它当待办。
+- **A file reference on the clipboard** (so that pasting in Finder or Explorer yields the file): rejected 2026-10-22. Electron has no API for it, each platform would need its own low-level clipboard format, and chat apps that see a file reference may attach a file instead of inserting the image.
+- **Feedback after copying** (a "Copied" toast, or an error on failure): decided against, 2026-10-22. It matches the screenshot's copy exit and the image menu's other two items, which give none either.
+- **An image menu in the full-size view**: not in this round (2026-10-22); right-clicking there does nothing.
 
 ## 已知缺口
 
@@ -180,3 +251,6 @@
 - **大文件计算校验值期间界面无反馈**(50GB 约 40 秒),用户会觉得点了没反应。**部分缓解**:计时从点发送算起,所以那段时间会计入用时——但传输中的用时靠进度帧驱动,而算摘要期间还没有帧,所以那几十秒里数字仍不动。
 
 - **历史 schema 快照只有一条**,靠人在下次改表时记得追加。
+- **The image menu is driven by dispatched DOM events in the end-to-end tests**, not real pointer input (the hidden test window takes none): whether a real pointer reaches the thumbnail — nothing covering it — is checked by rendering, not by the tests.
+- **Orientation outside JPEG EXIF is not honoured** (XMP-only, PNG `eXIf`); see boundary group I.
+- **Whether nativeImage ignores the EXIF orientation on Windows is not measured.** macOS was measured directly and Linux is measured by the CI end-to-end run (its rotated-copy and thumbnail cases would fail if the tag were already applied, since the image would then be turned twice). Windows decodes through the same decoder, but no run has shown it.

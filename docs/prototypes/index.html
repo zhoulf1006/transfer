@@ -1,7 +1,11 @@
 <!doctype html>
-<!-- 原型画廊壳(由 prototype skill 的模板复制而来,不手改;要改壳改 skill 模板后重新复制)。
-     依赖同目录 manifest.js:window.PROTOTYPES = [{module,type,id,name,path,question,run?}] -->
-<html lang="zh-CN">
+<!-- Prototype gallery shell (copied from the prototype skill's template; do not edit by hand — change the skill template and copy it again).
+     Depends on manifest.js in the same directory: window.PROTOTYPES = [{module,type,id,name,path}] (type is ui, logic or candidates),
+     and window.PROTOTYPE_APP = {name, icon}, which app-identity.js puts on the browser tab and this shell
+     puts above the list (see the skill's SKILL.md, general rule 11); and on dimensions.js with
+     demo-dimensions.js, which the settings panel behind the gear in the sidebar header sets (the skill's
+     UI.md, harness clause 5). -->
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Prototypes</title>
@@ -18,7 +22,7 @@
   *{box-sizing:border-box;margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
   body{display:flex;height:100vh;overflow:hidden;background:var(--bg);color:var(--text);font-size:13px}
 
-  /* 侧栏 = Figma 式深色工具面板:固定配色不随系统主题,与被评判的原型内容(app 风格)强区分 */
+  /* Sidebar = a Figma-style dark tool panel: fixed colours that ignore the system theme, clearly set apart from the prototype content (app style) being judged */
   .side{width:240px;flex:none;background:#2c2c2e;color:#e8e8e8;border-right:1px solid #1d1d1f;
     display:flex;flex-direction:column;transition:margin .18s}
   body.fold .side{margin-left:-240px}
@@ -26,6 +30,25 @@
   .s-h b{font-size:13px;color:#fff;letter-spacing:.3px}
   .fold-btn{cursor:pointer;color:#8e8e93;border:0;background:none;font-size:14px}
   .fold-btn:hover{color:#fff}
+  .s-acts{position:relative;display:flex;align-items:center;gap:4px}
+
+  /* Settings panel: the language and light/dark mode every prototype follows. It floats under the gear over
+     the list instead of opening in the sidebar's flow, so opening it moves nothing below it. */
+  .prefs-btn{display:grid;place-items:center;width:24px;height:24px;border:0;border-radius:6px;
+    background:none;color:#8e8e93;cursor:pointer}
+  .prefs-btn:hover,.prefs-btn[aria-expanded="true"]{color:#fff;background:#3a3a3c}
+  .prefs-btn[hidden]{display:none}
+  .prefs{position:absolute;top:calc(100% + 6px);right:0;z-index:10;width:max-content;min-width:180px;max-width:212px;
+    padding:10px 10px 12px;border-radius:8px;background:#242426;border:1px solid #48484a;
+    box-shadow:0 10px 28px rgba(0,0,0,.5)}
+  .prefs[hidden]{display:none}
+  .pref + .pref{margin-top:10px}
+  .pref-l{font-size:10px;color:#8e8e93;font-weight:600;text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+  .opts{display:flex;flex-wrap:wrap;gap:4px}
+  .opt{border:1px solid #48484a;border-radius:5px;background:none;color:#d1d1d6;padding:2px 8px;
+    font-size:11.5px;line-height:1.5;cursor:pointer}
+  .opt:hover{background:#3a3a3c}
+  .opt[aria-pressed="true"]{background:#0d99ff;border-color:#0d99ff;color:#fff;font-weight:600}
   .list{flex:1;overflow:auto;padding:0 8px 14px}
   .grp{font-size:10px;color:#8e8e93;font-weight:600;padding:12px 8px 4px;text-transform:uppercase;letter-spacing:.6px}
   .item{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;color:#d1d1d6}
@@ -34,8 +57,12 @@
   .tag{font-size:10px;border:1px solid #48484a;border-radius:4px;padding:0 5px;color:#8e8e93;flex:none}
   .item.on .tag{border-color:rgba(255,255,255,.55);color:#fff}
 
-  .unfold{position:fixed;top:12px;left:12px;z-index:9;display:none;
-    background:#1b1b1f;color:#fff;border:0;border-radius:999px;padding:8px 14px;cursor:pointer;
+  /* The folded sidebar leaves a small tab stuck to the left edge, covering as little of the prototype as it
+     can. It starts at mid-height, where an app's navigation rail has no icons, and slides up or down along
+     the edge without ever leaving it or the viewport. */
+  .unfold{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:9;display:none;
+    background:#1b1b1f;color:#fff;border:0;border-radius:0 8px 8px 0;padding:5px 9px 5px 7px;
+    font-size:11.5px;line-height:1.3;cursor:pointer;touch-action:none;user-select:none;
     box-shadow:0 4px 16px rgba(0,0,0,.3)}
   body.fold .unfold{display:block}
 
@@ -43,22 +70,32 @@
   iframe{flex:1;border:0;background:var(--bg)}
   .empty{margin:auto;color:var(--text-2);text-align:center}
 </style>
+<script src="manifest.js"></script>
+<script src="app-identity.js"></script>
+<script src="dimensions.js"></script>
+<script src="demo-dimensions.js" data-settings></script>
 </head>
 <body>
   <div class="side">
-    <div class="s-h"><b>Prototypes</b><button class="fold-btn" onclick="fold(true)" title="收起(S)">⟨⟨</button></div>
+    <div class="s-h"><b id="appName">Prototypes</b><div class="s-acts">
+      <button class="prefs-btn" id="prefsBtn" hidden aria-expanded="false" aria-controls="prefs" title="Language and appearance for every prototype"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      <div class="prefs" id="prefs" role="dialog" aria-label="Language and appearance" hidden></div>
+      <button class="fold-btn" onclick="fold(true)" title="Collapse (S)">⟨⟨</button></div></div>
     <div class="list" id="list"></div>
   </div>
-  <button class="unfold" onclick="fold(false)" title="展开(S)">☰ Prototypes</button>
-  <div class="stage" id="stage"><div class="empty">从左侧选择一个原型</div></div>
+  <button class="unfold" id="unfold" title="Expand (S); drag up or down to move">☰ Proto</button>
+  <div class="stage" id="stage"><div class="empty">Select a prototype on the left</div></div>
 
-<script src="manifest.js"></script>
 <script>
   const P = window.PROTOTYPES || [];
+
+  // The app these prototypes belong to, above the list (app-identity.js puts it on the tab)
+  const APP = window.PROTOTYPE_APP;
+  if (APP && APP.name) document.getElementById('appName').textContent = `${APP.name} · Prototypes`;
   const list = document.getElementById('list');
   const stage = document.getElementById('stage');
 
-  // 侧栏:按 module 分组
+  // Sidebar: grouped by module
   const groups = {};
   P.forEach(p => (groups[p.module] ??= []).push(p));
   for (const [mod, items] of Object.entries(groups)) {
@@ -66,11 +103,36 @@
     for (const p of items) {
       const el = document.createElement('div');
       el.className = 'item'; el.dataset.key = key(p);
-      el.innerHTML = `<span class="tag">${p.type === 'logic' ? 'Logic' : 'UI'}</span><span>${p.name}</span>`;
+      el.innerHTML = `<span class="tag">${p.type === 'logic' ? 'Logic' : p.type === 'candidates' ? 'Candidates' : 'UI'}</span><span>${p.name}</span>`;
       el.onclick = () => { location.hash = key(p); };
       list.appendChild(el);
     }
   }
+
+  // Settings panel: the dimensions the registry marks general (the UI language and the light/dark mode),
+  // set once for every prototype. The settings prototype, when the project has one, sets the same stored
+  // values, so a change made there shows here and the other way round.
+  const prefs = document.getElementById('prefs'), prefsBtn = document.getElementById('prefsBtn');
+  const general = window.DemoDimensions ? Object.entries(window.DEMO_DIMENSIONS || {}).filter(([, d]) => d.general) : [];
+  for (const [id, d] of general) {
+    const row = document.createElement('div'); row.className = 'pref';
+    const label = document.createElement('div'); label.className = 'pref-l'; label.textContent = d.label || id;
+    const opts = document.createElement('div'); opts.className = 'opts';
+    for (const v of d.values) {
+      const b = document.createElement('button'); b.className = 'opt'; b.textContent = v; b.dataset.v = v;
+      b.onclick = () => DemoDimensions.set({ [id]: v });
+      opts.appendChild(b);
+    }
+    row.append(label, opts); prefs.appendChild(row);
+    DemoDimensions.on(id, (value) => opts.querySelectorAll('.opt').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === value))));
+  }
+  prefsBtn.hidden = general.length === 0;
+  function openPrefs(v){ prefs.hidden = !v; prefsBtn.setAttribute('aria-expanded', String(v)); }
+  prefsBtn.onclick = () => openPrefs(prefs.hidden);
+  // It stays open while values are picked and closes on a press anywhere else: the shell's own page gets the
+  // pointerdown, a press inside the prototype's iframe only takes focus away from this window
+  addEventListener('pointerdown', (e) => { if (!prefs.hidden && !e.target.closest('#prefs, #prefsBtn')) openPrefs(false) });
+  addEventListener('blur', () => openPrefs(false));
 
   function key(p){ return `${p.module}/${p.id}`; }
   function find(k){ return P.find(p => key(p) === k); }
@@ -78,16 +140,51 @@
   function show(k){
     const p = find(k);
     document.querySelectorAll('.item').forEach(e => e.classList.toggle('on', e.dataset.key === k));
-    if (!p) { stage.innerHTML = '<div class="empty">从左侧选择一个原型</div>'; return; }
-    // 一切条目统一 iframe:UI 是自包含 HTML,Logic 也是自渲染页(问题/图/命令都在页内)
+    if (!p) { stage.innerHTML = '<div class="empty">Select a prototype on the left</div>'; return; }
+    // Every entry is an iframe: UI is self-contained HTML, and Logic is also a self-rendering page (question / diagram / commands all inside)
     stage.innerHTML = `<iframe src="${p.path}"></iframe>`;
   }
 
-  function fold(v){ document.body.classList.toggle('fold', v); try{localStorage.setItem('pg-fold', v?'1':'0')}catch(e){} }
+  function fold(v){ document.body.classList.toggle('fold', v); try{localStorage.setItem('pg-fold', v?'1':'0')}catch(e){} if (v) { openPrefs(false); placeTab() } }
   try{ if(localStorage.getItem('pg-fold')==='1') document.body.classList.add('fold') }catch(e){}
+
+  // The folded tab: a press that does not move expands the sidebar, a vertical drag moves the tab along the
+  // left edge. Its height is remembered and pulled back inside the viewport whenever the window resizes.
+  const unfold = document.getElementById('unfold');
+  let tabTop = null, dragged = false;
+  try{ const v = parseFloat(localStorage.getItem('pg-unfold-top')); if (Number.isFinite(v)) tabTop = v }catch(e){}
+  function placeTab(){
+    if (tabTop === null || !unfold.offsetHeight) return;
+    const top = Math.max(8, Math.min(tabTop, innerHeight - unfold.offsetHeight - 8));
+    unfold.style.top = `${top}px`; unfold.style.transform = 'none';
+  }
+  unfold.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const start = unfold.getBoundingClientRect().top, sy = e.clientY;
+    dragged = false;
+    unfold.setPointerCapture(e.pointerId);
+    const move = (ev) => {
+      if (!dragged && Math.abs(ev.clientY - sy) < 4) return;
+      dragged = true; tabTop = start + ev.clientY - sy; placeTab();
+    };
+    const end = () => {
+      unfold.removeEventListener('pointermove', move); unfold.removeEventListener('pointerup', end);
+      unfold.removeEventListener('pointercancel', end);
+      if (dragged) { tabTop = unfold.getBoundingClientRect().top; try{localStorage.setItem('pg-unfold-top', String(tabTop))}catch(e){} }
+    };
+    unfold.addEventListener('pointermove', move); unfold.addEventListener('pointerup', end);
+    unfold.addEventListener('pointercancel', end);
+  });
+  // Keyboard activation arrives as a click too; only the click that ends a drag is swallowed
+  unfold.addEventListener('click', () => { if (dragged) { dragged = false; return } fold(false) });
+  addEventListener('resize', placeTab);
+  placeTab();
 
   addEventListener('hashchange', () => show(decodeURIComponent(location.hash.slice(1))));
   addEventListener('keydown', (e) => {
+    // While the settings panel is open the gallery's own shortcuts are off: arrow keys pressed while picking a
+    // value would otherwise switch the prototype on the right (and wrap from the first to the last)
+    if (!prefs.hidden) { if (e.key === 'Escape') { openPrefs(false); prefsBtn.focus(); e.preventDefault(); } return; }
     const t = document.activeElement;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if ((e.key === 's' || e.key === 'S') && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -98,6 +195,12 @@
     const i = keys.indexOf(decodeURIComponent(location.hash.slice(1)));
     const n = e.key === 'ArrowDown' ? (i + 1 + keys.length) % keys.length : (i - 1 + keys.length) % keys.length;
     location.hash = keys[n]; e.preventDefault();
+  });
+
+  // Receive navigation requests from the prototype inside the iframe (under file:// the child page and the shell are cross-origin, so it cannot change the parent hash directly; it goes through postMessage)
+  addEventListener('message', (e) => {
+    const t = e.data && e.data.type === 'proto-nav' && e.data.target;
+    if (t && find(t)) location.hash = t;
   });
 
   const init = decodeURIComponent(location.hash.slice(1));
