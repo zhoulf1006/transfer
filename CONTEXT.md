@@ -90,6 +90,10 @@ _Avoid_: "每次打开重新加载"——错误假设,曾因此出 bug。
 - **图标三来源,按优先级取,每个图标在 `icons.tsx` 注明出处**:Lucide(主库)→ Tabler(仅当 Lucide 无对应语义;二者规格逐字相同,共用同一包装,混排无视觉差异)→ Material Symbols(最后手段)。**Material 是填充式且 viewBox 为 `0 -960 960 960`**,套描边包装会**静默渲染成空白**(不报错),必须走 `FilledIcon`。
 - **截图工具条的「文字」工具保留字面 `A`,是唯一的字符图标例外**(2026-08-21 用户裁定)。理由:纯 ASCII 无字体缺字风险(不同于曾用的 `▚ ◍ ①`),且字母本身即该工具最直白的记号。代价明知:系统字体渲染,笔画与相邻 SVG 不是一套、不随 size 缩放。**这条是决定不是遗漏——review 时不要再把它当违规提,也不要"顺手"换成图标。**
 
+**User-visible copy**
+
+- **Never list the interface language set as if it were complete** (e.g. "available in Chinese, English and Japanese"): when the set changes, that sentence becomes false in every language at once.
+
 **多实例共存(开发/测试实例与用户实例同时运行)**
 
 - **多播 announce 是唯一会打扰旁人的启动动作,端口不是**:HTTP 端口有回退(53317 起向上试),两实例本就能并存;而 announce 会让本实例出现在同网所有设备的列表里。**判据不是"能不能跑起来",而是"用户实例正在运行时跑它,用户或同网的他人能否察觉"**——凡新增启动期动作,先按这条判一遍。
@@ -100,6 +104,7 @@ _Avoid_: "每次打开重新加载"——错误假设,曾因此出 bug。
 **仓库边界**
 
 - **仓库不携带 agent 配置**:`CLAUDE.md`、`.claude/`、`docs/.workings/` 均在 gitignore 内(前两者由全局 gitignore 排除),**新 clone 拿不到它们**。仓库携带的是项目**知识**(ADR / CONTEXT.md / features / specs / ops / prototypes),不是操作者的**作业指令**(八步流程、skills、界面规范)——后者是操作者的本机资产,跨项目复用,随人不随仓库(ADR-0013 工具链条目的外延)。推论:凡"换台机器也必须知道"的结论,写进上述知识类文档才算落地;停在 `CLAUDE.md` 或 `docs/.workings/` 里等于只存在于这台机器。
+  **Exception: `AGENTS.md`, `capabilities.toml` and `docs/agents/` are committed.** They hold project facts and pointers to project knowledge (declared capabilities, documentation layout, issue tracker), which a fresh clone and any agent that reads `AGENTS.md` must be able to find; `CLAUDE.md` is reduced to a local one-line `@AGENTS.md` import. The `Agent skills` section of `AGENTS.md` names the operator's workflow skills only as a pointer — the skills themselves still stay out of the repository.
 
 ## Relationships(关系)
 
