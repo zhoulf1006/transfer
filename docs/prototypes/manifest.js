@@ -1,5 +1,7 @@
 // 原型注册表:画廊壳(index.html)的数据源。生成原型追加一条,删除原型删对应条目。
 // 条目 schema:{module, type:'ui'|'logic', id, name, path}——内容(问题/图/命令)都在各原型页内,此处只登记。
+// The app every prototype belongs to; app-identity.js puts it on each browser tab (icon path is relative to this directory).
+window.PROTOTYPE_APP = { name: 'Transfer', icon: '../../build/icon.png' }
 window.PROTOTYPES = [
   {
     module: 'transfer-chat', type: 'ui', id: 'main-window',
@@ -25,6 +27,11 @@ window.PROTOTYPES = [
     module: 'transfer-chat', type: 'ui', id: 'jump-to-latest',
     name: '跳到最新按钮(染色玻璃深浅)',
     path: 'transfer-chat/prototype-jump-to-latest.html'
+  },
+  {
+    module: 'transfer-chat', type: 'ui', id: 'image-menu',
+    name: 'Image context menu (copy image)',
+    path: 'transfer-chat/prototype-image-menu.html'
   },
   {
     module: 'transfer-chat', type: 'logic', id: 'message-state',

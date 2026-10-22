@@ -1,5 +1,6 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react'
 import { shouldStickToBottom, shouldAutoScrollOnNewMessage } from './scroll-stick'
+import { placeMenu } from './menu-placement'
 import type { RemoteDevice } from '@shared/types'
 import { isImageFile } from '@shared/ipc'
 import { pickImageItemIndices } from '@shared/clipboard-image'
@@ -955,13 +956,16 @@ function FileBubble({
 
 /**
  * 图片缩略图气泡:向 main 拉缩略图 dataURL(nativeImage 生成)。
- * 拿到 → 显示缩略图,点击调 openFile 用系统查看器看原图;
+ * 拿到 → 显示缩略图,点击在 app 内居中弹层看原图;
  * 拿不到(GIF/WEBP/读失败)→ 回退文件图标行(与非图片一致)。
  */
 function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
   const { t } = useI18n()
   const [thumb, setThumb] = useState<string | null | undefined>(undefined) // undefined=加载中
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null) // 右键菜单位置
+  // Where the open menu is drawn; null until it has been measured (see the layout effect below)
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const [viewer, setViewer] = useState<string | null>(null) // 原图 dataURL(居中弹层打开中)
 
   // 点击缩略图 → 拉原图 dataURL,打开居中弹层看大图
@@ -991,22 +995,38 @@ function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
     }
   }, [msg.id])
 
+  // Place the menu once its size is known, before it is painted: it is first rendered hidden at the
+  // window's top-left, where nothing narrows it, then flipped and clamped to stay whole inside the
+  // window (spec transfer-chat REQ-002)
+  useLayoutEffect(() => {
+    const el = menuRef.current
+    if (!menu || !el) return
+    // the exact (fractional) size: offsetWidth rounds, which let a flipped menu overlap the pointer
+    const { width, height } = el.getBoundingClientRect()
+    setMenuPos(placeMenu(menu, { width, height }, { width: window.innerWidth, height: window.innerHeight }))
+  }, [menu])
+
   // 右键菜单打开时,点别处/滚动关闭
+  // A right-click anywhere closes it too, so right-clicking another image leaves one menu, not two
+  // (spec transfer-chat group I). It runs in the capture phase, before this image's own handler, which
+  // re-opens the menu when the right-click is on this image again.
   useEffect(() => {
     if (!menu) return
     const close = (): void => setMenu(null)
     window.addEventListener('click', close)
     window.addEventListener('scroll', close, true)
+    window.addEventListener('contextmenu', close, true)
     return () => {
       window.removeEventListener('click', close)
       window.removeEventListener('scroll', close, true)
+      window.removeEventListener('contextmenu', close, true)
     }
   }, [menu])
 
   // 拿不到缩略图 → 回退文件行
   if (thumb === null) {
     return (
-      <div style={S.fileLine}>
+      <div style={S.fileLine} data-testid="image-file-row">
         <div style={S.fileIcon}>{fileTypeIcon(msg.fileName)}</div>
         <div style={{ minWidth: 0 }}>
           <div style={S.fileName}>{msg.fileName}</div>
@@ -1027,6 +1047,7 @@ function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
         onClick={openViewer}
         onContextMenu={(e) => {
           e.preventDefault()
+          setMenuPos(null)
           setMenu({ x: e.clientX, y: e.clientY })
         }}
         title={t('image.thumbTitle')}
@@ -1038,7 +1059,27 @@ function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
         </div>
       )}
       {menu && (
-        <div style={{ ...S.imgMenu, left: menu.x, top: menu.y }} onClick={(e) => e.stopPropagation()}>
+        <div
+          ref={menuRef}
+          style={{
+            ...S.imgMenu,
+            left: menuPos?.left ?? 0,
+            top: menuPos?.top ?? 0,
+            visibility: menuPos ? undefined : 'hidden'
+          }}
+          onClick={(e) => e.stopPropagation()}
+          data-testid="img-menu"
+        >
+          <div
+            className="tf-row"
+            style={S.imgMenuItem}
+            onClick={() => {
+              setMenu(null)
+              void window.transfer.copyImage(msg.id)
+            }}
+          >
+            {t('image.copyImage')}
+          </div>
           <div
             className="tf-row"
             style={S.imgMenuItem}
