@@ -1001,13 +1001,9 @@ function ImageThumb({ msg }: { msg: UiMessage }): JSX.Element {
   useLayoutEffect(() => {
     const el = menuRef.current
     if (!menu || !el) return
-    setMenuPos(
-      placeMenu(
-        menu,
-        { width: el.offsetWidth, height: el.offsetHeight },
-        { width: window.innerWidth, height: window.innerHeight }
-      )
-    )
+    // the exact (fractional) size: offsetWidth rounds, which let a flipped menu overlap the pointer
+    const { width, height } = el.getBoundingClientRect()
+    setMenuPos(placeMenu(menu, { width, height }, { width: window.innerWidth, height: window.innerHeight }))
   }, [menu])
 
   // 右键菜单打开时,点别处/滚动关闭

@@ -40,7 +40,7 @@ import { SettingsStore } from './settings'
 import { ScreenshotService, persistAndSend } from './screenshot-service'
 import { APP_HOST, registerAppProtocol } from './app-protocol'
 import { t, setMainLang, resolveSystemEffective } from './i18n'
-import { orientBitmap, readJpegOrientation } from './image-orientation'
+import { orientBitmap, readJpegOrientation, thumbnailFit } from './image-orientation'
 import {
   resolveReceiveDir,
   chooseDir,
@@ -118,8 +118,7 @@ function imageMime(path: string): string {
  * Decodes an image file the way the full-size view shows it: a JPEG is turned by its EXIF orientation,
  * which nativeImage ignores (see image-orientation.ts). Null when the file can't be read or decoded —
  * nativeImage reads PNG and JPEG only.
- * With `fitWidth`, the result is downscaled to that width — before turning, which keeps it cheap; a
- * quarter turn (orientations 5–8) swaps the sides, so the stored image is fitted by its height.
+ * With `fitWidth`, the result is downscaled to that width — before turning, which keeps it cheap.
  */
 async function decodeUpright(path: string, fitWidth?: number): Promise<NativeImage | null> {
   let bytes: Buffer
@@ -131,7 +130,7 @@ async function decodeUpright(path: string, fitWidth?: number): Promise<NativeIma
   let img = nativeImage.createFromBuffer(bytes)
   if (img.isEmpty()) return null
   const orientation = readJpegOrientation(bytes)
-  if (fitWidth) img = img.resize(orientation >= 5 ? { height: fitWidth } : { width: fitWidth })
+  if (fitWidth) img = img.resize(thumbnailFit(orientation, fitWidth))
   if (orientation === 1) return img
   const { width, height } = img.getSize()
   const out = orientBitmap(img.toBitmap(), width, height, orientation)

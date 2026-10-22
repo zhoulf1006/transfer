@@ -89,6 +89,14 @@ export function orientBitmap(
   return { data: out, width: w, height: h }
 }
 
+/**
+ * How to downscale a stored image so that it is `width` wide once turned upright. Orientations 5–8 turn
+ * it a quarter, so its stored height becomes the displayed width; the other side follows the aspect ratio.
+ */
+export function thumbnailFit(orientation: Orientation, width: number): { width: number } | { height: number } {
+  return orientation >= 5 ? { height: width } : { width }
+}
+
 /** Orientation from the TIFF block that starts at `tiff` and must end before `end` */
 function readTiffOrientation(b: Uint8Array, tiff: number, end: number): Orientation {
   if (end - tiff < 8) return 1
