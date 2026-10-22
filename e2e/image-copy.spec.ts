@@ -230,7 +230,25 @@ test.describe.serial('image copy', () => {
       await expect(row).toBeVisible({ timeout: 500 })
     }).toPass({ timeout: 15_000 })
     await row.dispatchEvent('click')
-    await expect(page.locator('img[alt="wide.png"]')).toBeVisible()
+
+    // Let the chat settle before any right-click. Thumbnails arrive one by one and the stream keeps
+    // itself at the bottom as they do; in CI (2026-10-22) a menu opened while they were still arriving
+    // was gone a moment later — most likely closed by one of those scrolls, since a scroll closes it.
+    for (const { name } of seed) {
+      if (name === 'broken.png') continue
+      await expect(page.locator(`img[alt="${name}"]`)).toBeVisible()
+      await expect
+        .poll(() => page.locator(`img[alt="${name}"]`).evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0))
+        .toBe(true)
+    }
+    await expect(page.getByTestId('image-file-row').filter({ hasText: 'broken.png' })).toBeVisible()
+    const lastTop = (): Promise<number> =>
+      page.locator('img[alt="last-sent.png"]').evaluate((el) => el.getBoundingClientRect().top)
+    await expect(async () => {
+      const before = await lastTop()
+      await twoFrames()
+      expect(await lastTop(), 'the stream has stopped moving').toBe(before)
+    }).toPass({ timeout: 10_000 })
   })
 
   test.afterAll(async () => {
@@ -243,11 +261,7 @@ test.describe.serial('image copy', () => {
       await expect(page.locator(`img[alt="${alt}"]`)).toHaveAttribute('title', TIP.zh)
       await rightClick(alt)
       await expect(menu()).toBeVisible()
-      expect(await menu().locator(':scope > div').allInnerTexts(), alt).toEqual([
-        '复制图片',
-        '保存图片',
-        '用系统程序打开'
-      ])
+      await expect(menu().locator(':scope > div'), alt).toHaveText(['复制图片', '保存图片', '用系统程序打开'])
       await closeMenu()
     }
   })
@@ -331,11 +345,7 @@ test.describe.serial('image copy', () => {
       await scrollTo('wide.png', 'center')
       await rightClick('wide.png')
       await expect(menu()).toBeVisible()
-      expect(await menu().locator(':scope > div').allInnerTexts()).toEqual([
-        'Copy Image',
-        'Save Image',
-        'Open with System App'
-      ])
+      await expect(menu().locator(':scope > div')).toHaveText(['Copy Image', 'Save Image', 'Open with System App'])
       const roomy = await box()
       await closeMenu()
 
